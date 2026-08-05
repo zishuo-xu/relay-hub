@@ -29,8 +29,8 @@ Documentation updates do not authorize unrelated code changes. If a discussion c
 After every RelayHub code or documentation change:
 
 1. Run verification proportional to the change and report the result.
-2. Commit only files under `relay-hub/`; preserve unrelated parent-repository changes.
-3. Push the commit to the RelayHub GitHub development branch.
+2. Commit the completed RelayHub change with a focused message.
+3. Push the commit to `origin/main` in `zishuo-xu/relay-hub`.
 4. Report both the commit SHA and push result to the user.
 
 Do not leave completed RelayHub changes only in the local repository.

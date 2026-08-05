@@ -1,5 +1,22 @@
 # 07. 实现状态
 
+## 2026-08-06：独立公开仓库
+
+### 已实现
+
+- 从参考项目目录提取 RelayHub 专属 Git 历史，提交路径重写为独立仓库根目录。
+- 独立本地仓库位于 `/Users/xuzishuo/Documents/relay-hub`，默认分支为 `main`。
+- 独立公开仓库为 `https://github.com/zishuo-xu/relay-hub`，后续改动直接推送 `origin/main`。
+- 原嵌套目录保留为迁移备份，没有删除或覆盖数据。
+- 提取后的历史只包含 RelayHub 的提交，不包含 Clowder AI 的项目历史。
+
+### 迁移验证
+
+- `pnpm install --frozen-lockfile`：通过，锁文件无需修改。
+- `pnpm check`：类型检查、10 个非数据库测试和全部 workspace 生产构建通过。
+- 独立测试数据库 migration：通过，没有使用或清理正式运行数据。
+- PostgreSQL Repository 集成测试：2/2 通过；合计 12 个自动化测试通过。
+
 ## 2026-08-06：单屏控制台 UX
 
 ### 已实现
