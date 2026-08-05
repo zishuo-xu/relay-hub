@@ -6,6 +6,7 @@ import { Server as SocketServer } from 'socket.io';
 import { z } from 'zod';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { PostgresStore } from './store.js';
+import { validateWorkspaceRoot } from './workspace-root.js';
 
 const port = Number(process.env.RELAY_HUB_API_PORT ?? 4100);
 const host = process.env.RELAY_HUB_API_HOST ?? '127.0.0.1';
@@ -49,6 +50,22 @@ app.get('/health', async () => {
 
 app.get('/api/tasks', async () => ({ tasks: await store.listTasks() }));
 
+app.get('/api/workspaces', async () => ({ workspaces: await store.listWorkspaces() }));
+
+app.patch('/api/workspaces/:workspaceId', async (request, reply) => {
+  const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
+  const { rootPath } = z.object({ rootPath: z.string().trim().min(1).max(4_096) }).parse(request.body);
+  const canonicalRoot = await validateWorkspaceRoot(rootPath);
+  const workspace = await store.updateWorkspaceRoot(workspaceId, canonicalRoot);
+  if (!workspace) return reply.code(404).send({ error: 'workspace_not_found' });
+  return workspace;
+});
+
+app.get('/api/workspaces/:workspaceId/agents', async (request) => {
+  const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
+  return { agents: await store.listAgentProfiles(workspaceId) };
+});
+
 app.post('/api/tasks', async (request, reply) => {
   const input = CreateTaskInputSchema.parse(request.body);
   const idempotencyHeader = request.headers['idempotency-key'];
@@ -71,6 +88,13 @@ app.get('/api/tasks/:taskId/events', async (request) => {
   return { events: await store.getTaskEvents(taskId, after) };
 });
 
+app.post('/api/runs/:runId/cancel', async (request) => {
+  const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
+  const result = await store.requestRunCancellation(runId);
+  broadcast(result.emitted);
+  return result.value;
+});
+
 app.post('/internal/runs/:runId/claim', async (request, reply) => {
   const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
   const { workerId } = z.object({ workerId: z.string().min(1).max(120) }).parse(request.body);
@@ -78,6 +102,13 @@ app.post('/internal/runs/:runId/claim', async (request, reply) => {
   if (!result.value) return reply.code(409).send({ error: 'run_not_claimable' });
   broadcast(result.emitted);
   return result.value;
+});
+
+app.get('/internal/runs/:runId/control', async (request, reply) => {
+  const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
+  const status = await store.getRunStatus(runId);
+  if (!status) return reply.code(404).send({ error: 'run_not_found' });
+  return { status };
 });
 
 app.post('/internal/runs/:runId/events', async (request) => {

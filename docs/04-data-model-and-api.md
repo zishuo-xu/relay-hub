@@ -145,6 +145,8 @@ erDiagram
 - `session_ref`: Adapter 的可恢复会话标识
 - `failure_code`, `failure_detail`
 - `started_at`, `finished_at`
+- `workspace_root`: 创建 Run 时固化的执行 Workspace 快照
+- `worktree_path`, `working_directory`, `branch_name`: 隔离执行与人工检查入口
 
 重试创建新行，而不是把失败行改回 queued。
 
@@ -210,6 +212,9 @@ GET    /api/tasks/:taskId/events?after=:eventId
 POST   /api/tasks/:taskId/cancel
 POST   /api/runs/:runId/retry
 POST   /api/runs/:runId/cancel
+GET    /api/workspaces
+PATCH  /api/workspaces/:workspaceId
+GET    /api/workspaces/:workspaceId/agents
 ```
 
 创建、取消和重试命令要求 `Idempotency-Key` 请求头。
@@ -231,6 +236,7 @@ POST   /internal/runs/:runId/reviews
 
 ```ts
 type AgentEvent =
+  | { type: 'run.prepared'; worktreePath: string; workingDirectory: string; branchName: string }
   | { type: 'run.started'; sessionRef?: string }
   | { type: 'output.delta'; text: string }
   | { type: 'tool.called'; callId: string; name: string; inputSummary: unknown }
@@ -238,6 +244,7 @@ type AgentEvent =
   | { type: 'handoff.requested'; handoff: HandoffDraft }
   | { type: 'review.submitted'; review: ReviewDraft }
   | { type: 'run.completed'; summary?: string }
+  | { type: 'run.cancelled'; reason?: string }
   | { type: 'run.failed'; code: FailureCode; message: string };
 ```
 

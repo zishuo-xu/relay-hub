@@ -450,6 +450,6 @@ flowchart TB
 5. `CompletionPolicy` 默认 `require_user_confirmation`，允许 Workspace 默认值和 Task override。
 6. Reviewer 强制使用不同 AgentProfile；不同 model family 默认优先，但可以配置降级策略。
 
-第一个真实 Adapter 选择属于实现决策，不阻塞整体基线。Codex CLI 是当前候选，但架构不绑定 Codex。
+第一个真实 Adapter 已选择并实现 Codex CLI；这是实现决策，架构仍不绑定 Codex。后续 Reviewer 可以使用不同 AgentProfile、provider 和 model。
 
 本文件现在是 PostgreSQL schema、Queue contract 和后续 Agent Adapter 的上位依据。任何改变核心实体、所有权、状态终态或通信边界的实现都必须先更新基线或新增 ADR。

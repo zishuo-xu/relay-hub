@@ -40,7 +40,7 @@ flowchart LR
     Q --> WK["Agent Worker"]
     WK --> A["AgentAdapter"]
     A --> M["Mock Agent"]
-    A --> C["Codex or Claude CLI"]
+    A --> C["Codex CLI"]
     WK -->|"append events and outcomes"| API
 
     API --> O["Orchestrator"]
@@ -114,7 +114,7 @@ Handoff 的目标写入顺序：
 
 - 隔离不同 CLI 的命令、事件协议和 Session 语义。
 - 只产生平台统一事件，不直接修改 Task 状态。
-- 首先实现 Mock Adapter，再实现一个真实 CLI Adapter。
+- Mock Adapter 用于确定性演示；Codex CLI Adapter 已使用非交互 JSONL 协议实现。
 
 Builder 与 Reviewer 是工作流角色，不绑定具体模型或供应商。AgentProfile 分别选择 Adapter、provider、model 和 tool policy。同一工作流可以使用 Codex Builder + Claude Reviewer，也可以使用其他组合。
 
@@ -251,3 +251,5 @@ Task 与 Run 带 `version`。更新语句包含旧版本条件，受影响行数
 Phase 1B 已用 PostgreSQL Repository 替换 JSON Store，并用 BullMQ 消费替换 Worker HTTP 短轮询。创建任务的事务同时写入 Task、Run、首个 RunEvent 和 Outbox；Publisher 成功投递后才把 Outbox 标为 `published`。
 
 Queue job 只携带 `runId`。Worker 收到消息后仍需通过 PostgreSQL 条件更新完成 `queued -> claimed`，所以重复 job 只能有一个获得执行权。Phase 1A JSON 文件保留为旧数据备份，并提供幂等导入命令，不再是运行真相源。
+
+Phase 2 已加入 Codex CLI Adapter。Worker 为真实写入任务创建独立 Git Worktree，以参数数组启动 `codex exec --json --sandbox workspace-write`，把公开 JSONL 事件转换为统一 AgentEvent。模型 reasoning 不进入 RelayHub Event；thread ID、命令摘要、文件变化、最终消息和终态进入 PostgreSQL。Worktree 在任务结束后保留，用户确认前不自动清理。

@@ -104,6 +104,9 @@ importers:
       '@relay-hub/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.18.0

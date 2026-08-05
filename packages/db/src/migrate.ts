@@ -1,9 +1,11 @@
-import { DEFAULT_MOCK_AGENT_ID, DEFAULT_WORKSPACE_ID } from '@relay-hub/contracts';
+import { DEFAULT_CODEX_AGENT_ID, DEFAULT_MOCK_AGENT_ID, DEFAULT_WORKSPACE_ID } from '@relay-hub/contracts';
+import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDatabase } from './index.js';
 import { agentProfiles, workspaces } from './schema.js';
 
 const database = createDatabase();
+const relayHubRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 try {
   await migrate(database.db, { migrationsFolder: new URL('../drizzle', import.meta.url).pathname });
@@ -12,8 +14,22 @@ try {
     .values({
       id: DEFAULT_WORKSPACE_ID,
       name: 'Local Workspace',
-      rootPath: process.cwd(),
+      rootPath: relayHubRoot,
       defaultCompletionPolicy: 'require_user_confirmation',
+    })
+    .onConflictDoNothing();
+  await database.db
+    .insert(agentProfiles)
+    .values({
+      id: DEFAULT_CODEX_AGENT_ID,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      name: 'Codex Builder',
+      adapterType: 'codex_cli',
+      provider: 'openai',
+      modelLabel: 'Codex CLI default',
+      modelFamily: 'codex',
+      capabilities: ['implement'],
+      config: { sandbox: 'workspace-write' },
     })
     .onConflictDoNothing();
   await database.db

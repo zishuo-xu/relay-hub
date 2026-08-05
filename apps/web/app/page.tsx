@@ -1,6 +1,14 @@
 'use client';
 
-import type { RealtimeEnvelope, RunEvent, Task, TaskDetail } from '@relay-hub/contracts';
+import {
+  DEFAULT_MOCK_AGENT_ID,
+  type AgentProfile,
+  type RealtimeEnvelope,
+  type RunEvent,
+  type Task,
+  type TaskDetail,
+  type Workspace,
+} from '@relay-hub/contracts';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 
@@ -24,6 +32,8 @@ function eventText(event: RunEvent): string {
       return `任务已创建，分配给 ${String(event.payload.agentId)}`;
     case 'run.claimed':
       return `Worker ${String(event.payload.workerId)} 已领取任务`;
+    case 'run.prepared':
+      return `已创建隔离分支 ${String(event.payload.branchName)}，工作目录：${String(event.payload.workingDirectory)}`;
     case 'run.started':
       return 'Agent 开始执行';
     case 'output.delta':
@@ -34,6 +44,10 @@ function eventText(event: RunEvent): string {
       return `工具调用完成：${String(event.payload.callId)}`;
     case 'run.completed':
       return String(event.payload.summary ?? 'Agent 执行完成');
+    case 'run.cancellation_requested':
+      return '用户已请求取消，正在回收 Codex 子进程。';
+    case 'run.cancelled':
+      return String(event.payload.reason ?? 'Run 已取消');
     case 'run.failed':
       return `执行失败：${String(event.payload.message ?? event.payload.code)}`;
     default:
@@ -50,6 +64,10 @@ export default function HomePage() {
   const [criterion, setCriterion] = useState('返回 HTTP 200，并提供可读的状态信息');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [workspaceRoot, setWorkspaceRoot] = useState('');
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState(DEFAULT_MOCK_AGENT_ID);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -65,9 +83,27 @@ export default function HomePage() {
     setDetail((await response.json()) as TaskDetail);
   }, []);
 
+  const loadRuntimeConfiguration = useCallback(async () => {
+    const workspaceResponse = await fetch(`${apiUrl}/api/workspaces`, { cache: 'no-store' });
+    if (!workspaceResponse.ok) throw new Error('无法读取 Workspace 配置');
+    const workspacePayload = (await workspaceResponse.json()) as { workspaces: Workspace[] };
+    const currentWorkspace = workspacePayload.workspaces[0];
+    if (!currentWorkspace) throw new Error('尚未配置 Workspace');
+    setWorkspace(currentWorkspace);
+    setWorkspaceRoot(currentWorkspace.rootPath);
+
+    const agentResponse = await fetch(`${apiUrl}/api/workspaces/${currentWorkspace.id}/agents`, {
+      cache: 'no-store',
+    });
+    if (!agentResponse.ok) throw new Error('无法读取 AgentProfile');
+    const agentPayload = (await agentResponse.json()) as { agents: AgentProfile[] };
+    setAgents(agentPayload.agents.filter((agent) => agent.enabled));
+  }, []);
+
   useEffect(() => {
     loadTasks().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
-  }, [loadTasks]);
+    loadRuntimeConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  }, [loadRuntimeConfiguration, loadTasks]);
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -109,6 +145,21 @@ export default function HomePage() {
     setSubmitting(true);
     setError(null);
     try {
+      if (!workspace) throw new Error('Workspace 尚未加载完成');
+      if (workspaceRoot !== workspace.rootPath) {
+        const workspaceResponse = await fetch(`${apiUrl}/api/workspaces/${workspace.id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ rootPath: workspaceRoot }),
+        });
+        if (!workspaceResponse.ok) {
+          const detail = await workspaceResponse.text();
+          throw new Error(`Workspace 路径无效：${detail}`);
+        }
+        const updatedWorkspace = (await workspaceResponse.json()) as Workspace;
+        setWorkspace(updatedWorkspace);
+        setWorkspaceRoot(updatedWorkspace.rootPath);
+      }
       const response = await fetch(`${apiUrl}/api/tasks`, {
         method: 'POST',
         headers: {
@@ -118,6 +169,7 @@ export default function HomePage() {
         body: JSON.stringify({
           title,
           description,
+          agentId: selectedAgentId,
           acceptanceCriteria: criterion.trim() ? [criterion.trim()] : [],
         }),
       });
@@ -133,10 +185,25 @@ export default function HomePage() {
     }
   }
 
+  async function cancelCurrentRun() {
+    if (!currentRun) return;
+    setError(null);
+    const response = await fetch(`${apiUrl}/api/runs/${currentRun.id}/cancel`, { method: 'POST' });
+    if (!response.ok) throw new Error(`取消任务失败：${response.status} ${await response.text()}`);
+    const updated = (await response.json()) as TaskDetail;
+    setDetail(updated);
+    await loadTasks();
+  }
+
   const currentRun = useMemo(
     () => detail?.runs.find((run) => run.id === detail.task.currentRunId) ?? null,
     [detail],
   );
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const currentAgent = agents.find((agent) => agent.id === detail?.task.agentId) ?? null;
+  const canCancel = currentRun
+    ? !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status)
+    : false;
 
   return (
     <main className="shell">
@@ -146,7 +213,7 @@ export default function HomePage() {
           <h1>RelayHub</h1>
           <p className="subtitle">让 Agent 的执行、状态和协作过程变得可见、可恢复、可追溯。</p>
         </div>
-        <div className="system-status"><span /> Phase 1B · Durable Runtime</div>
+        <div className="system-status"><span /> Phase 2 · Codex Runtime</div>
       </header>
 
       {error ? <div className="error-banner">{error}</div> : null}
@@ -191,10 +258,25 @@ export default function HomePage() {
           {detail ? (
             <>
               <div className="run-summary">
-                <span>Agent <strong>Mock Builder</strong></span>
+                <span>Agent <strong>{currentAgent?.name ?? detail.task.agentId}</strong></span>
                 <span>Run <code>{currentRun?.id.slice(0, 8) ?? '—'}</code></span>
                 <span>Version <strong>{detail.task.version}</strong></span>
+                {canCancel ? (
+                  <button
+                    className="cancel-button"
+                    onClick={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+                    type="button"
+                  >
+                    取消 Run
+                  </button>
+                ) : null}
               </div>
+              {currentRun?.worktreePath ? (
+                <div className="worktree-note">
+                  <strong>{currentRun.branchName}</strong>
+                  <code>{currentRun.workingDirectory}</code>
+                </div>
+              ) : null}
               <ol className="timeline">
                 {detail.events.map((event) => (
                   <li key={event.id}>
@@ -238,9 +320,28 @@ export default function HomePage() {
               验收标准
               <textarea onChange={(event) => setCriterion(event.target.value)} rows={3} value={criterion} />
             </label>
+            <label>
+              Git Workspace 路径
+              <input
+                onChange={(event) => setWorkspaceRoot(event.target.value)}
+                required
+                value={workspaceRoot}
+              />
+            </label>
+            <label>
+              执行 Agent
+              <select onChange={(event) => setSelectedAgentId(event.target.value)} value={selectedAgentId}>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                ))}
+              </select>
+            </label>
             <div className="agent-choice">
-              <span className="agent-mark">M</span>
-              <div><strong>Mock Builder</strong><small>稳定演示 · 流式输出</small></div>
+              <span className="agent-mark">{selectedAgent?.adapterType === 'codex_cli' ? 'C' : 'M'}</span>
+              <div>
+                <strong>{selectedAgent?.name ?? '正在加载 Agent'}</strong>
+                <small>{selectedAgent?.adapterType === 'codex_cli' ? '真实 Codex CLI · 隔离 Worktree' : '稳定演示 · 流式输出'}</small>
+              </div>
             </div>
             <button className="primary-button" disabled={submitting} type="submit">
               {submitting ? '正在创建…' : '启动任务'}

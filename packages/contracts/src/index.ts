@@ -2,7 +2,11 @@ import { z } from 'zod';
 
 export const DEFAULT_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 export const DEFAULT_MOCK_AGENT_ID = '00000000-0000-4000-8000-000000000002';
+export const DEFAULT_CODEX_AGENT_ID = '00000000-0000-4000-8000-000000000003';
 export const RUN_QUEUE_NAME = 'relay-hub-runs';
+
+export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli'] as const;
+export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 
 export const TASK_STATUSES = [
   'draft',
@@ -91,6 +95,12 @@ const ReviewDraftSchema = z.object({
 });
 
 export const AgentEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('run.prepared'),
+    worktreePath: z.string().min(1),
+    workingDirectory: z.string().min(1),
+    branchName: z.string().min(1),
+  }),
   z.object({ type: z.literal('run.started'), sessionRef: z.string().optional() }),
   z.object({ type: z.literal('output.delta'), text: z.string() }),
   z.object({
@@ -107,6 +117,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('handoff.requested'), handoff: HandoffDraftSchema }),
   z.object({ type: z.literal('review.submitted'), review: ReviewDraftSchema }),
   z.object({ type: z.literal('run.completed'), summary: z.string().optional() }),
+  z.object({ type: z.literal('run.cancelled'), reason: z.string().optional() }),
   z.object({
     type: z.literal('run.failed'),
     code: z.enum(['spawn_failed', 'protocol_error', 'timeout', 'process_exit', 'unknown']),
@@ -131,6 +142,27 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface Workspace {
+  id: string;
+  name: string;
+  rootPath: string;
+  defaultCompletionPolicy: CompletionPolicy;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentProfile {
+  id: string;
+  workspaceId: string;
+  name: string;
+  adapterType: AgentAdapterType;
+  provider?: string;
+  modelLabel?: string;
+  modelFamily?: string;
+  capabilities: string[];
+  enabled: boolean;
+}
+
 export interface Run {
   id: string;
   taskId: string;
@@ -140,6 +172,10 @@ export interface Run {
   triggerType: 'user' | 'handoff' | 'review' | 'retry';
   parentRunId?: string;
   retryOfRunId?: string;
+  workspaceRoot: string;
+  worktreePath?: string;
+  workingDirectory?: string;
+  branchName?: string;
   workerId?: string;
   sessionRef?: string;
   failureCode?: string;
@@ -170,6 +206,8 @@ export interface TaskDetail {
 export interface ClaimedRun {
   task: Task;
   run: Run;
+  workspace: Workspace;
+  agent: AgentProfile;
 }
 
 export interface RealtimeEnvelope {

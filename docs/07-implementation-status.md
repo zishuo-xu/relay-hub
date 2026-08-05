@@ -1,5 +1,61 @@
 # 07. 实现状态
 
+## 2026-08-06：Phase 2 真实 Codex Builder
+
+### 已实现
+
+- `Codex Builder` AgentProfile，与 Mock Builder 使用相同 Task/Run contract。
+- Workspace 路径读取、Git 仓库校验和 UI 配置。
+- Run 创建时固化 `workspaceRoot`，避免排队后配置变化改变执行目标。
+- 每个 Codex Run 创建独立 `relayhub/run-<runId>` 分支和 Worktree。
+- 使用 `codex exec --json --sandbox workspace-write` 非交互执行，并继承本机 Codex 登录。
+- ProcessSupervisor 使用参数数组启动、环境变量白名单、15 分钟默认超时和子进程定向回收。
+- Codex JSONL 映射为 `run.started`、output、tool、file change 和 terminal AgentEvent。
+- Codex thread ID、branch、worktree 和 working directory 持久化到 Run。
+- reasoning 事件明确丢弃，不保存也不传给其他 Agent。
+- 用户取消命令：PostgreSQL `cancelling` → Worker 中止对应 Codex 子进程 → `cancelled`。
+- Worktree 任务完成后保留，用户可以检查 diff 和重新执行测试。
+
+### 真实运行证据
+
+在独立临时 Git 仓库中创建了一个失败的 Node.js greeting 测试，通过 RelayHub 选择 Codex Builder：
+
+```text
+Task queued
+-> BullMQ delivery
+-> Run claimed
+-> Worktree + branch prepared
+-> Codex thread started
+-> Codex 修改 greet.js
+-> Codex 执行 npm test
+-> 1/1 test passed
+-> Run succeeded + Task completed
+```
+
+验证结果：
+
+- Task=`completed`，Run=`succeeded`。
+- 生成 15 个有序持久事件。
+- 只修改 Worktree 中的 `greet.js`，未修改测试文件。
+- 原始 Git Workspace 保持 clean，原实现没有变化。
+- 数据库保存 Codex thread ID `019fd2fa-fef5-7ba2-baf7-9ff920f4a076`。
+- 数据库中没有包含 reasoning 的事件 payload。
+- Worktree 中重新执行 `npm test`：1/1 通过。
+
+### 自动化验证
+
+- 12/12 测试通过：状态机 6、Queue 1、Codex Adapter 2、Worktree 1、PostgreSQL Repository 2。
+- Codex Adapter fixture 覆盖 JSONL 映射、reasoning 丢弃和 AbortSignal → cancelled。
+- Worktree 测试使用真实 Git 命令验证独立分支与源仓库边界。
+- PostgreSQL 测试覆盖 active Run 的 `cancelling -> cancelled` 收敛。
+
+### 仍未实现
+
+- Builder → Reviewer Handoff、Review/Finding 和返工闭环。
+- 单次 Run token、Worker lease、heartbeat 和崩溃 reconciliation。
+- 用户批准后合并/提交 Worktree 的产品流程。
+- Worktree 依赖安装/bootstrap 策略；当前由目标仓库与 Codex 任务自行处理。
+
 ## 2026-08-06：Phase 1B 正式基础设施层
 
 ### 已实现

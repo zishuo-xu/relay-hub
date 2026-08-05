@@ -15,6 +15,13 @@
       "when": 1785950051202,
       "tag": "0001_many_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785950799297,
+      "tag": "0002_right_lyja",
+      "breakpoints": true
     }
   ]
 }

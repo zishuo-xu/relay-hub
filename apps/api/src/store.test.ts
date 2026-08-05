@@ -43,4 +43,29 @@ suite('PostgresStore integration', () => {
     expect(detail?.task.status).toBe('completed');
     expect(detail?.runs[0]?.status).toBe('succeeded');
   });
+
+  it('cancels an active run through cancelling before the terminal event', async () => {
+    const created = await store.createTask({
+      title: 'Cancel active run',
+      description: 'Verify process cancellation state converges without deleting execution evidence.',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      acceptanceCriteria: [],
+      completionPolicy: 'require_user_confirmation',
+    });
+    const runId = created.value.detail.task.currentRunId;
+    await store.claimRun(runId, 'cancellation-worker');
+    await store.recordAgentEvent(runId, 'prepared', {
+      type: 'run.prepared',
+      worktreePath: '/tmp/preserved-worktree',
+      workingDirectory: '/tmp/preserved-worktree',
+      branchName: 'relayhub/cancel-test',
+    });
+
+    const requested = await store.requestRunCancellation(runId);
+    expect(requested.value.runs[0]?.status).toBe('cancelling');
+    await store.recordAgentEvent(runId, 'cancelled', { type: 'run.cancelled', reason: 'test' });
+    const detail = await store.getTaskDetail(created.value.detail.task.id);
+    expect(detail?.task.status).toBe('cancelled');
+    expect(detail?.runs[0]?.status).toBe('cancelled');
+  });
 });

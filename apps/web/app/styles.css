@@ -24,7 +24,7 @@ body {
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-button, input, textarea { font: inherit; }
+button, input, select, textarea { font: inherit; }
 
 .shell { max-width: 1500px; margin: 0 auto; padding: 40px; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 34px; }
@@ -58,6 +58,9 @@ button, input, textarea { font: inherit; }
 .status-pill.failed, .status-pill.cancelled { color: var(--danger); border-color: #6f3333; background: #281717; }
 .run-summary { display: flex; flex-wrap: wrap; gap: 18px; padding: 13px 20px; color: var(--muted); border-bottom: 1px solid var(--border); font-size: 12px; }
 .run-summary strong, .run-summary code { color: var(--text); }
+.cancel-button { margin-left: auto; padding: 3px 9px; color: var(--danger); border: 1px solid #6f3333; border-radius: 7px; background: #281717; cursor: pointer; font-size: 11px; }
+.worktree-note { display: flex; flex-direction: column; gap: 7px; padding: 12px 20px; color: var(--accent); border-bottom: 1px solid var(--border); font-size: 12px; }
+.worktree-note code { overflow-wrap: anywhere; color: var(--muted); }
 .timeline { list-style: none; margin: 0; padding: 12px 20px 30px; }
 .timeline li { display: grid; grid-template-columns: 38px 1fr; gap: 10px; position: relative; padding: 12px 0; }
 .timeline li:not(:last-child)::after { content: ""; position: absolute; top: 37px; bottom: -12px; left: 13px; width: 1px; background: var(--border); }
@@ -72,8 +75,8 @@ button, input, textarea { font: inherit; }
 
 .create-panel form { display: flex; flex-direction: column; gap: 18px; padding: 20px; }
 .create-panel label { display: flex; flex-direction: column; gap: 8px; color: #c6d0d6; font-size: 12px; font-weight: 700; }
-.create-panel input, .create-panel textarea { width: 100%; color: var(--text); outline: none; border: 1px solid var(--border); border-radius: 9px; background: #0b0f13; padding: 11px 12px; resize: vertical; }
-.create-panel input:focus, .create-panel textarea:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px rgba(56, 217, 154, 0.08); }
+.create-panel input, .create-panel select, .create-panel textarea { width: 100%; color: var(--text); outline: none; border: 1px solid var(--border); border-radius: 9px; background: #0b0f13; padding: 11px 12px; resize: vertical; }
+.create-panel input:focus, .create-panel select:focus, .create-panel textarea:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px rgba(56, 217, 154, 0.08); }
 .agent-choice { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #345147; border-radius: 10px; background: #14221d; }
 .agent-mark { display: grid; width: 35px; height: 35px; place-items: center; color: #0b1813; border-radius: 9px; background: var(--accent); font-weight: 900; }
 .agent-choice div { display: flex; flex-direction: column; gap: 3px; }
@@ -98,4 +101,3 @@ button, input, textarea { font: inherit; }
   .timeline-panel { order: 1; }
   .create-panel { order: 3; }
 }
-

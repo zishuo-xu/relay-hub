@@ -33,6 +33,7 @@ RelayHub 是本仓库中的独立简历项目。它参考 Clowder AI 的产品�
 - [x] 初始化独立 TypeScript workspace
 - [x] 完成 Mock Agent 单 Agent 纵向切片
 - [x] 完成 PostgreSQL、Drizzle migration、Transactional Outbox 与 Redis/BullMQ 基础设施层
+- [x] 完成真实 Codex CLI Builder、隔离 Worktree、子进程监管与取消链路
 - [ ] 完成多 Agent 交接与 Review 流程
 - [ ] 完成可观测性、测试和演示部署
 
@@ -52,7 +53,7 @@ relay-hub/
 │   └── decisions/
 ├── apps/
 │   ├── api/               # Task/Run 状态、持久事件与实时广播
-│   ├── worker/            # BullMQ Consumer 与 Mock Agent 执行器
+│   ├── worker/            # BullMQ Consumer、Mock/Codex Adapter 与 Worktree 隔离
 │   └── web/               # 任务控制台与实时 Timeline
 └── packages/
     ├── contracts/         # 跨进程共享协议与状态机
@@ -83,6 +84,13 @@ RelayHub 的代码、包名、数据模型和 UI 都在本目录内独立实现�
 
 ## 本地启动
 
+真实 Codex Builder 需要先安装并登录 Codex CLI：
+
+```bash
+codex --version
+codex login status
+```
+
 ```bash
 cd relay-hub
 pnpm install
@@ -92,6 +100,13 @@ pnpm dev
 ```
 
 浏览器打开 `http://localhost:3000`。API 默认监听 `127.0.0.1:4100`；Worker 从 RelayHub 自己的 BullMQ 队列消费任务。PostgreSQL 使用 `127.0.0.1:55432`，Redis 使用 `127.0.0.1:56379`，并各自使用 Docker named volume 持久化数据。
+
+在创建任务区域填写目标 Git Workspace 路径，并选择：
+
+- `Mock Builder`：不调用外部模型，用于稳定演示平台链路。
+- `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
+
+Worktree 默认保存在 `~/.relay-hub/worktrees/<runId>`，任务结束后不会自动删除，方便用户检查 diff 和测试证据。可通过 `RELAY_HUB_WORKTREE_ROOT` 改变存放位置。
 
 如果本地已有 Phase 1A 的 `relay-hub/.data/state.json`，可执行一次无损导入：
 

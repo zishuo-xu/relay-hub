@@ -58,16 +58,19 @@
 
 目标：接入一个真实 Agent CLI，并处理真实执行的不确定性。
 
+当前状态：**首次真实运行里程碑已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。Worker lease 和崩溃 reconciliation 留到 Phase 4。
+
 工作项：
 
-1. 实现 Codex 或 Claude CLI Adapter。
-2. 实现 NDJSON 增量解析和统一事件转换。
-3. 实现 ProcessSupervisor、取消和退出码归类。
-4. 加入 Run token、工作目录校验和日志脱敏。
-5. 实现 Worker lease、heartbeat 与重启 reconciliation。
-6. 实现真实 Adapter 的结构化 outcome 与失败归类。
+1. [x] 实现 Codex CLI Adapter。
+2. [x] 实现 JSONL 增量解析和统一事件转换。
+3. [x] 实现 ProcessSupervisor、用户取消、超时和退出码归类。
+4. [x] 实现 Git Workspace 校验与独立 Worktree。
+5. [x] 固化 Run workspace 快照，并持久化 thread、branch 和 working directory。
+6. [ ] 加入单次 Run token 与更完整的内部接口鉴权。
+7. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
 
-退出条件：真实 Agent 能完成任务；取消、异常退出、重复队列消息均有确定结果。
+退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。首次真实运行已通过；lease/reconciliation 作为可靠性增强继续保留在 Phase 4。
 
 ## Phase 3：多 Agent 交接与 Review
 
@@ -122,7 +125,7 @@
 
 ## 推荐的下一步
 
-下一步进入 Phase 2：实现第一个真实 Builder Adapter（当前候选为 Codex CLI）、Worktree 隔离和子进程监管。架构继续保持 provider/model-neutral，不先接第二个 Agent。
+下一步进入 Phase 3：实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

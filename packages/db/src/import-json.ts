@@ -82,6 +82,7 @@ try {
             agentId: DEFAULT_MOCK_AGENT_ID,
             status: run.status,
             triggerType: 'user' as const,
+            workspaceRoot: '',
             attempt: run.attempt,
             version: run.version,
             createdAt: new Date(run.createdAt),
