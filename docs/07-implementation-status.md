@@ -1,5 +1,24 @@
 # 07. 实现状态
 
+## 2026-08-06：独立仓库运行切换
+
+### 已实现与验证
+
+- Web、API 和 Worker 已停止使用旧嵌套目录，并从 `/Users/xuzishuo/Documents/relay-hub` 重新启动。
+- PostgreSQL 与 Redis 没有重启或清理；原任务和事件仍可查询。
+- 默认 Workspace 已更新为独立仓库路径。
+- Mock 冒烟 Task `48fbfb07-a7b6-46e3-b9dd-63b6df91b634` 完成，Run `d2c8404f-5318-42c2-8530-34bab5a04250` succeeded，产生 10 个持久事件。
+- 真实 Codex 隔离 Task `6e23b6d2-a719-4f18-b25c-19d5ab66c523` 完成，Run `97d7b2c4-b501-496c-a8f9-f4947a8095f8` succeeded。
+- Codex 在独立 `relayhub/run-*` 分支和 Worktree 中执行只读命令，正确报告 Worktree、分支、Node 版本和 README 内容。
+- 独立源仓库和 Codex Worktree 最终都没有 tracked 修改。
+
+### 验证发现的边界
+
+- 新 Worktree 默认没有 `node_modules`；直接运行依赖型测试会因依赖不可解析而失败。
+- Codex 沙箱内在线安装受本机 `registry.npmmirror.com` DNS 影响，且不能假定可以读取完整宿主 pnpm store。
+- 当前 `run.completed` 表示 Agent 协议正常结束，不表示验收标准通过；即使 Agent 明确报告测试失败，Run/Task 仍会进入 succeeded/completed。
+- 因此进入 Reviewer 前必须补齐显式 Worktree bootstrap policy，并将“Agent 正常结束”和“任务验收通过”拆成不同判定。
+
 ## 2026-08-06：独立公开仓库
 
 ### 已实现

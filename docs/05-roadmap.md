@@ -58,7 +58,7 @@
 
 目标：接入一个真实 Agent CLI，并处理真实执行的不确定性。
 
-当前状态：**首次真实运行里程碑已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。Worker lease 和崩溃 reconciliation 留到 Phase 4。
+当前状态：**首次真实运行里程碑已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。独立仓库运行验收进一步确认了 CLI 与文件隔离，同时暴露了依赖 bootstrap 和执行结果语义两个必须在 Phase 3 前补齐的边界。Worker lease 和崩溃 reconciliation 留到 Phase 4。
 
 工作项：
 
@@ -67,8 +67,10 @@
 3. [x] 实现 ProcessSupervisor、用户取消、超时和退出码归类。
 4. [x] 实现 Git Workspace 校验与独立 Worktree。
 5. [x] 固化 Run workspace 快照，并持久化 thread、branch 和 working directory。
-6. [ ] 加入单次 Run token 与更完整的内部接口鉴权。
-7. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
+6. [ ] 定义并实现显式 Worktree bootstrap policy；不能假定新 Worktree 已安装依赖或可以联网。
+7. [ ] 区分 Agent 协议完成、命令/测试失败和验收通过，禁止失败结果自动收敛为 succeeded/completed。
+8. [ ] 加入单次 Run token 与更完整的内部接口鉴权。
+9. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
 
 退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。首次真实运行已通过；lease/reconciliation 作为可靠性增强继续保留在 Phase 4。
 
@@ -125,7 +127,13 @@
 
 ## 推荐的下一步
 
-下一步进入 Phase 3：实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
+进入 Phase 3 前先完成一个小型 hardening slice：
+
+1. 按既定简洁性基线拆分 `store.ts` 和 `page.tsx`，不改变运行行为。
+2. 为 Worktree 定义显式、可观测、可失败的 bootstrap 步骤。
+3. 将 Agent 正常结束、工具命令失败和验收结果分开建模并测试。
+
+完成后再实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 
