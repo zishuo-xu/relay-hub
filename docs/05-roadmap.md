@@ -123,3 +123,20 @@
 ## 推荐的下一步
 
 下一步进入 Phase 2：实现第一个真实 Builder Adapter（当前候选为 Codex CLI）、Worktree 隔离和子进程监管。架构继续保持 provider/model-neutral，不先接第二个 Agent。
+
+Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
+
+以下能力不属于这次“首次真实运行”，需要后续阶段继续完成：
+
+- Builder 向 Reviewer 的结构化 Handoff。
+- 不同 AgentProfile、provider 或 model 的独立审查。
+- `approved`、`changes_requested` 和用户最终确认闭环。
+- Worker 崩溃后的 lease reconciliation 与完整故障演示。
+
+因此里程碑应区分为：
+
+```text
+Phase 2：真实单 Agent 可运行
+-> Phase 3：真实多 Agent 协作可运行
+-> Phase 4：具备完整恢复与演示可靠性
+```

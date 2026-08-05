@@ -43,6 +43,10 @@ POST Task
 - Handoff/Review 应用服务和 Builder → Reviewer 闭环。
 - `require_user_confirmation` 的交互流程；当前 Mock 单 Agent 纵向切片仍直接完成 Task。
 
+### 下一个可运行里程碑
+
+Phase 2 完成 Codex CLI Adapter、隔离 Worktree 和子进程监管后，RelayHub 将可以执行真实的单 Builder 本地开发任务。多 Agent Handoff、Reviewer 和审批闭环仍属于 Phase 3，不能把首次真实 Agent 运行表述成完整多 Agent 最终态。
+
 ## 2026-08-06：Phase 1A 单 Agent 纵向切片
 
 ### 已实现
