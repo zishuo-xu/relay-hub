@@ -68,6 +68,7 @@ export default function HomePage() {
   const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState(DEFAULT_MOCK_AGENT_ID);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -178,6 +179,7 @@ export default function HomePage() {
       setSelectedTaskId(created.task.id);
       setDetail(created);
       await loadTasks();
+      setCreateOpen(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -213,7 +215,10 @@ export default function HomePage() {
           <h1>RelayHub</h1>
           <p className="subtitle">让 Agent 的执行、状态和协作过程变得可见、可恢复、可追溯。</p>
         </div>
-        <div className="system-status"><span /> Phase 2 · Codex Runtime</div>
+        <div className="hero-actions">
+          <div className="system-status"><span /> Phase 2 · Codex Runtime</div>
+          <button className="new-task-toggle" onClick={() => setCreateOpen(true)} type="button">+ 新建任务</button>
+        </div>
       </header>
 
       {error ? <div className="error-banner">{error}</div> : null}
@@ -300,12 +305,14 @@ export default function HomePage() {
           )}
         </section>
 
-        <aside className="panel create-panel">
+        {createOpen ? <button aria-label="关闭新建任务" className="drawer-backdrop" onClick={() => setCreateOpen(false)} type="button" /> : null}
+        <aside className={`panel create-panel ${createOpen ? 'open' : ''}`}>
           <div className="panel-heading">
             <div>
               <p className="section-label">NEW TASK</p>
               <h2>创建任务</h2>
             </div>
+            <button className="drawer-close" onClick={() => setCreateOpen(false)} type="button">关闭</button>
           </div>
           <form onSubmit={createTask}>
             <label>
@@ -314,11 +321,11 @@ export default function HomePage() {
             </label>
             <label>
               需求描述
-              <textarea onChange={(event) => setDescription(event.target.value)} required rows={5} value={description} />
+              <textarea onChange={(event) => setDescription(event.target.value)} required rows={3} value={description} />
             </label>
             <label>
               验收标准
-              <textarea onChange={(event) => setCriterion(event.target.value)} rows={3} value={criterion} />
+              <textarea onChange={(event) => setCriterion(event.target.value)} rows={2} value={criterion} />
             </label>
             <label>
               Git Workspace 路径
