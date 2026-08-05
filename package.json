@@ -1,0 +1,36 @@
+{
+  "name": "relay-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A multi-agent collaboration control plane",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "contracts:build": "pnpm --filter @relay-hub/contracts build",
+    "packages:build": "pnpm --filter './packages/**' build",
+    "dev": "pnpm packages:build && concurrently -n api,worker,web -c blue,magenta,green \"pnpm --filter @relay-hub/api dev\" \"pnpm --filter @relay-hub/worker dev\" \"pnpm --filter @relay-hub/web dev\"",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm packages:build && pnpm -r typecheck",
+    "test": "pnpm packages:build && pnpm -r test",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "infra:up": "docker compose up -d --wait postgres redis",
+    "infra:status": "docker compose ps",
+    "infra:stop": "docker compose stop postgres redis",
+    "db:generate": "pnpm --filter @relay-hub/db db:generate",
+    "db:migrate": "pnpm contracts:build && pnpm --filter @relay-hub/db db:migrate",
+    "db:import-json": "pnpm contracts:build && pnpm --filter @relay-hub/db db:import-json"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.23",
+      "sharp": "^0.35.0"
+    }
+  }
+}

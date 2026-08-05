@@ -1,0 +1,37 @@
+name: relay-hub
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: relayhub
+      POSTGRES_USER: relayhub
+      POSTGRES_PASSWORD: relayhub_dev
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - relay_hub_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayhub -d relayhub"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    volumes:
+      - relay_hub_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  relay_hub_postgres_data:
+  relay_hub_redis_data:

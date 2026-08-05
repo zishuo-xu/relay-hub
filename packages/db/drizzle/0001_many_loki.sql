@@ -1,0 +1,3 @@
+ALTER TABLE "runs" ADD CONSTRAINT "runs_parent_run_id_runs_id_fk" FOREIGN KEY ("parent_run_id") REFERENCES "public"."runs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "runs" ADD CONSTRAINT "runs_retry_of_run_id_runs_id_fk" FOREIGN KEY ("retry_of_run_id") REFERENCES "public"."runs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_current_run_id_runs_id_fk" FOREIGN KEY ("current_run_id") REFERENCES "public"."runs"("id") ON DELETE no action ON UPDATE no action;

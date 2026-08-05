@@ -1,0 +1,253 @@
+# 03. 系统架构
+
+## 架构结论
+
+MVP 使用“模块化单体 API + 独立 Worker”的结构。API 负责一致性、权限和事件持久化；Worker 负责队列消费与不可信 Agent 子进程；Web 只消费 API 和实时事件，不持有业务真相。
+
+## 设计方法
+
+状态：**Accepted。**
+
+RelayHub 采用“整体设计、分层实现”，不是边写表边决定系统：
+
+1. 先定义系统最终要解决的问题、边界和非目标。
+2. 再定义稳定的领域对象、所有权、状态机和通信协议。
+3. 再确定 PostgreSQL、Queue、WebSocket 和 Agent Runtime 各自承载哪些职责。
+4. 最后按可运行纵向切片逐层实现，每一层都服从整体蓝图。
+
+整体设计不等于一次性预测全部代码细节。它先固定难以随意改变的语义边界；部署规模、索引、缓存和可选字段可以根据验证结果继续演进。
+
+```text
+产品目标与边界
+  -> 领域模型与状态机
+  -> 命令、事件与所有权
+  -> 目标架构与安全边界
+  -> 数据模型和 API
+  -> 分阶段纵向实现
+```
+
+```mermaid
+flowchart LR
+    U["用户"] --> W["Web Console"]
+    W -->|"HTTP commands / queries"| API["Control Plane API"]
+    W <-->|"WebSocket task room"| RT["Realtime Gateway"]
+
+    API --> DB[("PostgreSQL")]
+    DB --> OB["Transactional Outbox"]
+    OB --> Q[("Redis / BullMQ")]
+    API --> RT
+
+    Q --> WK["Agent Worker"]
+    WK --> A["AgentAdapter"]
+    A --> M["Mock Agent"]
+    A --> C["Codex or Claude CLI"]
+    WK -->|"append events and outcomes"| API
+
+    API --> O["Orchestrator"]
+    O -->|"create child run"| Q
+```
+
+## 组件职责
+
+### Web Console
+
+- Workspace、Agent 和 Task 管理。
+- Task Timeline 与流式输出。
+- 取消、重试、人工裁决。
+- 不自行推断最终状态；以服务端快照为准。
+
+### Control Plane API
+
+- 命令校验、身份与 Workspace 边界。
+- Task / Run / Handoff / Review 的事务写入。
+- 状态机守卫和幂等处理。
+- 查询快照、历史事件和健康状态。
+
+### Orchestrator
+
+- 根据 Task 和 Handoff 创建 Run。
+- 控制 builder → reviewer 的流程。
+- 保证目标 Agent 可用且没有形成循环交接。
+- 根据 Review 结论推进 Task。
+
+### Queue
+
+- 解耦用户请求与长时间 Agent 执行。
+- 提供领取、重试、延迟和并发限制。
+- 队列不是最终状态来源；数据库中的 Run 才是。
+
+### PostgreSQL、Queue 与 Handoff 的职责边界
+
+状态：**Accepted target architecture。**
+
+这三个组件不能互相替代：
+
+| 组件 | 核心职责 | 不负责什么 |
+|---|---|---|
+| PostgreSQL | 保存 Task、Run、Handoff、Review 和审计事件，是可恢复事实来源 | 不直接唤醒 Agent，不承担实时界面推送 |
+| Redis/BullMQ | 投递待执行 Run、并发控制、延迟和重试 | 不作为业务状态或历史真相源 |
+| Handoff API | 表达 Agent A 要把什么工作、证据和验收要求交给 Agent B | 不直接共享 A 的隐藏推理或 B 的 Session |
+
+因此 PostgreSQL 会是最终存储架构的一部分，但它本身不是 Agent 的聊天协议。它更像持久邮箱和档案库；Queue 是邮递员；Handoff 是信件内容。
+
+PostgreSQL 和 Redis/BullMQ 都是正式运行架构的基础设施，不是二选一，也不是后期可有可无的优化。Phase 1A 的 HTTP 轮询只用于验证纵向链路；进入真实 Agent 前必须同时完成 PostgreSQL 事实层和 BullMQ 执行层。
+
+Handoff 的目标写入顺序：
+
+```text
+验证来源 Run
+  -> 在同一事务写 Handoff + 审计事件 + Outbox
+  -> Outbox Publisher 投递 Queue
+  -> Worker 为目标 Agent 创建或领取子 Run
+```
+
+即使 Queue 消息重复、过期或已经被消费，平台仍能从 PostgreSQL 还原谁在何时向谁交接了什么。
+
+### Agent Worker
+
+- 领取 Run 并原子认领执行权。
+- 构造受限命令参数和工作目录。
+- 管理子进程、取消信号、退出码和输出流。
+- 将原始事件交给 Adapter 转换，再批量提交平台事件。
+
+### AgentAdapter
+
+- 隔离不同 CLI 的命令、事件协议和 Session 语义。
+- 只产生平台统一事件，不直接修改 Task 状态。
+- 首先实现 Mock Adapter，再实现一个真实 CLI Adapter。
+
+Builder 与 Reviewer 是工作流角色，不绑定具体模型或供应商。AgentProfile 分别选择 Adapter、provider、model 和 tool policy。同一工作流可以使用 Codex Builder + Claude Reviewer，也可以使用其他组合。
+
+ReviewPolicy 可以配置：
+
+- Reviewer 必须与 Builder 使用不同 AgentProfile；
+- 是否进一步要求不同 provider 或 model family；
+- 无符合条件 Reviewer 时是阻塞、降级还是请求用户选择。
+
+### Realtime Gateway
+
+- 按 Task 房间广播已持久化事件。
+- 每条事件携带数据库事件 ID。
+- 客户端发现缺口后走 HTTP 补拉，不依赖 WebSocket 重放全部历史。
+
+## 领域模块
+
+```text
+control-plane/
+├── workspace
+├── agents
+├── tasks
+├── runs
+├── handoffs
+├── reviews
+├── orchestration
+├── audit-events
+└── realtime
+
+worker/
+├── queue-consumer
+├── process-supervisor
+├── adapters
+│   ├── mock
+│   └── codex-or-claude
+└── event-reporter
+```
+
+模块可以共处一个仓库和少量进程，但禁止跨模块直接修改别人的表；通过应用服务调用并在一个事务中完成需要一致性的变更。
+
+## 关键执行时序
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Web
+    participant API
+    participant DB
+    participant Queue
+    participant Worker
+    participant Agent
+
+    User->>Web: 创建 Task
+    Web->>API: POST /tasks + Idempotency-Key
+    API->>DB: 同一事务写 Task、Run、Event、Outbox
+    DB-->>Queue: Outbox Publisher 发布 run.queued
+    API-->>Web: Task 快照
+    Queue->>Worker: 领取 Run
+    Worker->>API: claim(runId, workerId)
+    API->>DB: queued -> claimed
+    Worker->>Agent: 启动受限子进程
+    Agent-->>Worker: NDJSON / text events
+    Worker->>API: 批量追加统一事件
+    API->>DB: 先持久化事件
+    API-->>Web: 再广播事件
+    Agent-->>Worker: 完成或失败
+    Worker->>API: 提交 outcome
+    API->>DB: 更新 Run 与 Task
+```
+
+## 状态一致性策略
+
+### 命令与事件
+
+- 命令表达意图，例如“取消 Run”。
+- 事件表达已经发生的事实，例如“子进程退出且已回收”。
+- `cancel_requested` 可以立即记录，但只有 Worker 确认后才进入 `cancelled`。
+
+### 事务边界
+
+创建 Task 时，在同一数据库事务内写入：
+
+1. Task。
+2. 初始 Run。
+3. 审计事件。
+4. Outbox 记录。
+
+后台 Publisher 将 Outbox 投递到队列，避免“数据库成功但队列消息丢失”。
+
+### 乐观并发
+
+Task 与 Run 带 `version`。更新语句包含旧版本条件，受影响行数为 0 时说明有并发更新，调用方重新读取后决定重试或拒绝。
+
+## 失败场景与处理
+
+| 场景 | 处理 |
+|---|---|
+| 队列消息重复 | Worker claim 使用唯一 Run ID 和状态条件，重复消息直接确认 |
+| Worker 在 claim 后崩溃 | lease 到期后由 reconciler 标记 `worker_lost` 并按策略重试 |
+| Agent 输出非法 JSON | 记录 `protocol_error`，保留受限原始片段用于诊断 |
+| Agent 长时间无输出 | 结合进程存活和可配置超时判断，不把 stderr 当作有效进度 |
+| WebSocket 断线 | 使用最后 event ID 通过 HTTP 补拉 |
+| Handoff 形成循环 | 限制最大深度并检测祖先 Agent/Run 链 |
+| API 写成功但队列失败 | Outbox Publisher 重试 |
+| 用户重复点击 | Idempotency-Key 返回首次命令结果 |
+
+## 安全边界
+
+- 子进程使用参数数组启动，禁止拼接 shell 字符串。
+- Workspace 根目录先 `realpath`，所有文件路径必须保持在根目录下。
+- Agent 运行使用最小权限与显式工具策略。
+- callback token 只绑定单次 Run，并设置有效期。
+- 日志统一脱敏 API key、token、cookie 和环境变量。
+- WebSocket 房间由服务端授权，客户端不能任意加入其他 Workspace。
+- MVP 默认单用户本地模式，但身份字段和 ownership 从一开始保留。
+
+## 技术栈建议
+
+| 层 | 选择 | 原因 |
+|---|---|---|
+| 语言 | TypeScript | 前后端共享类型，适合 CLI 与流式事件处理 |
+| Web | Next.js + React | 快速构建操作台与任务 Timeline |
+| API | Fastify | 轻量、Schema 友好、WebSocket 生态成熟 |
+| 数据库 | PostgreSQL + Drizzle ORM | 事务、约束、可读 SQL 和迁移能力 |
+| 队列 | Redis + BullMQ | 长任务、重试、并发和延迟任务 |
+| 实时通信 | Socket.IO | 房间、重连和事件模型易于演示 |
+| 校验 | Zod | API、队列与 Adapter 边界统一校验 |
+| 测试 | Vitest + Testcontainers | 单元测试与真实数据库/Redis 集成测试 |
+
+实施分两步：Phase 1A 先用可替换的本地 Store 和领取端口验证纵向切片；Phase 1B 已在真实 CLI 之前同时切换到 PostgreSQL、Transactional Outbox 和 Redis/BullMQ。
+
+### 当前实现状态
+
+Phase 1B 已用 PostgreSQL Repository 替换 JSON Store，并用 BullMQ 消费替换 Worker HTTP 短轮询。创建任务的事务同时写入 Task、Run、首个 RunEvent 和 Outbox；Publisher 成功投递后才把 Outbox 标为 `published`。
+
+Queue job 只携带 `runId`。Worker 收到消息后仍需通过 PostgreSQL 条件更新完成 `queued -> claimed`，所以重复 job 只能有一个获得执行权。Phase 1A JSON 文件保留为旧数据备份，并提供幂等导入命令，不再是运行真相源。
