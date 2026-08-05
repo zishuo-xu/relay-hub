@@ -24,3 +24,13 @@ Update existing topic documents before creating a new document. Add an ADR when 
 
 Documentation updates do not authorize unrelated code changes. If a discussion changes implementation scope materially, record the decision and ask for direction before expanding the build.
 
+## Verification, commit, and GitHub push
+
+After every RelayHub code or documentation change:
+
+1. Run verification proportional to the change and report the result.
+2. Commit only files under `relay-hub/`; preserve unrelated parent-repository changes.
+3. Push the commit to the RelayHub GitHub development branch.
+4. Report both the commit SHA and push result to the user.
+
+Do not leave completed RelayHub changes only in the local repository.
