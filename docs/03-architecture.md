@@ -4,6 +4,35 @@
 
 MVP 使用“模块化单体 API + 独立 Worker”的结构。API 负责一致性、权限和事件持久化；Worker 负责队列消费与不可信 Agent 子进程；Web 只消费 API 和实时事件，不持有业务真相。
 
+## 简洁性基线
+
+状态：**Accepted。**
+
+RelayHub 的目标不是通过增加服务数量证明架构能力，而是用尽可能少的组件清楚表达任务编排、Agent 隔离和可靠执行。MVP 到多 Agent 闭环完成前，保持以下约束：
+
+- 应用进程只保留 Web、API 和 Worker；Orchestrator 是 API 内部模块，不独立部署。
+- PostgreSQL 是唯一业务事实源；BullMQ job 只携带 `runId`；WebSocket 只负责已持久化事件的通知。
+- Builder、Reviewer 是同一 Run/AgentProfile 模型上的角色，不为每个角色复制一套执行系统。
+- 新 Agent 通过 `AgentAdapter` 接入，不为不同模型复制 Worker、队列或状态机。
+- 领域模块可以拆文件和明确依赖，但不为每张表创建形式化 Repository、Service、DTO 和 Mapper 套件。
+- 不引入微服务、事件溯源、CQRS、通用工作流 DSL 或插件框架，除非当前需求出现可验证的阻塞证据。
+- 新功能必须先说明它属于现有哪个模块、修改哪个状态机、产生哪些持久事件；无法回答时不开始编码。
+
+判断一次抽象是否值得保留，只看三个问题：是否消除了已经发生的重复，是否守住了进程或数据边界，是否让核心执行链更容易测试。仅仅为了“以后可能需要”的抽象不进入 MVP。
+
+### 当前结构健康度
+
+状态：**Implemented assessment（2026-08-06）。**
+
+当前约 2,600 行 TypeScript，主链路仍可由一个人完整追踪：`Web -> API transaction/outbox -> BullMQ -> Worker -> Adapter -> persisted event`。基础设施数量虽然包含 PostgreSQL 和 Redis，但两者职责互不重叠，因此属于必要复杂度。
+
+进入 Phase 3 前需要控制两个增长点：
+
+- `apps/api/src/store.ts` 当前约 490 行。加入 Handoff/Review 前，按 Task/Run 与 Review/Handoff 的事务职责拆文件，但继续共享同一个数据库和事务模型。
+- `apps/web/app/page.tsx` 当前约 361 行。加入 Review/Finding UI 前，拆出任务列表、Run Timeline 和创建任务抽屉组件，但不引入额外前端状态框架。
+
+以上是按功能边界拆代码，不是增加部署单元或抽象层。拆分后的验收标准是入口文件变薄、事务边界仍清楚、端到端链路没有增加新的跳转层。
+
 ## 设计方法
 
 状态：**Accepted。**
