@@ -1,0 +1,2 @@
+ALTER TABLE "runs" ADD COLUMN "bootstrap_policy_snapshot" jsonb DEFAULT '{"steps":[]}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "workspaces" ADD COLUMN "bootstrap_policy" jsonb DEFAULT '{"steps":[]}'::jsonb NOT NULL;

@@ -36,6 +36,8 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成 Mock Agent 单 Agent 纵向切片
 - [x] 完成 PostgreSQL、Drizzle migration、Transactional Outbox 与 Redis/BullMQ 基础设施层
 - [x] 完成真实 Codex CLI Builder、隔离 Worktree、子进程监管与取消链路
+- [x] 分离 Agent 执行结果与 Task 验收，持久化结构化 RunOutcome
+- [x] 完成 provider-neutral Workspace Bootstrap、Run 配置快照与失败阻断
 - [ ] 完成多 Agent 交接与 Review 流程
 - [ ] 完成可观测性、测试和演示部署
 
@@ -109,6 +111,16 @@ pnpm dev
 - `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
 
 Worktree 默认保存在 `~/.relay-hub/worktrees/<runId>`，任务结束后不会自动删除，方便用户检查 diff 和测试证据。可通过 `RELAY_HUB_WORKTREE_ROOT` 改变存放位置。
+
+Workspace 可以显式配置与 Agent 厂商无关的准备步骤；空 `steps` 表示无需准备。下面示例会在每个新 Run 的隔离 Worktree 中使用本机 pnpm store 安装锁定依赖，成功后才启动所选 Agent：
+
+```bash
+curl -X PATCH http://127.0.0.1:4100/api/workspaces/00000000-0000-4000-8000-000000000001 \
+  -H 'content-type: application/json' \
+  --data '{"bootstrapPolicy":{"steps":[{"name":"Install dependencies","command":"pnpm","args":["install","--offline","--frozen-lockfile"],"timeoutMs":120000}]}}'
+```
+
+不要在 Bootstrap 参数中放入密钥。项目语言或锁文件自动探测目前不会直接执行命令，持久化的显式 Workspace 策略才是运行事实来源。
 
 如果本地已有 Phase 1A 的 `relay-hub/.data/state.json`，可执行一次无损导入：
 

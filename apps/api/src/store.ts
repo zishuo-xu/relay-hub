@@ -3,6 +3,7 @@ import {
   type AgentEvent,
   type AgentAdapterType,
   type AgentProfile,
+  type BootstrapPolicy,
   canTransitionRun,
   canTransitionTask,
   type ClaimedRun,
@@ -70,6 +71,7 @@ function mapRun(row: RunRow): Run {
     attempt: row.attempt,
     triggerType: row.triggerType,
     workspaceRoot: row.workspaceRoot,
+    bootstrapPolicySnapshot: row.bootstrapPolicySnapshot,
     version: row.version,
     createdAt: toIso(row.createdAt),
     ...(row.parentRunId ? { parentRunId: row.parentRunId } : {}),
@@ -92,6 +94,7 @@ function mapWorkspace(row: WorkspaceRow): Workspace {
     id: row.id,
     name: row.name,
     rootPath: row.rootPath,
+    bootstrapPolicy: row.bootstrapPolicy,
     defaultCompletionPolicy: row.defaultCompletionPolicy,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
@@ -146,10 +149,13 @@ export class PostgresStore {
     return rows.map(mapWorkspace);
   }
 
-  async updateWorkspaceRoot(workspaceId: string, rootPath: string): Promise<Workspace | null> {
+  async updateWorkspace(
+    workspaceId: string,
+    patch: { rootPath?: string; bootstrapPolicy?: BootstrapPolicy },
+  ): Promise<Workspace | null> {
     const [row] = await this.db
       .update(workspaces)
-      .set({ rootPath, updatedAt: new Date() })
+      .set({ ...patch, updatedAt: new Date() })
       .where(eq(workspaces.id, workspaceId))
       .returning();
     return row ? mapWorkspace(row) : null;
@@ -221,7 +227,7 @@ export class PostgresStore {
         .limit(1);
       if (!agent?.enabled) throw new Error(`Agent is missing or disabled: ${input.agentId}`);
       const [workspace] = await tx
-        .select({ rootPath: workspaces.rootPath })
+        .select({ rootPath: workspaces.rootPath, bootstrapPolicy: workspaces.bootstrapPolicy })
         .from(workspaces)
         .where(eq(workspaces.id, DEFAULT_WORKSPACE_ID))
         .limit(1);
@@ -246,6 +252,7 @@ export class PostgresStore {
         status: 'queued',
         triggerType: 'user',
         workspaceRoot: workspace.rootPath,
+        bootstrapPolicySnapshot: workspace.bootstrapPolicy,
         createdAt: now,
       });
       await tx.update(tasks).set({ currentRunId: runId }).where(eq(tasks.id, taskId));
@@ -422,6 +429,14 @@ export class PostgresStore {
           if (task.status === 'queued') nextTaskStatus = 'running';
           runPatch.startedAt = now;
           if (agentEvent.sessionRef) runPatch.sessionRef = agentEvent.sessionRef;
+          break;
+        case 'run.bootstrap_started':
+        case 'run.bootstrap_step_completed':
+        case 'run.bootstrap_completed':
+        case 'run.bootstrap_failed':
+          if (run.status !== 'starting') {
+            throw new Error(`Cannot append ${agentEvent.type} while run is ${run.status}`);
+          }
           break;
         case 'run.completed':
           nextRunStatus = 'succeeded';

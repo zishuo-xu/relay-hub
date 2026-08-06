@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import { AgentEventSchema, RunQueueJobSchema, type AgentEvent, type ClaimedRun } from '@relay-hub/contracts';
 import { createRunWorker } from '@relay-hub/queue';
+import { runWorkspaceBootstrap } from './bootstrap-runner.js';
 import { runCodexAgent } from './codex-adapter.js';
 import { runMockAgent } from './mock-agent.js';
 import { WorktreeManager } from './worktree-manager.js';
@@ -41,8 +42,12 @@ async function execute(claimed: ClaimedRun): Promise<void> {
   let cancellationPoll: ReturnType<typeof setInterval> | undefined;
   try {
     let events: AsyncGenerator<AgentEvent>;
-    if (claimed.agent.adapterType === 'codex_cli') {
+    let workingDirectory = claimed.run.workspaceRoot;
+    let cancellation: AbortController | undefined;
+
+    if (claimed.agent.adapterType !== 'mock') {
       const prepared = await worktreeManager.prepare(claimed.run.workspaceRoot, claimed.run.id);
+      workingDirectory = prepared.workingDirectory;
       sequence += 1;
       await reportEvent(claimed.run.id, sequence, {
         type: 'run.prepared',
@@ -50,21 +55,35 @@ async function execute(claimed: ClaimedRun): Promise<void> {
         workingDirectory: prepared.workingDirectory,
         branchName: prepared.branchName,
       });
-      const cancellation = new AbortController();
+      const executionCancellation = new AbortController();
+      cancellation = executionCancellation;
       let checkingCancellation = false;
       cancellationPoll = setInterval(() => {
         if (checkingCancellation) return;
         checkingCancellation = true;
         void getRunControl(claimed.run.id)
           .then((control) => {
-            if (control.status === 'cancelling') cancellation.abort();
+            if (control.status === 'cancelling') executionCancellation.abort();
           })
           .catch((error) => console.error(`Cancellation check failed for ${claimed.run.id}`, error))
           .finally(() => {
             checkingCancellation = false;
           });
       }, 500);
-      events = runCodexAgent(claimed, prepared.workingDirectory, { signal: cancellation.signal });
+
+      let bootstrapReachedTerminal = false;
+      for await (const event of runWorkspaceBootstrap(claimed.run.bootstrapPolicySnapshot, workingDirectory, {
+        signal: executionCancellation.signal,
+      })) {
+        sequence += 1;
+        await reportEvent(claimed.run.id, sequence, event);
+        if (event.type === 'run.failed' || event.type === 'run.cancelled') bootstrapReachedTerminal = true;
+      }
+      if (bootstrapReachedTerminal) return;
+    }
+
+    if (claimed.agent.adapterType === 'codex_cli') {
+      events = runCodexAgent(claimed, workingDirectory, { ...(cancellation ? { signal: cancellation.signal } : {}) });
     } else if (claimed.agent.adapterType === 'mock') {
       events = runMockAgent(claimed);
     } else {

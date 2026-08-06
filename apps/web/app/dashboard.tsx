@@ -19,6 +19,10 @@ const eventLabels: Record<string, string> = {
   'task.created': '任务已创建',
   'run.claimed': 'Worker 已领取',
   'run.prepared': '隔离环境就绪',
+  'run.bootstrap_started': '正在准备环境',
+  'run.bootstrap_step_completed': '准备步骤完成',
+  'run.bootstrap_completed': '环境准备完成',
+  'run.bootstrap_failed': '环境准备失败',
   'run.started': 'Agent 已启动',
   'output.delta': 'Agent 输出',
   'tool.called': '工具调用',
@@ -39,6 +43,14 @@ function eventText(event: RunEvent): string {
       return `Worker ${String(event.payload.workerId)} 已领取任务`;
     case 'run.prepared':
       return `已创建隔离分支 ${String(event.payload.branchName)}`;
+    case 'run.bootstrap_started':
+      return `开始执行 ${String(event.payload.stepCount)} 个 Workspace 准备步骤`;
+    case 'run.bootstrap_step_completed':
+      return `${String(event.payload.name)} 已完成：${String(event.payload.command)}`;
+    case 'run.bootstrap_completed':
+      return `Workspace 环境准备完成，耗时 ${String(event.payload.durationMs)}ms`;
+    case 'run.bootstrap_failed':
+      return `${String(event.payload.name)} 失败：${String(event.payload.message)}`;
     case 'run.started':
       return 'Agent 开始执行';
     case 'output.delta':
@@ -58,7 +70,7 @@ function eventText(event: RunEvent): string {
     case 'task.review_requested':
       return 'Builder 结果已进入独立 Reviewer 审查。';
     case 'run.cancellation_requested':
-      return '用户已请求取消，正在回收 Codex 子进程。';
+      return '用户已请求取消，正在回收 Agent 子进程。';
     case 'run.cancelled':
       return String(event.payload.reason ?? 'Run 已取消');
     case 'run.failed':
@@ -69,8 +81,8 @@ function eventText(event: RunEvent): string {
 }
 
 function eventTone(event: RunEvent): string {
-  if (event.type === 'run.failed' || event.type === 'run.cancelled') return 'danger';
-  if (event.type === 'run.completed') return 'success';
+  if (event.type === 'run.failed' || event.type === 'run.cancelled' || event.type === 'run.bootstrap_failed') return 'danger';
+  if (event.type === 'run.completed' || event.type === 'run.bootstrap_completed') return 'success';
   if (event.type === 'output.delta') return 'output';
   if (event.type.startsWith('tool.')) return 'tool';
   return 'system';

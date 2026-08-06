@@ -1,5 +1,5 @@
 import cors from '@fastify/cors';
-import { AgentEventSchema, CreateTaskInputSchema, type RunEvent } from '@relay-hub/contracts';
+import { AgentEventSchema, BootstrapPolicySchema, CreateTaskInputSchema, type RunEvent } from '@relay-hub/contracts';
 import { createDatabase } from '@relay-hub/db';
 import Fastify from 'fastify';
 import { Server as SocketServer } from 'socket.io';
@@ -54,9 +54,20 @@ app.get('/api/workspaces', async () => ({ workspaces: await store.listWorkspaces
 
 app.patch('/api/workspaces/:workspaceId', async (request, reply) => {
   const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
-  const { rootPath } = z.object({ rootPath: z.string().trim().min(1).max(4_096) }).parse(request.body);
-  const canonicalRoot = await validateWorkspaceRoot(rootPath);
-  const workspace = await store.updateWorkspaceRoot(workspaceId, canonicalRoot);
+  const input = z
+    .object({
+      rootPath: z.string().trim().min(1).max(4_096).optional(),
+      bootstrapPolicy: BootstrapPolicySchema.optional(),
+    })
+    .refine((value) => value.rootPath !== undefined || value.bootstrapPolicy !== undefined, {
+      message: 'At least one workspace field is required',
+    })
+    .parse(request.body);
+  const canonicalRoot = input.rootPath ? await validateWorkspaceRoot(input.rootPath) : undefined;
+  const workspace = await store.updateWorkspace(workspaceId, {
+    ...(canonicalRoot ? { rootPath: canonicalRoot } : {}),
+    ...(input.bootstrapPolicy ? { bootstrapPolicy: input.bootstrapPolicy } : {}),
+  });
   if (!workspace) return reply.code(404).send({ error: 'workspace_not_found' });
   return workspace;
 });

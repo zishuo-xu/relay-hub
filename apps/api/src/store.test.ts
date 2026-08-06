@@ -35,6 +35,8 @@ suite('PostgresStore integration', () => {
     const runId = created.value.detail.task.currentRunId;
     const claimed = await store.claimRun(runId, 'integration-worker');
     expect(claimed.value?.run.status).toBe('claimed');
+    expect(claimed.value?.workspace.bootstrapPolicy).toEqual({ steps: [] });
+    expect(claimed.value?.run.bootstrapPolicySnapshot).toEqual({ steps: [] });
     expect((await store.claimRun(runId, 'duplicate-worker')).value).toBeNull();
 
     await store.recordAgentEvent(runId, 'event-1', { type: 'run.started' });

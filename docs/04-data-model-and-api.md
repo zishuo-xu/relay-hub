@@ -108,6 +108,7 @@ erDiagram
 | `id` | UUID |
 | `name` | 展示名称 |
 | `root_path` | 规范化后的允许工作目录 |
+| `bootstrap_policy` | provider-neutral 项目环境准备步骤；空步骤表示 `none` |
 | `created_at`, `updated_at` | 审计时间 |
 
 ### `agent_profiles`
@@ -147,6 +148,7 @@ erDiagram
 - `outcome jsonb`: 成功 Run 的结构化执行结果，包含摘要与实际命令证据；不等同于 Task 验收通过
 - `started_at`, `finished_at`
 - `workspace_root`: 创建 Run 时固化的执行 Workspace 快照
+- `bootstrap_policy_snapshot`: 创建 Run 时固化的准备策略，避免排队期间配置漂移
 - `worktree_path`, `working_directory`, `branch_name`: 隔离执行与人工检查入口
 
 重试创建新行，而不是把失败行改回 queued。
@@ -238,6 +240,10 @@ POST   /internal/runs/:runId/reviews
 ```ts
 type AgentEvent =
   | { type: 'run.prepared'; worktreePath: string; workingDirectory: string; branchName: string }
+  | { type: 'run.bootstrap_started'; stepCount: number }
+  | { type: 'run.bootstrap_step_completed'; stepIndex: number; name: string; command: string }
+  | { type: 'run.bootstrap_completed'; stepCount: number; durationMs: number }
+  | { type: 'run.bootstrap_failed'; stepIndex: number; code: BootstrapFailureCode; message: string }
   | { type: 'run.started'; sessionRef?: string }
   | { type: 'output.delta'; text: string }
   | { type: 'tool.called'; callId: string; name: string; inputSummary: unknown }
@@ -250,6 +256,8 @@ type AgentEvent =
 ```
 
 Adapter 事件先经过 Zod 校验，再进入平台。无法识别的供应商事件可记录为诊断数据，但不能直接推进业务状态。
+
+Workspace Bootstrap 在 `run.prepared` 与 `run.started` 之间产生 `run.bootstrap_started`、`run.bootstrap_step_completed`、`run.bootstrap_completed` 或 `run.bootstrap_failed`。失败后紧接 `run.failed(code=bootstrap_failed)`；因此“环境准备失败”和“Agent 执行或测试失败”具有不同机器语义。
 
 `RunOutcome` 当前包含执行摘要和命令证据（命令、退出码、状态和受限输出摘要）。它属于 Run 的执行事实；即使命令失败后 Agent 协议正常结束，Run 仍可以是 `succeeded`，但 Task 不能因此自动变成 `completed`。验收结论必须由后续 Reviewer verdict、CompletionPolicy 或人工裁决产生。
 

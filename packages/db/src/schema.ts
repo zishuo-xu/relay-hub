@@ -12,7 +12,7 @@ import {
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import type { CompletionPolicy, RunOutcome, RunStatus, TaskStatus } from '@relay-hub/contracts';
+import type { BootstrapPolicy, CompletionPolicy, RunOutcome, RunStatus, TaskStatus } from '@relay-hub/contracts';
 
 const TASK_STATUS_VALUES = [
   'draft',
@@ -68,6 +68,7 @@ export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   rootPath: text('root_path').notNull(),
+  bootstrapPolicy: jsonb('bootstrap_policy').$type<BootstrapPolicy>().default({ steps: [] }).notNull(),
   defaultCompletionPolicy: completionPolicyEnum('default_completion_policy')
     .$type<CompletionPolicy>()
     .default('require_user_confirmation')
@@ -135,6 +136,10 @@ export const runs = pgTable(
     status: runStatusEnum('status').$type<RunStatus>().default('queued').notNull(),
     attempt: integer('attempt').default(1).notNull(),
     workspaceRoot: text('workspace_root').default('').notNull(),
+    bootstrapPolicySnapshot: jsonb('bootstrap_policy_snapshot')
+      .$type<BootstrapPolicy>()
+      .default({ steps: [] })
+      .notNull(),
     worktreePath: text('worktree_path'),
     workingDirectory: text('working_directory'),
     branchName: text('branch_name'),

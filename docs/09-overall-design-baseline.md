@@ -399,6 +399,17 @@ flowchart TB
 9. 关键状态变化必须留下 append-only Event 和因果引用。
 10. 模型输出不是完成证明；完成由合法终态事件和必要证据共同决定。
 
+### Workspace 环境与 Agent Runtime 边界
+
+状态：**Accepted；显式 BootstrapPolicy 已实现。**
+
+- Workspace 拥有项目语言、运行时、依赖管理和准备步骤形成的环境契约。
+- AgentProfile 拥有 Adapter、provider、model、能力与工具权限。
+- 多个 AgentProfile 复用同一个 Workspace 环境契约；新增 Agent 不重新定义项目依赖。
+- Bootstrap 不盘点整台机器的全部依赖，也不把某个 Agent CLI 写入项目准备策略。
+- 自动识别锁文件或语言只能作为待确认建议；持久化的显式策略才是执行事实来源。
+- Run 必须保存 Workspace 策略快照，保证历史执行能够解释和复现。
+
 ---
 
 ## 稳定核心与允许演进

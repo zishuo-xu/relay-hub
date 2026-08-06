@@ -1,5 +1,25 @@
 # 07. 实现状态
 
+## 2026-08-06：Phase 2.6 provider-neutral Workspace Bootstrap
+
+### 已实现
+
+- `BootstrapPolicy` 属于 Workspace 项目环境契约，不包含 Codex、Claude Code、OpenCode 或模型字段；空步骤表示 `none`。
+- Workspace PATCH API 支持显式配置最多 8 个 `command + args + timeoutMs` 步骤。
+- 创建 Run 时固化 `bootstrapPolicySnapshot`，避免排队后配置变化影响执行复现。
+- Worker 在隔离 Worktree 创建后、真实 AgentAdapter 启动前执行 Bootstrap，复用 ProcessSupervisor 的 shell-free 参数数组、环境变量白名单、超时与取消能力。
+- 持久化 `run.bootstrap_started`、step completed、completed 和 failed 事件；前端 Timeline 已提供对应中文语义和状态色。
+- spawn、超时或非零退出统一收敛为 `bootstrap_failed`，并保证 Agent 不启动。
+- PostgreSQL migration `0004_dusty_wong.sql` 为 Workspace 增加策略、为 Run 增加策略快照；均带空策略默认值，兼容既有数据。
+
+### 验证证据
+
+- BootstrapRunner 覆盖空策略、成功 argv 步骤和非零退出阻断，3/3 通过；Worker 当前合计 6/6 测试通过。
+- 独立测试数据库 migration 与 API 4/4 测试通过，确认 Workspace 默认策略和 Run 快照均可持久化读取。
+- 独立临时 Git 仓库、PostgreSQL 测试库和临时 Redis 全链路验证：失败策略被固化到 Run，事件顺序为 prepared → bootstrap started → bootstrap failed → run failed。
+- 冒烟 Run 最终 `failureCode=bootstrap_failed`，事件中不存在 `run.started`，证明真实 Agent 未被启动。
+- 正式 PostgreSQL 只执行了新增列 migration，没有删除或清理既有数据；测试 Workspace 配置已恢复为空策略。
+
 ## 2026-08-06：Phase 2.5 RunOutcome 与工作流边界
 
 ### 已实现
@@ -55,7 +75,7 @@
 - 新 Worktree 默认没有 `node_modules`；直接运行依赖型测试会因依赖不可解析而失败。
 - Codex 沙箱内在线安装受本机 `registry.npmmirror.com` DNS 影响，且不能假定可以读取完整宿主 pnpm store。
 - 当时 `run.completed` 会让 Run/Task 同时进入 succeeded/completed；该执行结果语义问题已由上方 Phase 2.5 RunOutcome 切片修复。
-- 显式 Worktree bootstrap policy 仍需在进入 Reviewer 前补齐。
+- 显式 Worktree bootstrap policy 已由上方 Phase 2.6 实现。
 
 ## 2026-08-06：独立公开仓库
 
@@ -147,7 +167,7 @@ Task queued
 - Builder → Reviewer Handoff、Review/Finding 和返工闭环。
 - 单次 Run token、Worker lease、heartbeat 和崩溃 reconciliation。
 - 用户批准后合并/提交 Worktree 的产品流程。
-- Worktree 依赖安装/bootstrap 策略；当前由目标仓库与 Codex 任务自行处理。
+- Workspace Bootstrap 已在 Phase 2.6 实现；当前仍需由用户显式配置步骤，自动项目探测尚未实现。
 
 ## 2026-08-06：Phase 1B 正式基础设施层
 

@@ -41,6 +41,22 @@ export const COMPLETION_POLICIES = [
 ] as const;
 export type CompletionPolicy = (typeof COMPLETION_POLICIES)[number];
 
+export const BootstrapStepSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  command: z.string().trim().min(1).max(1_000),
+  args: z.array(z.string().max(2_000)).max(50).default([]),
+  timeoutMs: z.number().int().min(1_000).max(10 * 60_000).default(120_000),
+});
+
+export const BootstrapPolicySchema = z.object({
+  steps: z.array(BootstrapStepSchema).max(8).default([]),
+});
+
+export type BootstrapStep = z.infer<typeof BootstrapStepSchema>;
+export type BootstrapPolicy = z.infer<typeof BootstrapPolicySchema>;
+
+export const EMPTY_BOOTSTRAP_POLICY: BootstrapPolicy = { steps: [] };
+
 const taskTransitions: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
   draft: ['queued', 'cancelled'],
   queued: ['running', 'cancelled', 'failed'],
@@ -117,6 +133,28 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     workingDirectory: z.string().min(1),
     branchName: z.string().min(1),
   }),
+  z.object({ type: z.literal('run.bootstrap_started'), stepCount: z.number().int().nonnegative() }),
+  z.object({
+    type: z.literal('run.bootstrap_step_completed'),
+    stepIndex: z.number().int().nonnegative(),
+    name: z.string().min(1),
+    command: z.string().min(1),
+    durationMs: z.number().int().nonnegative(),
+    outputSummary: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('run.bootstrap_completed'),
+    stepCount: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal('run.bootstrap_failed'),
+    stepIndex: z.number().int().nonnegative(),
+    name: z.string().min(1),
+    code: z.enum(['spawn_failed', 'timeout', 'non_zero_exit']),
+    message: z.string().min(1),
+    durationMs: z.number().int().nonnegative(),
+  }),
   z.object({ type: z.literal('run.started'), sessionRef: z.string().optional() }),
   z.object({ type: z.literal('output.delta'), text: z.string() }),
   z.object({
@@ -136,7 +174,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('run.cancelled'), reason: z.string().optional() }),
   z.object({
     type: z.literal('run.failed'),
-    code: z.enum(['spawn_failed', 'protocol_error', 'timeout', 'process_exit', 'unknown']),
+    code: z.enum(['spawn_failed', 'bootstrap_failed', 'protocol_error', 'timeout', 'process_exit', 'unknown']),
     message: z.string().min(1),
   }),
 ]);
@@ -162,6 +200,7 @@ export interface Workspace {
   id: string;
   name: string;
   rootPath: string;
+  bootstrapPolicy: BootstrapPolicy;
   defaultCompletionPolicy: CompletionPolicy;
   createdAt: string;
   updatedAt: string;
@@ -189,6 +228,7 @@ export interface Run {
   parentRunId?: string;
   retryOfRunId?: string;
   workspaceRoot: string;
+  bootstrapPolicySnapshot: BootstrapPolicy;
   worktreePath?: string;
   workingDirectory?: string;
   branchName?: string;

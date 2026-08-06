@@ -139,6 +139,28 @@ Handoff 的目标写入顺序：
 - 管理子进程、取消信号、退出码和输出流。
 - 将原始事件交给 Adapter 转换，再批量提交平台事件。
 
+### Workspace Bootstrap
+
+状态：**Implemented（2026-08-06）。**
+
+Bootstrap 是 Workspace 的项目环境契约，不属于 Codex、Claude Code、OpenCode 或任何特定 AgentAdapter。一个项目只需确认准备规则，多种 Agent 运行时共同复用：
+
+```text
+Workspace bootstrap policy
+  -> Git worktree
+  -> explicit command + argv steps
+  -> prepared project environment
+  -> selected AgentAdapter
+```
+
+- Workspace 保存显式 `BootstrapPolicy`；空步骤表示 `none`。
+- Task 创建 Run 时把策略固化为 `bootstrapPolicySnapshot`，排队后的 Workspace 配置变化不会改变既有 Run。
+- Worker 只在隔离 Worktree 内执行步骤，复用 ProcessSupervisor 的参数数组、环境变量白名单、超时、取消和输出限制。
+- `run.bootstrap_*` 事件先持久化；任一步骤 spawn、超时或非零退出都会收敛为 `bootstrap_failed`，Agent 不启动。
+- 项目语言或锁文件自动识别以后只能生成建议，不能在未经用户确认时执行安装命令。
+
+机器上是否存在 Codex、Claude Code 或 OpenCode 属于 AgentProfile/Adapter health check；项目使用 Node、Python、Go 以及怎样准备依赖属于 Workspace。两者禁止混入同一个配置对象。
+
 ### AgentAdapter
 
 - 隔离不同 CLI 的命令、事件协议和 Session 语义。
@@ -284,3 +306,5 @@ Queue job 只携带 `runId`。Worker 收到消息后仍需通过 PostgreSQL 条�
 Phase 2 已加入 Codex CLI Adapter。Worker 为真实写入任务创建独立 Git Worktree，以参数数组启动 `codex exec --json --sandbox workspace-write`，把公开 JSONL 事件转换为统一 AgentEvent。模型 reasoning 不进入 RelayHub Event；thread ID、命令摘要、文件变化、最终消息和终态进入 PostgreSQL。Worktree 在任务结束后保留，用户确认前不自动清理。
 
 Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Run 收敛为 `succeeded` 并保存结构化 `RunOutcome`，不再直接完成 Task。在 Reviewer dispatch 尚未实现时，Task 进入 `waiting_for_user` 并追加 `task.waiting_for_review` 审计事件；Phase 3 将通过同一 Orchestrator 决策入口改为 `reviewing` 并创建 Reviewer Run。`CompletionPolicy` 只允许在合法 Review verdict 之后执行。
+
+Phase 2.6 已实现 Workspace Bootstrap。策略与 Agent provider 解耦并在 Run 创建时固化；Worker 在真实 AgentAdapter 启动前执行准备步骤，失败时记录结构化事件并阻断 Agent。当前显式 API 配置是事实来源，项目语言/锁文件探测尚未实现。
