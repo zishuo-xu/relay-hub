@@ -184,6 +184,26 @@ suite('PostgresStore integration', () => {
       status: 'dispatched',
     });
     await store.recordAgentEvent(reviewerRun.id, 'reviewer-started', { type: 'run.started' });
+    await expect(
+      store.recordAgentEvent(reviewerRun.id, 'reviewer-completed-without-verdict', {
+        type: 'run.completed',
+        outcome: { summary: 'Reviewer omitted the verdict.', commandEvidence: [] },
+      }),
+    ).rejects.toThrow('must submit a structured Review');
+    await store.recordAgentEvent(reviewerRun.id, 'review-submitted', {
+      type: 'review.submitted',
+      review: {
+        verdict: 'approved',
+        summary: 'The Builder result satisfies the acceptance criteria.',
+        findings: [
+          {
+            severity: 'suggestion',
+            title: 'Optional cleanup',
+            detail: 'This suggestion does not block approval.',
+          },
+        ],
+      },
+    });
     await store.recordAgentEvent(reviewerRun.id, 'reviewer-completed', {
       type: 'run.completed',
       outcome: { summary: 'Reviewer execution completed.', commandEvidence: [] },
@@ -191,9 +211,21 @@ suite('PostgresStore integration', () => {
     const reviewed = await store.getTaskDetail(created.value.detail.task.id);
     expect(reviewed?.task.status).toBe('waiting_for_user');
     expect(reviewed?.runs).toHaveLength(2);
+    expect(reviewed?.reviews).toMatchObject([
+      {
+        runId: reviewerRun.id,
+        round: 1,
+        verdict: 'approved',
+        summary: 'The Builder result satisfies the acceptance criteria.',
+        findings: [{ severity: 'suggestion', title: 'Optional cleanup' }],
+      },
+    ]);
     expect(reviewed?.events.at(-1)).toMatchObject({
-      type: 'task.review_run_completed',
-      payload: { reason: 'review_verdict_not_available' },
+      type: 'task.review_approved',
+      payload: { reason: 'user_confirmation_required', verdict: 'approved', findingCount: 1 },
     });
+    const confirmed = await store.confirmTaskCompletion(created.value.detail.task.id);
+    expect(confirmed.value.task.status).toBe('completed');
+    expect(confirmed.value.events.at(-1)?.type).toBe('task.user_confirmed');
   });
 });

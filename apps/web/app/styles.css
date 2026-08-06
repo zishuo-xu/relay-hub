@@ -245,6 +245,9 @@ textarea:focus-visible {
 .run-state strong { text-transform: capitalize; }
 .cancel-button { align-self: center; margin-left: 12px; padding: 6px 9px; color: var(--danger); border: 1px solid #e7c5c5; border-radius: 7px; background: white; font-size: 10px; cursor: pointer; }
 .cancel-button:hover { background: var(--danger-soft); }
+.confirm-button { align-self: center; margin-left: 12px; padding: 7px 11px; color: white; border: 0; border-radius: 7px; background: var(--accent); font-size: 10px; font-weight: 700; cursor: pointer; }
+.confirm-button:hover { background: var(--accent-strong); }
+.confirm-button:disabled { opacity: 0.55; cursor: wait; }
 
 .worktree-strip {
   display: grid;
@@ -261,6 +264,14 @@ textarea:focus-visible {
 }
 .worktree-strip > span { color: var(--text-secondary); font-weight: 700; }
 .worktree-strip code { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+
+.review-strip { display: grid; min-height: 48px; padding: 8px 28px; flex: none; align-items: center; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 14px; border-bottom: 1px solid var(--border); background: var(--accent-soft); }
+.review-strip > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.review-strip span { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.review-strip strong { color: var(--accent); font-size: 11px; text-transform: capitalize; }
+.review-strip p { overflow: hidden; margin: 0; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.review-strip[data-verdict="changes_requested"], .review-strip[data-verdict="blocked"] { background: var(--danger-soft); }
+.review-strip[data-verdict="changes_requested"] strong, .review-strip[data-verdict="blocked"] strong { color: var(--danger); }
 
 .timeline-surface { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; background: var(--workspace-bg); }
 .timeline-heading { display: flex; min-height: 66px; padding: 13px 28px 11px; flex: none; align-items: center; justify-content: space-between; gap: 16px; }

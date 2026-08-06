@@ -12,13 +12,15 @@ import {
   idempotencyKeys,
   outboxEvents,
   type RelayDatabase,
+  reviewFindings,
+  reviews,
   runEvents,
   runs,
   tasks,
   workspaces,
 } from '@relay-hub/db';
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
-import { mapEvent, mapHandoff, mapRun, mapTask } from './mappers.js';
+import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
+import { mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
 
 export async function listTasks(db: RelayDatabase): Promise<Task[]> {
@@ -45,12 +47,25 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     .innerJoin(runs, eq(handoffs.sourceRunId, runs.id))
     .where(eq(runs.taskId, taskId))
     .orderBy(asc(handoffs.createdAt));
+  const reviewRows = await db.select().from(reviews).where(eq(reviews.taskId, taskId)).orderBy(asc(reviews.round));
+  const findingRows = reviewRows.length > 0
+    ? await db
+        .select()
+        .from(reviewFindings)
+        .where(inArray(reviewFindings.reviewId, reviewRows.map((review) => review.id)))
+        .orderBy(asc(reviewFindings.createdAt))
+    : [];
+  const mappedFindings = findingRows.map(mapReviewFinding);
   const currentRun = runRows.find((run) => run.id === taskRow.currentRunId) ?? runRows[0];
   return {
     task: mapTask(taskRow, currentRun?.agentId ?? ''),
     runs: runRows.map(mapRun),
     events: eventRows.map(mapEvent),
     handoffs: handoffRows.map(({ handoff }) => mapHandoff(handoff)),
+    reviews: reviewRows.map((review) => mapReview(
+      review,
+      mappedFindings.filter((finding) => finding.reviewId === review.id),
+    )),
   };
 }
 
@@ -174,4 +189,55 @@ export async function createTask(
   const detail = await getTaskDetail(db, result.taskId);
   if (!detail) throw new Error(`Created task not found: ${result.taskId}`);
   return { value: { detail, created: result.created }, emitted: result.emitted };
+}
+
+export async function confirmTaskCompletion(
+  db: RelayDatabase,
+  taskId: string,
+): Promise<MutationResult<TaskDetail>> {
+  const result = await db.transaction(async (tx) => {
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.status === 'completed') return { taskId, emitted: [] as RunEvent[] };
+    if (task.status !== 'waiting_for_user') {
+      throw new Error(`Task cannot be confirmed while ${task.status}`);
+    }
+    const [latestReview] = await tx
+      .select({ id: reviews.id, runId: reviews.runId, verdict: reviews.verdict, round: reviews.round })
+      .from(reviews)
+      .where(eq(reviews.taskId, taskId))
+      .orderBy(desc(reviews.round))
+      .limit(1);
+    if (!latestReview || latestReview.verdict !== 'approved') {
+      throw new Error('Only a Task with an approved Review can be confirmed complete');
+    }
+    const [reviewRun] = await tx.select({ status: runs.status }).from(runs).where(eq(runs.id, latestReview.runId)).limit(1);
+    if (reviewRun?.status !== 'succeeded') {
+      throw new Error('The approved Review Run must succeed before user confirmation');
+    }
+    if (!task.currentRunId) throw new Error('Task has no current Run');
+    const now = new Date();
+    await tx
+      .update(tasks)
+      .set({ status: 'completed', version: task.version + 1, updatedAt: now })
+      .where(and(eq(tasks.id, task.id), eq(tasks.version, task.version)));
+    const [eventRow] = await tx
+      .insert(runEvents)
+      .values({
+        taskId,
+        runId: task.currentRunId,
+        eventType: 'task.user_confirmed',
+        payload: { reviewId: latestReview.id, round: latestReview.round },
+        source: 'user',
+        occurredAt: now,
+        dedupeKey: `task-user-confirmed:${taskId}:${latestReview.id}`,
+      })
+      .returning();
+    if (!eventRow) throw new Error('Task confirmation event insert did not return a row');
+    return { taskId, emitted: [mapEvent(eventRow)] };
+  });
+
+  const detail = await getTaskDetail(db, result.taskId);
+  if (!detail) throw new Error(`Task not found after confirmation: ${result.taskId}`);
+  return { value: detail, emitted: result.emitted };
 }

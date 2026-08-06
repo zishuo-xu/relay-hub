@@ -50,6 +50,13 @@
       "when": 1786035252461,
       "tag": "0006_aberrant_mauler",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786036507461,
+      "tag": "0007_brave_lila_cheney",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
-import { codexSandboxForRun, runCodexAgent } from './codex-adapter.js';
+import { codexSandboxForRun, parseReviewDraft, runCodexAgent } from './codex-adapter.js';
 
 const claimed: ClaimedRun = {
   workspace: {
@@ -182,6 +182,19 @@ describe('runCodexAgent', () => {
     expect(events[0]).toMatchObject({ type: 'output.delta' });
     expect((events[0] as { text?: string }).text).toContain('independent Reviewer Agent');
     expect((events[0] as { text?: string }).text).toContain('Builder says the implementation is complete.');
+    expect(events.at(-2)).toMatchObject({
+      type: 'review.submitted',
+      review: { verdict: 'approved', findings: [] },
+    });
     expect(events.at(-1)?.type).toBe('run.completed');
+  });
+
+  it('rejects a Reviewer decision that is not a valid structured envelope', async () => {
+    expect(() => parseReviewDraft('approved')).toThrow('missing the RelayHub review envelope');
+    expect(() =>
+      parseReviewDraft(
+        '<relayhub_review>{"verdict":"changes_requested","summary":"Needs work","findings":[]}</relayhub_review>',
+      ),
+    ).toThrow('invalid structured Review');
   });
 });

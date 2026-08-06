@@ -42,6 +42,12 @@ export const COMPLETION_POLICIES = [
 ] as const;
 export type CompletionPolicy = (typeof COMPLETION_POLICIES)[number];
 
+export const REVIEW_VERDICTS = ['approved', 'changes_requested', 'blocked'] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
+export const FINDING_SEVERITIES = ['blocking', 'should_fix', 'suggestion'] as const;
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
+
 export const BootstrapStepSchema = z.object({
   name: z.string().trim().min(1).max(80),
   command: z.string().trim().min(1).max(1_000),
@@ -64,7 +70,7 @@ const taskTransitions: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
   running: ['reviewing', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
   reviewing: ['changes_requested', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
   changes_requested: ['queued', 'cancelled'],
-  waiting_for_user: ['queued', 'cancelled'],
+  waiting_for_user: ['queued', 'completed', 'cancelled'],
   completed: [],
   failed: [],
   cancelled: [],
@@ -135,10 +141,50 @@ export const HandoffDraftSchema = z.object({
 
 export type HandoffDraft = z.infer<typeof HandoffDraftSchema>;
 
-const ReviewDraftSchema = z.object({
-  verdict: z.enum(['approved', 'changes_requested', 'blocked']),
-  summary: z.string().min(1),
-});
+export const ReviewFindingDraftSchema = z
+  .object({
+    severity: z.enum(FINDING_SEVERITIES),
+    filePath: z.string().min(1).max(4_096).optional(),
+    lineStart: z.number().int().positive().optional(),
+    lineEnd: z.number().int().positive().optional(),
+    title: z.string().min(1).max(200),
+    detail: z.string().min(1).max(4_000),
+    suggestion: z.string().min(1).max(2_000).optional(),
+  })
+  .superRefine((finding, context) => {
+    if (finding.lineEnd !== undefined && finding.lineStart === undefined) {
+      context.addIssue({ code: 'custom', path: ['lineEnd'], message: 'lineEnd requires lineStart' });
+    }
+    if (finding.lineStart !== undefined && finding.lineEnd !== undefined && finding.lineEnd < finding.lineStart) {
+      context.addIssue({ code: 'custom', path: ['lineEnd'], message: 'lineEnd must be greater than or equal to lineStart' });
+    }
+  });
+
+export type ReviewFindingDraft = z.infer<typeof ReviewFindingDraftSchema>;
+
+export const ReviewDraftSchema = z
+  .object({
+    verdict: z.enum(REVIEW_VERDICTS),
+    summary: z.string().min(1).max(10_000),
+    findings: z.array(ReviewFindingDraftSchema).max(100).default([]),
+  })
+  .superRefine((review, context) => {
+    const actionable = review.findings.some((finding) =>
+      finding.severity === 'blocking' || finding.severity === 'should_fix',
+    );
+    const blocking = review.findings.some((finding) => finding.severity === 'blocking');
+    if (review.verdict === 'approved' && actionable) {
+      context.addIssue({ code: 'custom', path: ['findings'], message: 'approved reviews cannot contain actionable findings' });
+    }
+    if (review.verdict === 'changes_requested' && !actionable) {
+      context.addIssue({ code: 'custom', path: ['findings'], message: 'changes_requested requires an actionable finding' });
+    }
+    if (review.verdict === 'blocked' && !blocking) {
+      context.addIssue({ code: 'custom', path: ['findings'], message: 'blocked requires a blocking finding' });
+    }
+  });
+
+export type ReviewDraft = z.infer<typeof ReviewDraftSchema>;
 
 export const AgentEventSchema = z.discriminatedUnion('type', [
   z.object({
@@ -225,6 +271,23 @@ export interface Handoff {
   updatedAt: string;
 }
 
+export interface ReviewFinding extends ReviewFindingDraft {
+  id: string;
+  reviewId: string;
+  createdAt: string;
+}
+
+export interface Review {
+  id: string;
+  taskId: string;
+  runId: string;
+  round: number;
+  verdict: ReviewVerdict;
+  summary: string;
+  findings: ReviewFinding[];
+  createdAt: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -288,6 +351,7 @@ export interface TaskDetail {
   runs: Run[];
   events: RunEvent[];
   handoffs: Handoff[];
+  reviews: Review[];
 }
 
 export interface ClaimedRun {

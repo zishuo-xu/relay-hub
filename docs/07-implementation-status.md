@@ -1,5 +1,28 @@
 # 07. 实现状态
 
+## 2026-08-07：Phase 3.2 结构化 Review、Finding 与完成策略
+
+### 已实现
+
+- `ReviewDraft` 固化 `approved / changes_requested / blocked`、摘要和最多 100 条结构化 Finding；Finding 包含严重度、可选文件/行号、标题、详情和建议。
+- 合约校验 verdict 与 Finding 一致性：approved 不允许 actionable Finding，changes_requested 至少需要 blocking/should_fix，blocked 至少需要 blocking。
+- 只有当前 Task 配置的独立 Reviewer Run 能提交 Review；每个 Run 最多一条 Review，同一 Task round 唯一。Review/Finding 先持久化，缺少 Review 的 Reviewer Run 不能成功完成。
+- Reviewer `run.completed` 事务依据 Review 和 CompletionPolicy 推进 Task：自动完成、等待用户最终确认、确定性风险路由、changes_requested 或 blocked。
+- `risk_based` 当前只在 Builder 命令证据非空且全部 succeeded 时自动完成，不把审批决定交给模型。
+- 新增用户确认接口；只允许最新 Review 为 approved 的 waiting_for_user Task 完成，重复确认 completed Task 保持幂等。
+- Mock Reviewer 和 Codex Reviewer 都在 Run 完成前提交结构化 Review；Codex 使用显式 envelope，解析失败收敛为 protocol failure，并将 Task 交给用户处理。
+- Web 可配置三种完成策略，展示最新 Review 摘要、Finding 数量、Verdict 时间线和“确认完成”操作。
+- migration `0007_brave_lila_cheney.sql` 只为既有 Review 表增加 Run 唯一索引与 Task/round 唯一索引，不删除或改写业务数据。
+
+### 验证证据
+
+- Contracts 10/10、Worker 9/9 通过；覆盖 verdict/Finding 约束、Codex 结构化 envelope、Reviewer 事件顺序和无效裁决拒绝。
+- 隔离 PostgreSQL 中 API Store + Orchestrator 10/10 通过；覆盖缺少 Review 不得完成、Review/Finding 查询重建、用户确认和三种 CompletionPolicy 决策。
+- 独立 API `4110`、临时 Redis `56380`、隔离 PostgreSQL 和真实 BullMQ Worker 完成 23 事件双 Agent E2E：两个 Run 均 succeeded、Handoff dispatched、Review round 1 approved，Task 经 `auto_on_approval` 自动 completed。
+- 正式 PostgreSQL 已应用纯新增 migration；仓库级 `pnpm check`（typecheck、tests、production build）通过。
+- 正式 Web/API/Worker 又完成 require_user_confirmation 实跑：Review 摘要与确认按钮在 1280×720 首屏可见，点击后 Task=`completed` 且追加 `task.user_confirmed`；浏览器控制台无错误。
+- `changes_requested` 自动创建 Builder 修复 Run 尚未实现，属于 Phase 3.3。
+
 ## 2026-08-07：Phase 3.1 结构化 Handoff 与 Reviewer Run 派发
 
 ### 已实现
@@ -19,7 +42,7 @@
 - 隔离 PostgreSQL 中 API Store + Orchestrator 6/6 通过，验证 pending 阶段仍只有一个 Run、错误目标拒绝、完成后父子 Run/Outbox 原子创建，以及 Reviewer 完成后的确定收敛。
 - 独立 API `4110`、临时 Redis `56380` 和真实 BullMQ Worker 完成双 Run 全链路：Builder 与 Reviewer 均 `succeeded`，Task=`waiting_for_user`，Handoff=`dispatched`。
 - 全链路共 22 个有序事件；`handoff.requested` 先于 Builder `run.completed`，Reviewer 输出证明其收到交接上下文，公有详情没有 Run Token 泄漏。
-- 正式 PostgreSQL 已应用纯新增 migration，并成功 seed Mock Reviewer；结构化 Review verdict/Finding 尚未实现，属于 Phase 3.2。
+- 正式 PostgreSQL 已应用纯新增 migration，并成功 seed Mock Reviewer；结构化 Review verdict/Finding 后续已在 Phase 3.2 实现。
 
 ## 2026-08-07：Phase 2.8 API 持久化职责整理
 
@@ -220,7 +243,7 @@ Task queued
 
 ### 此阶段之后仍未实现
 
-- Builder → Reviewer Handoff 已在 Phase 3.1 实现；Review/Finding 和返工闭环仍未实现。
+- Builder → Reviewer Handoff 已在 Phase 3.1 实现；Review/Finding 已在 Phase 3.2 实现，返工 Run 仍未实现。
 - 单次 Run token 已在 Phase 2.7 实现；Worker lease、heartbeat 和崩溃 reconciliation 仍未实现。
 - 用户批准后合并/提交 Worktree 的产品流程。
 - Workspace Bootstrap 已在 Phase 2.6 实现；当前仍需由用户显式配置步骤，自动项目探测尚未实现。
@@ -265,8 +288,7 @@ POST Task
 
 - Worker lease、heartbeat 与崩溃 reconciliation。
 - 真实 Agent CLI、Worktree 隔离与进程监管。
-- Handoff 已在 Phase 3.1 实现；Review 裁决闭环仍未实现。
-- `require_user_confirmation` 的交互流程；当前 Mock 单 Agent 纵向切片仍直接完成 Task。
+- Handoff 已在 Phase 3.1 实现；Review 裁决和 `require_user_confirmation` 交互已在 Phase 3.2 实现，返工 Run 仍未实现。
 
 ### 下一个可运行里程碑
 

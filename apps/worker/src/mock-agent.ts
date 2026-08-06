@@ -47,6 +47,16 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
       },
     };
   }
+  if (isReviewer) {
+    yield {
+      type: 'review.submitted',
+      review: {
+        verdict: 'approved',
+        summary: 'Mock Reviewer verified the Handoff and acceptance criteria without actionable findings.',
+        findings: [],
+      },
+    };
+  }
   yield {
     type: 'run.completed',
     outcome: {

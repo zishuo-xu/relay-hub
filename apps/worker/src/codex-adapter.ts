@@ -1,9 +1,17 @@
-import type { AgentEvent, ClaimedRun, CommandEvidence } from '@relay-hub/contracts';
+import {
+  type AgentEvent,
+  type ClaimedRun,
+  type CommandEvidence,
+  type ReviewDraft,
+  ReviewDraftSchema,
+} from '@relay-hub/contracts';
 import { z } from 'zod';
 import { superviseProcess } from './process-supervisor.js';
 
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
 const MAX_EVENT_TEXT = 4_000;
+const REVIEW_START = '<relayhub_review>';
+const REVIEW_END = '</relayhub_review>';
 
 export function codexSandboxForRun(claimed: ClaimedRun): 'read-only' | 'workspace-write' {
   return claimed.run.triggerType === 'review' || claimed.agent.capabilities.includes('review')
@@ -15,6 +23,18 @@ function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   if (!text) return '';
   return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+}
+
+export function parseReviewDraft(message: string): ReviewDraft {
+  const start = message.lastIndexOf(REVIEW_START);
+  const end = message.indexOf(REVIEW_END, start + REVIEW_START.length);
+  if (start < 0 || end < 0) throw new Error('Reviewer response is missing the RelayHub review envelope');
+  const json = message.slice(start + REVIEW_START.length, end).trim();
+  try {
+    return ReviewDraftSchema.parse(JSON.parse(json));
+  } catch (error) {
+    throw new Error(`Reviewer returned an invalid structured Review: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function itemOf(event: Record<string, unknown>): Record<string, unknown> | null {
@@ -49,7 +69,13 @@ function buildPrompt(claimed: ClaimedRun): string {
       'Acceptance criteria:',
       criteria,
       '',
-      'In the final response, summarize findings, risks, and whether further changes are needed.',
+      'Return the final decision as exactly one structured envelope with no Markdown fence:',
+      REVIEW_START,
+      '{"verdict":"approved","summary":"Concise evidence-based decision","findings":[]}',
+      REVIEW_END,
+      'Allowed verdicts: approved, changes_requested, blocked.',
+      'Each finding must include severity (blocking, should_fix, or suggestion), title, and detail.',
+      'approved cannot contain blocking or should_fix findings; changes_requested requires one; blocked requires blocking.',
     ].join('\n');
   }
 
@@ -196,7 +222,18 @@ export async function* runCodexAgent(
       }
       case 'turn.completed':
         terminalEventSent = true;
-        if (!isReviewer && claimed.task.reviewerAgentId) {
+        if (isReviewer) {
+          try {
+            yield { type: 'review.submitted', review: parseReviewDraft(finalMessage) };
+          } catch (error) {
+            yield {
+              type: 'run.failed',
+              code: 'protocol_error',
+              message: truncate(error instanceof Error ? error.message : String(error)),
+            };
+            break;
+          }
+        } else if (claimed.task.reviewerAgentId) {
           yield {
             type: 'handoff.requested',
             handoff: {

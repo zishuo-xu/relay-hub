@@ -107,6 +107,13 @@ app.get('/api/tasks/:taskId', async (request, reply) => {
   return detail;
 });
 
+app.post('/api/tasks/:taskId/confirm', async (request) => {
+  const { taskId } = z.object({ taskId: z.string().uuid() }).parse(request.params);
+  const result = await store.confirmTaskCompletion(taskId);
+  broadcast(result.emitted);
+  return result.value;
+});
+
 app.get('/api/tasks/:taskId/events', async (request) => {
   const { taskId } = z.object({ taskId: z.string().uuid() }).parse(request.params);
   const { after } = z.object({ after: z.coerce.number().int().nonnegative().default(0) }).parse(request.query);

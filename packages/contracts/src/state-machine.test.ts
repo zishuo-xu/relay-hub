@@ -13,6 +13,7 @@ describe('task state machine', () => {
     expect(canTransitionTask('reviewing', 'changes_requested')).toBe(true);
     expect(canTransitionTask('changes_requested', 'queued')).toBe(true);
     expect(canTransitionTask('reviewing', 'waiting_for_user')).toBe(true);
+    expect(canTransitionTask('waiting_for_user', 'completed')).toBe(true);
   });
 
   it('keeps terminal states terminal', () => {

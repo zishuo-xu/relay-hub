@@ -328,4 +328,6 @@ Phase 2.7 已实现轻量单次 Run execution token。Worker 领取时获得一�
 
 Phase 2.8 已完成 API 持久化职责整理。`PostgresStore` 保留为路由层稳定门面，Task 创建与查询、Run 领取/Token/取消、Agent Event 驱动的 Workflow transaction 以及 Workspace 配置分别由同包模块实现。此拆分只缩短文件和明确依赖，不改变数据库 schema、HTTP 合约、状态机或部署结构。
 
-Phase 3.1 已实现最小结构化 Handoff。用户在 Task 创建时选择独立 Reviewer AgentProfile；Builder Adapter 在完成前提交 objective、context summary、artifact refs 和 acceptance criteria。API 先持久化 pending Handoff，Builder 成功后再原子创建 `triggerType=review` 的父子 Run、更新 Task=`reviewing` 并写 Outbox。Reviewer 领取时只获得 Task、自己的 AgentProfile、Handoff 和继承的 Builder Worktree；真实 Codex Reviewer 使用 `read-only` sandbox 且跳过写入型 Bootstrap。当前 Reviewer Run 完成后进入 `waiting_for_user`，结构化 verdict/Finding 属于下一切片。
+Phase 3.1 已实现最小结构化 Handoff。用户在 Task 创建时选择独立 Reviewer AgentProfile；Builder Adapter 在完成前提交 objective、context summary、artifact refs 和 acceptance criteria。API 先持久化 pending Handoff，Builder 成功后再原子创建 `triggerType=review` 的父子 Run、更新 Task=`reviewing` 并写 Outbox。Reviewer 领取时只获得 Task、自己的 AgentProfile、Handoff 和继承的 Builder Worktree；真实 Codex Reviewer 使用 `read-only` sandbox 且跳过写入型 Bootstrap。
+
+Phase 3.2 已实现 Review 裁决边界。Reviewer 先提交不可变 `Review + Findings`，API 校验 Run 角色、Task Reviewer 身份、verdict 与 Finding 严重度的一致性；Reviewer `run.completed` 只有在 Review 已持久化后才能成功。随后 Orchestrator 在同一事务中应用 CompletionPolicy：`auto_on_approval` 直接完成，`require_user_confirmation` 等待用户确认，`risk_based` 仅在 Builder 存在非空且全部成功的命令证据时自动完成。`changes_requested` 进入显式状态，自动创建修复 Run 留给 Phase 3.3。

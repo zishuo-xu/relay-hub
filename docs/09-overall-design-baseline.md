@@ -334,6 +334,8 @@ Review submission 是不可变记录，结论为：
 
 新的审查轮次创建新的 Review，不覆盖上一轮结论。
 
+**Implemented（2026-08-07）：** Reviewer 通过受单次 Run Token 保护的统一事件接口先提交不可变 Review/Finding，再完成 Run。平台校验 Reviewer 身份、每 Run 单 Review、Task round 唯一以及 verdict/Finding 一致性；缺少合法 Review 的 Reviewer Run 不能成功完成。
+
 ### CompletionPolicy
 
 Task 完成行为可由 Workspace 默认值和 Task override 配置：
@@ -343,6 +345,8 @@ Task 完成行为可由 Workspace 默认值和 Task override 配置：
 - `risk_based`
 
 `risk_based` 根据明确、可测试的风险条件决定是否需要用户确认，不能让模型自由决定自己是否需要审批。
+
+**Implemented（2026-08-07）：** Task 创建页可配置三种 CompletionPolicy。`auto_on_approval` 自动完成；`require_user_confirmation` 进入 `waiting_for_user` 并要求显式确认；当前 `risk_based` 仅在 Builder 具有非空且全部成功的命令证据时自动完成，否则保守等待用户。`changes_requested` 和 `blocked` 不受自动完成策略影响。
 
 ---
 

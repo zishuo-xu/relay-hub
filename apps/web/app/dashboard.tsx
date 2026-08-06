@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentProfile, RunEvent, Task, TaskDetail } from '@relay-hub/contracts';
+import type { AgentProfile, CompletionPolicy, RunEvent, Task, TaskDetail } from '@relay-hub/contracts';
 import type { FormEvent } from 'react';
 
 const statusLabels: Record<Task['status'], string> = {
@@ -31,7 +31,12 @@ const eventLabels: Record<string, string> = {
   'handoff.requested': '已准备交接',
   'task.waiting_for_review': '等待审查',
   'task.review_requested': '进入审查',
-  'task.review_run_completed': 'Reviewer 执行完成',
+  'review.submitted': 'Reviewer 已提交结论',
+  'task.review_approved': '审查通过',
+  'task.changes_requested': 'Reviewer 要求修改',
+  'task.review_blocked': '审查受阻',
+  'task.review_failed': 'Reviewer 执行失败',
+  'task.user_confirmed': '用户确认完成',
   'run.cancellation_requested': '正在取消',
   'run.cancelled': '已取消',
   'run.failed': '执行失败',
@@ -75,8 +80,22 @@ function eventText(event: RunEvent): string {
       return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
     case 'task.review_requested':
       return `Builder 结果已持久化，并创建 Reviewer Run ${String(event.payload.targetRunId ?? '')}。`;
-    case 'task.review_run_completed':
-      return 'Reviewer Run 已完成；结构化 verdict 将在下一切片接入。';
+    case 'review.submitted': {
+      const review = event.payload.review as { verdict?: unknown; summary?: unknown; findings?: unknown[] } | undefined;
+      return `${String(review?.verdict ?? 'unknown')} · ${String(review?.summary ?? '')} · ${review?.findings?.length ?? 0} findings`;
+    }
+    case 'task.review_approved':
+      return event.payload.reason === 'auto_on_approval' || event.payload.reason === 'risk_evidence_satisfied'
+        ? 'Reviewer 已批准，CompletionPolicy 已自动完成任务。'
+        : 'Reviewer 已批准，等待用户最终确认。';
+    case 'task.changes_requested':
+      return `Reviewer 要求修改，共 ${String(event.payload.findingCount ?? 0)} 个 Finding。`;
+    case 'task.review_blocked':
+      return 'Reviewer 报告阻塞问题，需要用户处理。';
+    case 'task.review_failed':
+      return `Reviewer 执行失败，已转交用户处理：${String(event.payload.message ?? event.payload.reason)}`;
+    case 'task.user_confirmed':
+      return '用户已确认 Reviewer 结论，任务完成。';
     case 'run.cancellation_requested':
       return '用户已请求取消，正在回收 Agent 子进程。';
     case 'run.cancelled':
@@ -93,8 +112,14 @@ function eventTone(event: RunEvent): string {
   if (
     event.type === 'run.completed' ||
     event.type === 'run.bootstrap_completed' ||
-    event.type === 'task.review_run_completed'
+    event.type === 'task.review_approved' ||
+    event.type === 'task.user_confirmed'
   ) return 'success';
+  if (
+    event.type === 'task.changes_requested' ||
+    event.type === 'task.review_blocked' ||
+    event.type === 'task.review_failed'
+  ) return 'danger';
   if (event.type === 'output.delta') return 'output';
   if (event.type.startsWith('tool.')) return 'tool';
   return 'system';
@@ -180,8 +205,11 @@ interface TimelineWorkspaceProps {
   currentRun: CurrentRun;
   currentAgent: AgentProfile | null;
   canCancel: boolean;
+  canConfirm: boolean;
+  confirming: boolean;
   error: string | null;
   onCancel: () => void;
+  onConfirm: () => void;
   onNewTask: () => void;
 }
 
@@ -190,10 +218,14 @@ export function TimelineWorkspace({
   currentRun,
   currentAgent,
   canCancel,
+  canConfirm,
+  confirming,
   error,
   onCancel,
+  onConfirm,
   onNewTask,
 }: TimelineWorkspaceProps) {
+  const latestReview = detail?.reviews.at(-1);
   return (
     <section className="workspace">
       <header className="workspace-header">
@@ -220,6 +252,11 @@ export function TimelineWorkspace({
             <div><span>版本</span><strong>v{detail.task.version}</strong></div>
             <div className="run-state"><span>状态</span><strong>{currentRun?.status ?? '等待中'}</strong></div>
             {canCancel ? <button className="cancel-button" onClick={onCancel} type="button">取消 Run</button> : null}
+            {canConfirm ? (
+              <button className="confirm-button" disabled={confirming} onClick={onConfirm} type="button">
+                {confirming ? '确认中…' : '确认完成'}
+              </button>
+            ) : null}
           </section>
 
           {currentRun?.worktreePath ? (
@@ -228,6 +265,17 @@ export function TimelineWorkspace({
               <code>{currentRun.branchName}</code>
               <code title={currentRun.workingDirectory}>{currentRun.workingDirectory}</code>
             </div>
+          ) : null}
+
+          {latestReview ? (
+            <section className="review-strip" data-verdict={latestReview.verdict} aria-label="最新审查结论">
+              <div>
+                <span>Review #{latestReview.round}</span>
+                <strong>{latestReview.verdict.replace('_', ' ')}</strong>
+              </div>
+              <p>{latestReview.summary}</p>
+              <span>{latestReview.findings.length} findings</span>
+            </section>
           ) : null}
 
           <section className="timeline-surface">
@@ -273,6 +321,7 @@ interface CreateTaskDrawerProps {
   title: string;
   description: string;
   criterion: string;
+  completionPolicy: CompletionPolicy;
   workspaceRoot: string;
   agents: AgentProfile[];
   reviewerAgents: AgentProfile[];
@@ -286,6 +335,7 @@ interface CreateTaskDrawerProps {
   onTitleChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onCriterionChange: (value: string) => void;
+  onCompletionPolicyChange: (value: CompletionPolicy) => void;
   onWorkspaceRootChange: (value: string) => void;
   onAgentChange: (value: string) => void;
   onReviewerChange: (value: string) => void;
@@ -296,6 +346,7 @@ export function CreateTaskDrawer({
   title,
   description,
   criterion,
+  completionPolicy,
   workspaceRoot,
   agents,
   reviewerAgents,
@@ -309,6 +360,7 @@ export function CreateTaskDrawer({
   onTitleChange,
   onDescriptionChange,
   onCriterionChange,
+  onCompletionPolicyChange,
   onWorkspaceRootChange,
   onAgentChange,
   onReviewerChange,
@@ -340,6 +392,17 @@ export function CreateTaskDrawer({
           <label>
             Git Workspace 路径
             <input onChange={(event) => onWorkspaceRootChange(event.target.value)} required value={workspaceRoot} />
+          </label>
+          <label>
+            审查通过后
+            <select
+              onChange={(event) => onCompletionPolicyChange(event.target.value as CompletionPolicy)}
+              value={completionPolicy}
+            >
+              <option value="require_user_confirmation">等待用户最终确认</option>
+              <option value="auto_on_approval">自动完成任务</option>
+              <option value="risk_based">按验证证据自动判断</option>
+            </select>
           </label>
           <div className="agent-flow-grid" aria-label="Agent 工作流">
             <div className="agent-flow-step">

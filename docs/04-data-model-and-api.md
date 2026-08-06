@@ -218,6 +218,7 @@ POST   /api/workspaces/:workspaceId/tasks
 GET    /api/tasks/:taskId
 GET    /api/tasks/:taskId/events?after=:eventId
 POST   /api/tasks/:taskId/cancel
+POST   /api/tasks/:taskId/confirm
 POST   /api/runs/:runId/retry
 POST   /api/runs/:runId/cancel
 GET    /api/workspaces
@@ -255,6 +256,8 @@ claim 只在 `queued -> claimed` 的原子更新成功时返回一次明文 Toke
 
 Phase 3.1 中 `handoff.requested` 继续通过受 Run Token 保护的 event 接口提交，不新增旁路 Handoff API。服务端要求目标 ID 与 Task 的 `reviewer_agent_id` 一致、目标 AgentProfile 启用且具有 `review` capability，并拒绝 Builder 把工作交给自己。Reviewer Run 通过既有 claim 接口获得持久化 Handoff；Queue job 仍只携带 `runId`。
 
+Phase 3.2 中 `review.submitted` 继续复用同一个受 Token 保护的 event 接口。只有 `trigger_type=review` 且 AgentProfile 与 Task `reviewer_agent_id` 一致的 Run 可以提交；每个 Reviewer Run 只能保存一个 Review，同一 Task 的 round 唯一。`approved` 不能包含 blocking/should_fix Finding，`changes_requested` 至少包含一条 actionable Finding，`blocked` 至少包含一条 blocking Finding。Reviewer 必须先提交 Review，再提交 `run.completed`。
+
 ## 统一 Agent 事件
 
 ```ts
@@ -282,6 +285,8 @@ Workspace Bootstrap 在 `run.prepared` 与 `run.started` 之间产生 `run.boots
 `RunOutcome` 当前包含执行摘要和命令证据（命令、退出码、状态和受限输出摘要）。它属于 Run 的执行事实；即使命令失败后 Agent 协议正常结束，Run 仍可以是 `succeeded`，但 Task 不能因此自动变成 `completed`。验收结论必须由后续 Reviewer verdict、CompletionPolicy 或人工裁决产生。
 
 Builder 的 `handoff.requested` 必须发生在 `run.completed` 之前。前者只创建 pending Handoff，不改变 Task owner 或创建子 Run；后者成功时才由 Orchestrator 在同一事务中创建 Reviewer Run、写 Outbox、把 Handoff 标记为 dispatched，并将 Task 切换为 reviewing。Reviewer 完成不会递归创建另一个 Reviewer。
+
+Reviewer 的 `review.submitted` 同样先保存事实而不立即结束 Run。Reviewer `run.completed` 事务读取已保存 Review，并根据 verdict 与 CompletionPolicy 原子推进 Task。`POST /api/tasks/:taskId/confirm` 只接受处于 `waiting_for_user` 且最新 Review 为 `approved` 的 Task；重复确认已完成 Task 是幂等读取。
 
 ## WebSocket 事件
 

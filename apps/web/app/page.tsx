@@ -4,6 +4,7 @@ import {
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
   type AgentProfile,
+  type CompletionPolicy,
   type RealtimeEnvelope,
   type Task,
   type TaskDetail,
@@ -29,7 +30,9 @@ export default function HomePage() {
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState(DEFAULT_MOCK_AGENT_ID);
   const [selectedReviewerAgentId, setSelectedReviewerAgentId] = useState(DEFAULT_MOCK_REVIEWER_AGENT_ID);
+  const [completionPolicy, setCompletionPolicy] = useState<CompletionPolicy>('require_user_confirmation');
   const [createOpen, setCreateOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -145,6 +148,7 @@ export default function HomePage() {
           agentId: selectedAgentId,
           ...(selectedReviewerAgentId ? { reviewerAgentId: selectedReviewerAgentId } : {}),
           acceptanceCriteria: criterion.trim() ? [criterion.trim()] : [],
+          completionPolicy,
         }),
       });
       if (!response.ok) throw new Error(`创建任务失败：${response.status}`);
@@ -170,6 +174,20 @@ export default function HomePage() {
     await loadTasks();
   }
 
+  async function confirmCurrentTask() {
+    if (!detail) return;
+    setConfirming(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiUrl}/api/tasks/${detail.task.id}/confirm`, { method: 'POST' });
+      if (!response.ok) throw new Error(`确认完成失败：${response.status} ${await response.text()}`);
+      setDetail((await response.json()) as TaskDetail);
+      await loadTasks();
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   const currentRun = useMemo(
     () => detail?.runs.find((run) => run.id === detail.task.currentRunId) ?? null,
     [detail],
@@ -180,6 +198,12 @@ export default function HomePage() {
   const canCancel = currentRun
     ? !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status)
     : false;
+  const latestReview = detail?.reviews.at(-1) ?? null;
+  const canConfirm = Boolean(
+    detail?.task.status === 'waiting_for_user' &&
+    latestReview?.verdict === 'approved' &&
+    currentRun?.status === 'succeeded',
+  );
 
   return (
     <main className="app-shell">
@@ -187,21 +211,26 @@ export default function HomePage() {
       <TaskSidebar tasks={tasks} selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId} />
       <TimelineWorkspace
         canCancel={canCancel}
+        canConfirm={canConfirm}
+        confirming={confirming}
         currentAgent={currentAgent}
         currentRun={currentRun}
         detail={detail}
         error={error}
         onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+        onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onNewTask={() => setCreateOpen(true)}
       />
       <CreateTaskDrawer
         agents={agents.filter((agent) => agent.capabilities.includes('implement'))}
         criterion={criterion}
+        completionPolicy={completionPolicy}
         description={description}
         onAgentChange={setSelectedAgentId}
         onReviewerChange={setSelectedReviewerAgentId}
         onClose={() => setCreateOpen(false)}
         onCriterionChange={setCriterion}
+        onCompletionPolicyChange={setCompletionPolicy}
         onDescriptionChange={setDescription}
         onSubmit={createTask}
         onTitleChange={setTitle}

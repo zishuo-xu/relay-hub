@@ -248,19 +248,26 @@ export const handoffs = pgTable(
   (table) => [uniqueIndex('handoffs_source_run_uidx').on(table.sourceRunId)],
 );
 
-export const reviews = pgTable('reviews', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  taskId: uuid('task_id')
-    .notNull()
-    .references(() => tasks.id),
-  runId: uuid('run_id')
-    .notNull()
-    .references(() => runs.id),
-  round: integer('round').default(1).notNull(),
-  verdict: reviewVerdictEnum('verdict').notNull(),
-  summary: text('summary').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const reviews = pgTable(
+  'reviews',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => runs.id),
+    round: integer('round').default(1).notNull(),
+    verdict: reviewVerdictEnum('verdict').notNull(),
+    summary: text('summary').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('reviews_run_uidx').on(table.runId),
+    uniqueIndex('reviews_task_round_uidx').on(table.taskId, table.round),
+  ],
+);
 
 export const reviewFindings = pgTable('review_findings', {
   id: uuid('id').primaryKey().defaultRandom(),

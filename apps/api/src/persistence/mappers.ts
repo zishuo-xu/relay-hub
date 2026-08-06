@@ -1,5 +1,24 @@
-import type { AgentAdapterType, AgentProfile, Handoff, Run, RunEvent, Task, Workspace } from '@relay-hub/contracts';
-import { agentProfiles, handoffs, runEvents, runs, tasks, workspaces } from '@relay-hub/db';
+import type {
+  AgentAdapterType,
+  AgentProfile,
+  Handoff,
+  Review,
+  ReviewFinding,
+  Run,
+  RunEvent,
+  Task,
+  Workspace,
+} from '@relay-hub/contracts';
+import {
+  agentProfiles,
+  handoffs,
+  reviewFindings,
+  reviews,
+  runEvents,
+  runs,
+  tasks,
+  workspaces,
+} from '@relay-hub/db';
 
 type TaskRow = typeof tasks.$inferSelect;
 type RunRow = typeof runs.$inferSelect;
@@ -7,6 +26,8 @@ type RunEventRow = typeof runEvents.$inferSelect;
 type WorkspaceRow = typeof workspaces.$inferSelect;
 type AgentProfileRow = typeof agentProfiles.$inferSelect;
 type HandoffRow = typeof handoffs.$inferSelect;
+type ReviewRow = typeof reviews.$inferSelect;
+type ReviewFindingRow = typeof reviewFindings.$inferSelect;
 
 function toIso(value: Date): string {
   return value.toISOString();
@@ -43,6 +64,34 @@ export function mapHandoff(row: HandoffRow): Handoff {
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
     ...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
+  };
+}
+
+export function mapReviewFinding(row: ReviewFindingRow): ReviewFinding {
+  return {
+    id: row.id,
+    reviewId: row.reviewId,
+    severity: row.severity,
+    title: row.title,
+    detail: row.detail,
+    createdAt: toIso(row.createdAt),
+    ...(row.filePath ? { filePath: row.filePath } : {}),
+    ...(row.lineStart !== null ? { lineStart: row.lineStart } : {}),
+    ...(row.lineEnd !== null ? { lineEnd: row.lineEnd } : {}),
+    ...(row.suggestion ? { suggestion: row.suggestion } : {}),
+  };
+}
+
+export function mapReview(row: ReviewRow, findings: ReviewFinding[]): Review {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    runId: row.runId,
+    round: row.round,
+    verdict: row.verdict,
+    summary: row.summary,
+    findings,
+    createdAt: toIso(row.createdAt),
   };
 }
 

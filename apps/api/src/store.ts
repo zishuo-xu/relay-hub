@@ -18,6 +18,7 @@ import {
   requestRunCancellation as requestRunCancellationInDb,
 } from './persistence/run-execution-repository.js';
 import {
+  confirmTaskCompletion as confirmTaskCompletionInDb,
   createTask as createTaskInDb,
   getTaskDetail as getTaskDetailFromDb,
   getTaskEvents as getTaskEventsFromDb,
@@ -70,6 +71,10 @@ export class PostgresStore {
     idempotencyKey?: string,
   ): Promise<MutationResult<{ detail: TaskDetail; created: boolean }>> {
     return createTaskInDb(this.db, input, idempotencyKey);
+  }
+
+  confirmTaskCompletion(taskId: string): Promise<MutationResult<TaskDetail>> {
+    return confirmTaskCompletionInDb(this.db, taskId);
   }
 
   claimRun(runId: string, workerId: string): Promise<MutationResult<ClaimedExecution | null>> {
