@@ -31,6 +31,7 @@ suite('PostgresStore integration', () => {
       agentId: DEFAULT_MOCK_AGENT_ID,
       acceptanceCriteria: ['Run reaches succeeded'],
       completionPolicy: 'auto_on_approval' as const,
+      maxReviewRounds: 3,
     };
     const created = await store.createTask(input, idempotencyKey);
     const duplicate = await store.createTask(input, idempotencyKey);
@@ -90,6 +91,7 @@ suite('PostgresStore integration', () => {
       agentId: DEFAULT_MOCK_AGENT_ID,
       acceptanceCriteria: [],
       completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
     });
     const runId = created.value.detail.task.currentRunId;
     const claimed = await store.claimRun(runId, 'cancellation-worker');
@@ -109,7 +111,7 @@ suite('PostgresStore integration', () => {
     expect(await store.authorizeRunToken(runId, claimed.value?.executionToken ?? '')).toBe(false);
   });
 
-  it('persists a pending Handoff before dispatching an isolated Reviewer Run', async () => {
+  it('runs Builder, Reviewer, repair Builder, and second Reviewer as a durable causal chain', async () => {
     const created = await store.createTask({
       title: 'Dispatch independent Reviewer',
       description: 'Persist Builder facts before waking a separate Reviewer Run.',
@@ -117,9 +119,16 @@ suite('PostgresStore integration', () => {
       reviewerAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
       acceptanceCriteria: ['Reviewer receives the structured Handoff'],
       completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
     });
     const builderRunId = created.value.detail.task.currentRunId;
     await store.claimRun(builderRunId, 'handoff-builder');
+    await store.recordAgentEvent(builderRunId, 'handoff-prepared', {
+      type: 'run.prepared',
+      worktreePath: '/tmp/relay-hub-review-fixture',
+      workingDirectory: '/tmp/relay-hub-review-fixture',
+      branchName: 'relayhub/review-fixture',
+    });
     await store.recordAgentEvent(builderRunId, 'handoff-started', { type: 'run.started' });
     await expect(
       store.recordAgentEvent(builderRunId, 'handoff-wrong-target', {
@@ -193,13 +202,16 @@ suite('PostgresStore integration', () => {
     await store.recordAgentEvent(reviewerRun.id, 'review-submitted', {
       type: 'review.submitted',
       review: {
-        verdict: 'approved',
-        summary: 'The Builder result satisfies the acceptance criteria.',
+        verdict: 'changes_requested',
+        summary: 'The Builder result needs one repair.',
         findings: [
           {
-            severity: 'suggestion',
-            title: 'Optional cleanup',
-            detail: 'This suggestion does not block approval.',
+            severity: 'should_fix',
+            filePath: 'src/fixture.ts',
+            lineStart: 7,
+            title: 'Handle the missing branch',
+            detail: 'The current branch does not satisfy the acceptance criterion.',
+            suggestion: 'Add the missing branch and rerun verification.',
           },
         ],
       },
@@ -208,24 +220,145 @@ suite('PostgresStore integration', () => {
       type: 'run.completed',
       outcome: { summary: 'Reviewer execution completed.', commandEvidence: [] },
     });
-    const reviewed = await store.getTaskDetail(created.value.detail.task.id);
-    expect(reviewed?.task.status).toBe('waiting_for_user');
-    expect(reviewed?.runs).toHaveLength(2);
-    expect(reviewed?.reviews).toMatchObject([
+    const repairQueued = await store.getTaskDetail(created.value.detail.task.id);
+    const repairRun = repairQueued?.runs.find((run) => run.triggerType === 'retry');
+    expect(repairQueued?.task.status).toBe('queued');
+    expect(repairQueued?.runs).toHaveLength(3);
+    expect(repairRun).toMatchObject({
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      parentRunId: reviewerRun.id,
+      retryOfRunId: builderRunId,
+      status: 'queued',
+      attempt: 2,
+      worktreePath: '/tmp/relay-hub-review-fixture',
+    });
+    expect(repairQueued?.reviews).toMatchObject([
       {
         runId: reviewerRun.id,
         round: 1,
-        verdict: 'approved',
-        summary: 'The Builder result satisfies the acceptance criteria.',
-        findings: [{ severity: 'suggestion', title: 'Optional cleanup' }],
+        verdict: 'changes_requested',
+        findings: [{ severity: 'should_fix', title: 'Handle the missing branch' }],
       },
     ]);
+    expect(repairQueued?.events.slice(-2)).toMatchObject([
+      { type: 'task.changes_requested' },
+      {
+        type: 'task.repair_requested',
+        payload: { repairRunId: repairRun?.id, reviewRound: 1, nextReviewRound: 2 },
+      },
+    ]);
+
+    if (!repairRun) throw new Error('Repair Run was not created');
+    const repairClaim = await store.claimRun(repairRun.id, 'repair-builder');
+    expect(repairClaim.value?.claimed.review).toMatchObject({
+      round: 1,
+      verdict: 'changes_requested',
+      findings: [{ severity: 'should_fix', title: 'Handle the missing branch' }],
+    });
+    await store.recordAgentEvent(repairRun.id, 'repair-started', { type: 'run.started' });
+    await store.recordAgentEvent(repairRun.id, 'repair-handoff', {
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+        objective: 'Review the repaired Builder result',
+        summary: 'Builder addressed all actionable Findings.',
+        artifactRefs: [{ kind: 'worktree', value: '/tmp/relay-hub-review-fixture' }],
+        acceptanceCriteria: ['Reviewer receives the structured Handoff'],
+      },
+    });
+    await store.recordAgentEvent(repairRun.id, 'repair-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Repair completed.', commandEvidence: [] },
+    });
+    const secondReviewing = await store.getTaskDetail(created.value.detail.task.id);
+    const secondReviewerRun = secondReviewing?.runs.find(
+      (run) => run.triggerType === 'review' && run.parentRunId === repairRun.id,
+    );
+    expect(secondReviewing?.task.status).toBe('reviewing');
+    expect(secondReviewing?.runs).toHaveLength(4);
+    if (!secondReviewerRun) throw new Error('Second Reviewer Run was not created');
+    await store.claimRun(secondReviewerRun.id, 'second-reviewer');
+    await store.recordAgentEvent(secondReviewerRun.id, 'second-reviewer-started', { type: 'run.started' });
+    await store.recordAgentEvent(secondReviewerRun.id, 'second-review-submitted', {
+      type: 'review.submitted',
+      review: {
+        verdict: 'approved',
+        summary: 'The repaired result now satisfies the acceptance criteria.',
+        findings: [],
+      },
+    });
+    await store.recordAgentEvent(secondReviewerRun.id, 'second-reviewer-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Second review completed.', commandEvidence: [] },
+    });
+    const reviewed = await store.getTaskDetail(created.value.detail.task.id);
+    expect(reviewed?.task.status).toBe('waiting_for_user');
+    expect(reviewed?.reviews.map((review) => review.verdict)).toEqual(['changes_requested', 'approved']);
     expect(reviewed?.events.at(-1)).toMatchObject({
       type: 'task.review_approved',
-      payload: { reason: 'user_confirmation_required', verdict: 'approved', findingCount: 1 },
+      payload: { round: 2, reason: 'user_confirmation_required', verdict: 'approved' },
     });
     const confirmed = await store.confirmTaskCompletion(created.value.detail.task.id);
     expect(confirmed.value.task.status).toBe('completed');
     expect(confirmed.value.events.at(-1)?.type).toBe('task.user_confirmed');
+  });
+
+  it('returns control to the user when the Review round budget is exhausted', async () => {
+    const created = await store.createTask({
+      title: 'Bound the repair loop',
+      description: 'Do not create another Builder Run after the configured Review budget.',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      reviewerAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      acceptanceCriteria: ['At most one Review is allowed'],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 1,
+    });
+    const builderRunId = created.value.detail.task.currentRunId;
+    await store.claimRun(builderRunId, 'bounded-builder');
+    await store.recordAgentEvent(builderRunId, 'bounded-builder-started', { type: 'run.started' });
+    await store.recordAgentEvent(builderRunId, 'bounded-handoff', {
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+        objective: 'Review within a single-round budget',
+        summary: 'Builder requests the only permitted Review.',
+        artifactRefs: [],
+        acceptanceCriteria: ['At most one Review is allowed'],
+      },
+    });
+    await store.recordAgentEvent(builderRunId, 'bounded-builder-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Builder completed.', commandEvidence: [] },
+    });
+    const reviewing = await store.getTaskDetail(created.value.detail.task.id);
+    const reviewerRun = reviewing?.runs.find((run) => run.triggerType === 'review');
+    if (!reviewerRun) throw new Error('Bounded Reviewer Run was not created');
+    await store.claimRun(reviewerRun.id, 'bounded-reviewer');
+    await store.recordAgentEvent(reviewerRun.id, 'bounded-reviewer-started', { type: 'run.started' });
+    await store.recordAgentEvent(reviewerRun.id, 'bounded-review-submitted', {
+      type: 'review.submitted',
+      review: {
+        verdict: 'changes_requested',
+        summary: 'The configured Review budget is now exhausted.',
+        findings: [{
+          severity: 'should_fix',
+          title: 'Keep this finding for the user',
+          detail: 'The platform must preserve the issue without starting an unbounded loop.',
+        }],
+      },
+    });
+    await store.recordAgentEvent(reviewerRun.id, 'bounded-reviewer-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Reviewer completed.', commandEvidence: [] },
+    });
+
+    const exhausted = await store.getTaskDetail(created.value.detail.task.id);
+    expect(exhausted?.task.status).toBe('waiting_for_user');
+    expect(exhausted?.runs).toHaveLength(2);
+    expect(exhausted?.runs.some((run) => run.triggerType === 'retry')).toBe(false);
+    expect(exhausted?.events.at(-1)).toMatchObject({
+      type: 'task.repair_limit_reached',
+      payload: { round: 1, reason: 'max_review_rounds_reached', verdict: 'changes_requested' },
+    });
   });
 });

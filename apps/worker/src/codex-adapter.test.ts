@@ -29,6 +29,7 @@ const claimed: ClaimedRun = {
     agentId: '00000000-0000-4000-8000-000000000003',
     acceptanceCriteria: ['Terminal event is emitted'],
     completionPolicy: 'require_user_confirmation',
+    maxReviewRounds: 3,
     status: 'running',
     currentRunId: '00000000-0000-4000-8000-000000000011',
     version: 1,
@@ -179,6 +180,12 @@ describe('runCodexAgent', () => {
     expect(events.some((event) => event.type === 'handoff.requested')).toBe(false);
     expect(codexSandboxForRun(reviewer)).toBe('read-only');
     expect(codexSandboxForRun(claimed)).toBe('workspace-write');
+    expect(
+      codexSandboxForRun({
+        ...claimed,
+        agent: { ...claimed.agent, capabilities: ['implement', 'review'] },
+      }),
+    ).toBe('workspace-write');
     expect(events[0]).toMatchObject({ type: 'output.delta' });
     expect((events[0] as { text?: string }).text).toContain('independent Reviewer Agent');
     expect((events[0] as { text?: string }).text).toContain('Builder says the implementation is complete.');
@@ -196,5 +203,66 @@ describe('runCodexAgent', () => {
         '<relayhub_review>{"verdict":"changes_requested","summary":"Needs work","findings":[]}</relayhub_review>',
       ),
     ).toThrow('invalid structured Review');
+  });
+
+  it('injects structured Findings into a workspace-write repair Run', async () => {
+    const repair: ClaimedRun = {
+      ...claimed,
+      task: {
+        ...claimed.task,
+        reviewerAgentId: '00000000-0000-4000-8000-000000000004',
+      },
+      run: {
+        ...claimed.run,
+        id: '00000000-0000-4000-8000-000000000013',
+        triggerType: 'retry',
+        parentRunId: '00000000-0000-4000-8000-000000000012',
+        retryOfRunId: claimed.run.id,
+      },
+      review: {
+        id: '00000000-0000-4000-8000-000000000030',
+        taskId: claimed.task.id,
+        runId: '00000000-0000-4000-8000-000000000012',
+        round: 1,
+        verdict: 'changes_requested',
+        summary: 'A branch is missing.',
+        findings: [
+          {
+            id: '00000000-0000-4000-8000-000000000031',
+            reviewId: '00000000-0000-4000-8000-000000000030',
+            severity: 'should_fix',
+            filePath: 'src/fixture.ts',
+            lineStart: 7,
+            title: 'Handle the missing branch',
+            detail: 'The branch is required by the acceptance criterion.',
+            suggestion: 'Add it and rerun tests.',
+            createdAt: new Date(0).toISOString(),
+          },
+        ],
+        createdAt: new Date(0).toISOString(),
+      },
+    };
+    const script = [
+      "let input = '';",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "console.log(JSON.stringify({type:'item.completed',item:{id:'msg',type:'agent_message',text:input}}));",
+      "console.log(JSON.stringify({type:'turn.completed'}));",
+      '});',
+    ].join('');
+    const events = [];
+    for await (const event of runCodexAgent(repair, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) {
+      events.push(event);
+    }
+
+    expect(codexSandboxForRun(repair)).toBe('workspace-write');
+    expect(events[0]).toMatchObject({ type: 'output.delta' });
+    expect((events[0] as { text?: string }).text).toContain('Review round 1: A branch is missing.');
+    expect((events[0] as { text?: string }).text).toContain('Handle the missing branch');
+    expect(events.some((event) => event.type === 'review.submitted')).toBe(false);
+    expect(events.at(-2)?.type).toBe('handoff.requested');
+    expect(events.at(-1)?.type).toBe('run.completed');
   });
 });

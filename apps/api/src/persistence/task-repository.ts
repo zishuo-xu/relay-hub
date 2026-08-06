@@ -108,11 +108,13 @@ export async function createTask(
     }
 
     const [agent] = await tx
-      .select({ id: agentProfiles.id, enabled: agentProfiles.enabled })
+      .select({ id: agentProfiles.id, enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
       .from(agentProfiles)
       .where(and(eq(agentProfiles.id, input.agentId), eq(agentProfiles.workspaceId, DEFAULT_WORKSPACE_ID)))
       .limit(1);
-    if (!agent?.enabled) throw new Error(`Agent is missing or disabled: ${input.agentId}`);
+    if (!agent?.enabled || !agent.capabilities.includes('implement')) {
+      throw new Error(`Builder is missing, disabled, or lacks implement capability: ${input.agentId}`);
+    }
     if (input.reviewerAgentId) {
       if (input.reviewerAgentId === input.agentId) throw new Error('Builder and Reviewer AgentProfile must be different');
       const [reviewer] = await tx
@@ -144,6 +146,8 @@ export async function createTask(
       description: input.description,
       acceptanceCriteria: input.acceptanceCriteria,
       completionPolicy: input.completionPolicy,
+      maxReviewRounds: input.maxReviewRounds,
+      builderAgentId: input.agentId,
       reviewerAgentId: input.reviewerAgentId,
       status: 'queued',
       createdAt: now,
@@ -169,6 +173,7 @@ export async function createTask(
         payload: {
           title: input.title,
           agentId: input.agentId,
+          maxReviewRounds: input.maxReviewRounds,
           ...(input.reviewerAgentId ? { reviewerAgentId: input.reviewerAgentId } : {}),
         },
         source: 'user',

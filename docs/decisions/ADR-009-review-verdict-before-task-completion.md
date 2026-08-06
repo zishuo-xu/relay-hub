@@ -14,7 +14,7 @@ Reviewer 的自然语言输出不能直接成为 Task 状态迁移依据。平�
 4. verdict 与 Finding 严重度必须一致：approved 不允许 actionable Finding，changes_requested 要求 blocking/should_fix，blocked 要求 blocking。
 5. Reviewer `run.completed` 事务读取已持久化 Review 后，才由 Orchestrator 应用 CompletionPolicy。
 6. `auto_on_approval` 直接完成；`require_user_confirmation` 等待用户确认；`risk_based` 当前只在 Builder 有非空且全部成功的命令证据时自动完成。
-7. blocked 进入 waiting_for_user；changes_requested 进入显式状态。自动创建 Builder 修复 Run 作为下一阶段实现。
+7. blocked 进入 waiting_for_user；changes_requested 进入显式状态。后续 ADR-010 已实现有界的 Builder 修复 Run。
 8. Reviewer 协议错误或执行失败不会让 Task 永久停留在 reviewing，而是转入 waiting_for_user 并保留失败事件。
 
 ## 结果
@@ -22,4 +22,4 @@ Reviewer 的自然语言输出不能直接成为 Task 状态迁移依据。平�
 - Builder 或普通 Run 无法伪造 Review，Reviewer 也不能只凭一段自由文本完成 Task。
 - PostgreSQL 可以完整重建 Handoff、Review、Finding、CompletionPolicy 与用户确认的因果链。
 - 完成策略与模型解耦，风险路由使用确定性证据而不是让模型自行决定是否需要审批。
-- 本切片不自动返工；Phase 3.3 将以 changes_requested Review 为事实来源创建新的 Builder Run。
+- Phase 3.3 的返工规则由 ADR-010 补充；本 ADR 的 Review 先持久化原则保持不变。

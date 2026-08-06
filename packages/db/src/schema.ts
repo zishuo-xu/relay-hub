@@ -119,7 +119,9 @@ export const tasks = pgTable(
       .default('require_user_confirmation')
       .notNull(),
     currentRunId: uuid('current_run_id').references((): AnyPgColumn => runs.id),
+    builderAgentId: uuid('builder_agent_id').references(() => agentProfiles.id),
     reviewerAgentId: uuid('reviewer_agent_id').references(() => agentProfiles.id),
+    maxReviewRounds: integer('max_review_rounds').default(3).notNull(),
     requestedBy: text('requested_by').default('local-operator').notNull(),
     version: integer('version').default(1).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),

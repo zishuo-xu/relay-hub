@@ -1,5 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { AgentEventSchema, DEFAULT_MOCK_REVIEWER_AGENT_ID, ReviewDraftSchema } from './index.js';
+import {
+  AgentEventSchema,
+  CreateTaskInputSchema,
+  DEFAULT_MOCK_AGENT_ID,
+  DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  ReviewDraftSchema,
+} from './index.js';
+
+describe('Task review policy contract', () => {
+  const baseInput = {
+    title: 'Review policy',
+    description: 'Verify review-round defaults and bounds.',
+    agentId: DEFAULT_MOCK_AGENT_ID,
+  };
+
+  it('defaults to three review rounds and accepts an explicit bounded budget', () => {
+    expect(CreateTaskInputSchema.parse(baseInput).maxReviewRounds).toBe(3);
+    expect(CreateTaskInputSchema.parse({ ...baseInput, maxReviewRounds: 10 }).maxReviewRounds).toBe(10);
+  });
+
+  it('rejects a review budget outside 1 through 10', () => {
+    expect(() => CreateTaskInputSchema.parse({ ...baseInput, maxReviewRounds: 0 })).toThrow();
+    expect(() => CreateTaskInputSchema.parse({ ...baseInput, maxReviewRounds: 11 })).toThrow();
+  });
+});
 
 describe('Handoff contract', () => {
   it('accepts bounded structured context and applies list defaults', () => {

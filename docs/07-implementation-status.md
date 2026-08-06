@@ -1,5 +1,28 @@
 # 07. 实现状态
 
+## 2026-08-07：Phase 3.3 Review 驱动的自动返工循环
+
+### 已实现
+
+- Task 固定保存 `builderAgentId` 和可配置 `maxReviewRounds`（默认 3，范围 1–10），Reviewer 成为当前 Run 时不会丢失返工目标身份。
+- `changes_requested` Review 在预算内会由同一事务创建 `triggerType=retry` 的 Builder Run、Outbox 和 `task.repair_requested` 审计事件；Task 显式经过 `reviewing -> changes_requested -> queued`。
+- repair Run 的 `parentRunId` 指向来源 Reviewer Run，`retryOfRunId` 指向上一轮 Builder Run，旧 Run、Review 和 Findings 保持不可变。
+- repair Run 继承 Builder Worktree、working directory 和 branch，跳过新 Worktree 与 Bootstrap；领取时获得独立 Run Token 以及来源 Review/Findings。
+- Codex Builder repair Prompt 明确列出 Review round、Finding 严重度、文件位置、详情和建议；Mock Adapter 保留确定性演示路径。
+- repair Builder 完成后复用既有 Handoff 流程创建下一轮 Reviewer Run；新的 verdict 保存为新的 Review round。
+- 达到轮次预算仍要求修改时不再创建 Run，Task 转入 `waiting_for_user` 并记录 `task.repair_limit_reached`。
+- Web 创建任务可配置最大 Review 轮数；Timeline 识别返工 Run 创建和轮次上限事件。
+- migration `0008_superb_yellowjacket.sql` 只增加 Task Builder 外键与 Review 轮次预算，并从历史首个 user Run 无损回填 Builder 身份。
+
+### 验证证据
+
+- Contracts 12/12 通过，覆盖 Review 预算默认值和 1–10 边界。
+- Worker 10/10 通过，覆盖 repair Prompt、Findings 注入、workspace-write 边界和修复后 Handoff 顺序。
+- 隔离 PostgreSQL 中 API Store + Orchestrator 11/11 通过；完整重建 Builder → Review #1 changes_requested → repair Builder → Review #2 approved → 用户确认的四 Run 因果链，并验证预算耗尽时不创建额外 repair Run。
+- migration 已先在 `relayhub_migration_test` 独立数据库验证，再应用到正式 PostgreSQL；历史 Task 的空 Builder 身份计数为 0，未删除或覆盖业务数据。
+- 仓库级 `pnpm check`（typecheck、tests、production build）通过；API health 同时确认 PostgreSQL 与 BullMQ 正常。
+- 3010 Web 在真实浏览器复验：创建抽屉默认显示 3 轮、可编辑为 2，并在当前窄视口保持 CompletionPolicy、轮次预算和 Builder/Reviewer 选择完整可见。
+
 ## 2026-08-07：Phase 3.2 结构化 Review、Finding 与完成策略
 
 ### 已实现
@@ -21,7 +44,7 @@
 - 独立 API `4110`、临时 Redis `56380`、隔离 PostgreSQL 和真实 BullMQ Worker 完成 23 事件双 Agent E2E：两个 Run 均 succeeded、Handoff dispatched、Review round 1 approved，Task 经 `auto_on_approval` 自动 completed。
 - 正式 PostgreSQL 已应用纯新增 migration；仓库级 `pnpm check`（typecheck、tests、production build）通过。
 - 正式 Web/API/Worker 又完成 require_user_confirmation 实跑：Review 摘要与确认按钮在 1280×720 首屏可见，点击后 Task=`completed` 且追加 `task.user_confirmed`；浏览器控制台无错误。
-- `changes_requested` 自动创建 Builder 修复 Run 尚未实现，属于 Phase 3.3。
+- `changes_requested` 自动创建 Builder 修复 Run 已在 Phase 3.3 实现。
 
 ## 2026-08-07：Phase 3.1 结构化 Handoff 与 Reviewer Run 派发
 
@@ -243,7 +266,7 @@ Task queued
 
 ### 此阶段之后仍未实现
 
-- Builder → Reviewer Handoff 已在 Phase 3.1 实现；Review/Finding 已在 Phase 3.2 实现，返工 Run 仍未实现。
+- Builder → Reviewer Handoff 已在 Phase 3.1 实现；Review/Finding 已在 Phase 3.2 实现，返工 Run 后续已在 Phase 3.3 实现。
 - 单次 Run token 已在 Phase 2.7 实现；Worker lease、heartbeat 和崩溃 reconciliation 仍未实现。
 - 用户批准后合并/提交 Worktree 的产品流程。
 - Workspace Bootstrap 已在 Phase 2.6 实现；当前仍需由用户显式配置步骤，自动项目探测尚未实现。
@@ -288,7 +311,7 @@ POST Task
 
 - Worker lease、heartbeat 与崩溃 reconciliation。
 - 真实 Agent CLI、Worktree 隔离与进程监管。
-- Handoff 已在 Phase 3.1 实现；Review 裁决和 `require_user_confirmation` 交互已在 Phase 3.2 实现，返工 Run 仍未实现。
+- Handoff 已在 Phase 3.1 实现；Review 裁决和 `require_user_confirmation` 交互已在 Phase 3.2 实现，返工 Run 后续已在 Phase 3.3 实现。
 
 ### 下一个可运行里程碑
 

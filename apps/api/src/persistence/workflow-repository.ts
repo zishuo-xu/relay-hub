@@ -56,6 +56,8 @@ export async function recordAgentEvent(
     let nextRunStatus: RunStatus | undefined;
     let nextTaskStatus: TaskStatus | undefined;
     let workflowEvent: { eventType: string; payload: Record<string, unknown>; dedupeKey: string } | undefined;
+    let secondaryWorkflowEvent: { eventType: string; payload: Record<string, unknown>; dedupeKey: string } | undefined;
+    let repairRunId: string | undefined;
     const runPatch: Partial<typeof runs.$inferInsert> = {};
     const taskPatch: Partial<typeof tasks.$inferInsert> = {};
 
@@ -177,7 +179,11 @@ export async function recordAgentEvent(
               .from(reviewFindings)
               .where(eq(reviewFindings.reviewId, review.id));
             const [builderRun] = run.parentRunId
-              ? await tx.select({ outcome: runs.outcome }).from(runs).where(eq(runs.id, run.parentRunId)).limit(1)
+              ? await tx
+                  .select({ agentId: runs.agentId, attempt: runs.attempt, outcome: runs.outcome })
+                  .from(runs)
+                  .where(eq(runs.id, run.parentRunId))
+                  .limit(1)
               : [];
             const evidence = builderRun?.outcome?.commandEvidence ?? [];
             const riskEvidenceSatisfied =
@@ -186,6 +192,8 @@ export async function recordAgentEvent(
               verdict: review.verdict,
               completionPolicy: task.completionPolicy,
               riskEvidenceSatisfied,
+              repairDispatchAvailable:
+                review.verdict === 'changes_requested' && review.round < task.maxReviewRounds,
             });
             nextTaskStatus = plan.nextTaskStatus;
             workflowEvent = {
@@ -201,6 +209,52 @@ export async function recordAgentEvent(
               },
               dedupeKey: `workflow-after-review:${run.id}`,
             };
+            if (plan.queueRepair) {
+              const builderAgentId = task.builderAgentId ?? builderRun?.agentId;
+              if (!builderAgentId) throw new Error('Task has no Builder AgentProfile for repair');
+              const [builderAgent] = await tx
+                .select({ enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
+                .from(agentProfiles)
+                .where(eq(agentProfiles.id, builderAgentId))
+                .limit(1);
+              if (!builderAgent?.enabled || !builderAgent.capabilities.includes('implement')) {
+                throw new Error(`Builder became unavailable for repair: ${builderAgentId}`);
+              }
+              repairRunId = randomUUID();
+              await tx.insert(runs).values({
+                id: repairRunId,
+                taskId: task.id,
+                agentId: builderAgentId,
+                parentRunId: run.id,
+                retryOfRunId: run.parentRunId,
+                triggerType: 'retry',
+                status: 'queued',
+                attempt: (builderRun?.attempt ?? review.round) + 1,
+                workspaceRoot: run.workspaceRoot,
+                bootstrapPolicySnapshot: { steps: [] },
+                worktreePath: run.worktreePath,
+                workingDirectory: run.workingDirectory,
+                branchName: run.branchName,
+                createdAt: now,
+              });
+              await tx.insert(outboxEvents).values({
+                aggregateType: 'run',
+                aggregateId: repairRunId,
+                eventType: 'run.queued',
+                payload: { runId: repairRunId },
+              });
+              secondaryWorkflowEvent = {
+                eventType: 'task.repair_requested',
+                payload: {
+                  reviewId: review.id,
+                  reviewRound: review.round,
+                  previousBuilderRunId: run.parentRunId,
+                  repairRunId,
+                  nextReviewRound: review.round + 1,
+                },
+                dedupeKey: `workflow-repair-requested:${run.id}`,
+              };
+            }
           } else {
             const [pendingHandoff] = await tx
               .select()
@@ -302,6 +356,18 @@ export async function recordAgentEvent(
       taskPatch.updatedAt = now;
       await tx.update(tasks).set(taskPatch).where(and(eq(tasks.id, task.id), eq(tasks.version, task.version)));
     }
+    if (repairRunId) {
+      assertTaskTransition('changes_requested', 'queued');
+      await tx
+        .update(tasks)
+        .set({
+          status: 'queued',
+          currentRunId: repairRunId,
+          version: task.version + 2,
+          updatedAt: now,
+        })
+        .where(and(eq(tasks.id, task.id), eq(tasks.version, task.version + 1), eq(tasks.status, 'changes_requested')));
+    }
 
     const { type: eventType, ...payload } = agentEvent;
     const [eventRow] = await tx
@@ -324,6 +390,22 @@ export async function recordAgentEvent(
         })
         .returning();
       if (!workflowEventRow) throw new Error('Workflow event insert did not return a row');
+      emitted.push(mapEvent(workflowEventRow));
+    }
+    if (secondaryWorkflowEvent) {
+      const [workflowEventRow] = await tx
+        .insert(runEvents)
+        .values({
+          taskId: run.taskId,
+          runId,
+          eventType: secondaryWorkflowEvent.eventType,
+          payload: secondaryWorkflowEvent.payload,
+          source: 'api',
+          occurredAt: now,
+          dedupeKey: secondaryWorkflowEvent.dedupeKey,
+        })
+        .returning();
+      if (!workflowEventRow) throw new Error('Secondary workflow event insert did not return a row');
       emitted.push(mapEvent(workflowEventRow));
     }
     return { taskId: run.taskId, emitted };

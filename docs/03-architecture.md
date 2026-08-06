@@ -330,4 +330,17 @@ Phase 2.8 已完成 API 持久化职责整理。`PostgresStore` 保留为路由�
 
 Phase 3.1 已实现最小结构化 Handoff。用户在 Task 创建时选择独立 Reviewer AgentProfile；Builder Adapter 在完成前提交 objective、context summary、artifact refs 和 acceptance criteria。API 先持久化 pending Handoff，Builder 成功后再原子创建 `triggerType=review` 的父子 Run、更新 Task=`reviewing` 并写 Outbox。Reviewer 领取时只获得 Task、自己的 AgentProfile、Handoff 和继承的 Builder Worktree；真实 Codex Reviewer 使用 `read-only` sandbox 且跳过写入型 Bootstrap。
 
-Phase 3.2 已实现 Review 裁决边界。Reviewer 先提交不可变 `Review + Findings`，API 校验 Run 角色、Task Reviewer 身份、verdict 与 Finding 严重度的一致性；Reviewer `run.completed` 只有在 Review 已持久化后才能成功。随后 Orchestrator 在同一事务中应用 CompletionPolicy：`auto_on_approval` 直接完成，`require_user_confirmation` 等待用户确认，`risk_based` 仅在 Builder 存在非空且全部成功的命令证据时自动完成。`changes_requested` 进入显式状态，自动创建修复 Run 留给 Phase 3.3。
+Phase 3.2 已实现 Review 裁决边界。Reviewer 先提交不可变 `Review + Findings`，API 校验 Run 角色、Task Reviewer 身份、verdict 与 Finding 严重度的一致性；Reviewer `run.completed` 只有在 Review 已持久化后才能成功。随后 Orchestrator 在同一事务中应用 CompletionPolicy：`auto_on_approval` 直接完成，`require_user_confirmation` 等待用户确认，`risk_based` 仅在 Builder 存在非空且全部成功的命令证据时自动完成。
+
+Phase 3.3 已实现最小自动返工循环，没有引入通用工作流引擎：
+
+```text
+Review #N changes_requested
+  -> Task reviewing -> changes_requested -> queued
+  -> 创建 triggerType=retry 的 Builder Run
+  -> 注入来源 Review + Findings
+  -> Builder 在继承 Worktree 中修复并提交新 Handoff
+  -> 创建 Review #(N+1)
+```
+
+Task 固定保存最初 Builder AgentProfile；每一轮执行者仍由 Run 独立记录。返工 Run 的 `parentRunId` 指向触发它的 Reviewer Run，`retryOfRunId` 指向上一轮 Builder Run，因此数据库可以重建完整因果链。返工继承已经准备好的 Worktree，不重复创建分支或执行 Bootstrap。`maxReviewRounds` 默认 3、范围 1–10；达到预算后不再排队新 Run，Task 进入 `waiting_for_user` 并记录 `task.repair_limit_reached`。

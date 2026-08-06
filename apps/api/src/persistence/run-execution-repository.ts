@@ -8,10 +8,29 @@ import {
   type TaskDetail,
   type TaskStatus,
 } from '@relay-hub/contracts';
-import { agentProfiles, handoffs, type RelayDatabase, runEvents, runs, tasks, workspaces } from '@relay-hub/db';
+import {
+  agentProfiles,
+  handoffs,
+  type RelayDatabase,
+  reviewFindings,
+  reviews,
+  runEvents,
+  runs,
+  tasks,
+  workspaces,
+} from '@relay-hub/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { issueRunToken, verifyRunToken } from '../run-token.js';
-import { mapAgentProfile, mapEvent, mapHandoff, mapRun, mapTask, mapWorkspace } from './mappers.js';
+import {
+  mapAgentProfile,
+  mapEvent,
+  mapHandoff,
+  mapReview,
+  mapReviewFinding,
+  mapRun,
+  mapTask,
+  mapWorkspace,
+} from './mappers.js';
 import { getTaskDetail } from './task-repository.js';
 import type { MutationResult } from './types.js';
 
@@ -52,6 +71,12 @@ export async function claimRun(
     const [agentRow] = await tx.select().from(agentProfiles).where(eq(agentProfiles.id, claimed.agentId)).limit(1);
     if (!agentRow) throw new Error(`Agent profile not found for run: ${runId}`);
     const [handoffRow] = await tx.select().from(handoffs).where(eq(handoffs.targetRunId, claimed.id)).limit(1);
+    const [reviewRow] = claimed.triggerType === 'retry' && claimed.parentRunId
+      ? await tx.select().from(reviews).where(eq(reviews.runId, claimed.parentRunId)).limit(1)
+      : [];
+    const findingRows = reviewRow
+      ? await tx.select().from(reviewFindings).where(eq(reviewFindings.reviewId, reviewRow.id))
+      : [];
     const [eventRow] = await tx
       .insert(runEvents)
       .values({
@@ -72,6 +97,7 @@ export async function claimRun(
           workspace: mapWorkspace(workspaceRow),
           agent: mapAgentProfile(agentRow),
           ...(handoffRow ? { handoff: mapHandoff(handoffRow) } : {}),
+          ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
         } satisfies ClaimedRun,
         executionToken: token.plaintext,
       },

@@ -20,23 +20,39 @@ describe('workflow orchestrator', () => {
 
   it('applies auto and user-confirmation policies only after approval', () => {
     expect(
-      planAfterReview({ verdict: 'approved', completionPolicy: 'auto_on_approval', riskEvidenceSatisfied: false }),
+      planAfterReview({
+        verdict: 'approved',
+        completionPolicy: 'auto_on_approval',
+        riskEvidenceSatisfied: false,
+        repairDispatchAvailable: false,
+      }),
     ).toMatchObject({ nextTaskStatus: 'completed', reason: 'auto_on_approval' });
     expect(
       planAfterReview({
         verdict: 'approved',
         completionPolicy: 'require_user_confirmation',
         riskEvidenceSatisfied: true,
+        repairDispatchAvailable: false,
       }),
     ).toMatchObject({ nextTaskStatus: 'waiting_for_user', reason: 'user_confirmation_required' });
   });
 
   it('keeps risk-based completion deterministic and evidence-driven', () => {
     expect(
-      planAfterReview({ verdict: 'approved', completionPolicy: 'risk_based', riskEvidenceSatisfied: true }),
+      planAfterReview({
+        verdict: 'approved',
+        completionPolicy: 'risk_based',
+        riskEvidenceSatisfied: true,
+        repairDispatchAvailable: false,
+      }),
     ).toMatchObject({ nextTaskStatus: 'completed', reason: 'risk_evidence_satisfied' });
     expect(
-      planAfterReview({ verdict: 'approved', completionPolicy: 'risk_based', riskEvidenceSatisfied: false }),
+      planAfterReview({
+        verdict: 'approved',
+        completionPolicy: 'risk_based',
+        riskEvidenceSatisfied: false,
+        repairDispatchAvailable: false,
+      }),
     ).toMatchObject({ nextTaskStatus: 'waiting_for_user', reason: 'risk_evidence_requires_confirmation' });
   });
 
@@ -46,10 +62,24 @@ describe('workflow orchestrator', () => {
         verdict: 'changes_requested',
         completionPolicy: 'auto_on_approval',
         riskEvidenceSatisfied: true,
+        repairDispatchAvailable: true,
       }),
-    ).toMatchObject({ nextTaskStatus: 'changes_requested', eventType: 'task.changes_requested' });
+    ).toMatchObject({ nextTaskStatus: 'changes_requested', eventType: 'task.changes_requested', queueRepair: true });
     expect(
-      planAfterReview({ verdict: 'blocked', completionPolicy: 'auto_on_approval', riskEvidenceSatisfied: true }),
+      planAfterReview({
+        verdict: 'blocked',
+        completionPolicy: 'auto_on_approval',
+        riskEvidenceSatisfied: true,
+        repairDispatchAvailable: false,
+      }),
     ).toMatchObject({ nextTaskStatus: 'waiting_for_user', eventType: 'task.review_blocked' });
+    expect(
+      planAfterReview({
+        verdict: 'changes_requested',
+        completionPolicy: 'auto_on_approval',
+        riskEvidenceSatisfied: true,
+        repairDispatchAvailable: false,
+      }),
+    ).toMatchObject({ nextTaskStatus: 'waiting_for_user', eventType: 'task.repair_limit_reached' });
   });
 });

@@ -84,7 +84,7 @@
 2. [x] Builder → Reviewer 父子 Run、持久 Handoff 与 Outbox/BullMQ 可靠派发。
 3. [x] Reviewer 独立上下文、Run Token 和继承 Worktree 的只读执行边界。
 4. [x] Review、Finding 与 `approved/changes_requested/blocked` 结构化裁决。
-5. [ ] `changes_requested` 后的修复 Run。
+5. [x] `changes_requested` 后的修复 Run、结构化 Finding 注入和 Review 轮次预算。
 6. [ ] Timeline 中展示完整协作图与审查详情。
 
 退出条件：标准演示场景端到端通过，且交接链可以由数据库查询重建。
@@ -133,15 +133,13 @@
 2. Workspace Bootstrap 与执行结果语义已完成。
 3. 单次 Run token 已完成，为后续 Handoff/Review 提交建立了最小可信执行身份。
 
-Phase 3.2 结构化 Review/Finding 已完成。只有 Reviewer Run 可以提交 verdict；`approved` 已交给可配置 CompletionPolicy，支持自动完成、用户确认和基于命令证据的确定性风险路由。下一步是 Phase 3.3：`changes_requested` 创建新的 Builder 修复 Run，并在新的 Review round 中复审。架构继续保持 provider/model-neutral。
+Phase 3.3 自动返工主链已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，claim 时注入来源 Review/Findings，修复后再走 Handoff 并产生新的 Review round；达到可配置轮次预算则停止自动循环并转交用户。架构继续保持 provider/model-neutral。下一步是 Phase 3.4：在一屏 Timeline 中更直观地展示 Builder、Reviewer、返工和多轮 Review 的完整协作图。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 
 以下能力不属于这次“首次真实运行”，需要后续阶段继续完成：
 
-- `changes_requested` 的 Builder 修复 Run 与新一轮 Review。
 - 真实不同 provider/model Reviewer 的运行验收；当前确定性全链路使用独立 Mock Reviewer AgentProfile。
-- `approved`、`changes_requested` 和用户最终确认闭环。
 - Worker 崩溃后的 lease reconciliation 与完整故障演示。
 
 因此里程碑应区分为：

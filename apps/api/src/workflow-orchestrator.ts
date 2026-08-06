@@ -28,13 +28,15 @@ export function planAfterSuccessfulBuilderRun(input: { reviewDispatchAvailable: 
 
 export interface ReviewResolutionPlan {
   nextTaskStatus: Extract<TaskStatus, 'completed' | 'waiting_for_user' | 'changes_requested'>;
-  eventType: 'task.review_approved' | 'task.changes_requested' | 'task.review_blocked';
+  eventType: 'task.review_approved' | 'task.changes_requested' | 'task.review_blocked' | 'task.repair_limit_reached';
+  queueRepair: boolean;
   reason:
     | 'auto_on_approval'
     | 'user_confirmation_required'
     | 'risk_evidence_satisfied'
     | 'risk_evidence_requires_confirmation'
     | 'reviewer_requested_changes'
+    | 'max_review_rounds_reached'
     | 'reviewer_blocked';
 }
 
@@ -42,12 +44,22 @@ export function planAfterReview(input: {
   verdict: ReviewVerdict;
   completionPolicy: CompletionPolicy;
   riskEvidenceSatisfied: boolean;
+  repairDispatchAvailable: boolean;
 }): ReviewResolutionPlan {
   if (input.verdict === 'changes_requested') {
+    if (!input.repairDispatchAvailable) {
+      return {
+        nextTaskStatus: 'waiting_for_user',
+        eventType: 'task.repair_limit_reached',
+        reason: 'max_review_rounds_reached',
+        queueRepair: false,
+      };
+    }
     return {
       nextTaskStatus: 'changes_requested',
       eventType: 'task.changes_requested',
       reason: 'reviewer_requested_changes',
+      queueRepair: true,
     };
   }
   if (input.verdict === 'blocked') {
@@ -55,6 +67,7 @@ export function planAfterReview(input: {
       nextTaskStatus: 'waiting_for_user',
       eventType: 'task.review_blocked',
       reason: 'reviewer_blocked',
+      queueRepair: false,
     };
   }
   if (input.completionPolicy === 'auto_on_approval') {
@@ -62,6 +75,7 @@ export function planAfterReview(input: {
       nextTaskStatus: 'completed',
       eventType: 'task.review_approved',
       reason: 'auto_on_approval',
+      queueRepair: false,
     };
   }
   if (input.completionPolicy === 'risk_based' && input.riskEvidenceSatisfied) {
@@ -69,6 +83,7 @@ export function planAfterReview(input: {
       nextTaskStatus: 'completed',
       eventType: 'task.review_approved',
       reason: 'risk_evidence_satisfied',
+      queueRepair: false,
     };
   }
   return {
@@ -77,5 +92,6 @@ export function planAfterReview(input: {
     reason: input.completionPolicy === 'risk_based'
       ? 'risk_evidence_requires_confirmation'
       : 'user_confirmation_required',
+    queueRepair: false,
   };
 }

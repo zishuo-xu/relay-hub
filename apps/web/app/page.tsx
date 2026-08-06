@@ -31,6 +31,7 @@ export default function HomePage() {
   const [selectedAgentId, setSelectedAgentId] = useState(DEFAULT_MOCK_AGENT_ID);
   const [selectedReviewerAgentId, setSelectedReviewerAgentId] = useState(DEFAULT_MOCK_REVIEWER_AGENT_ID);
   const [completionPolicy, setCompletionPolicy] = useState<CompletionPolicy>('require_user_confirmation');
+  const [maxReviewRounds, setMaxReviewRounds] = useState(3);
   const [createOpen, setCreateOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -149,6 +150,7 @@ export default function HomePage() {
           ...(selectedReviewerAgentId ? { reviewerAgentId: selectedReviewerAgentId } : {}),
           acceptanceCriteria: criterion.trim() ? [criterion.trim()] : [],
           completionPolicy,
+          maxReviewRounds,
         }),
       });
       if (!response.ok) throw new Error(`创建任务失败：${response.status}`);
@@ -194,7 +196,7 @@ export default function HomePage() {
   );
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedReviewer = agents.find((agent) => agent.id === selectedReviewerAgentId) ?? null;
-  const currentAgent = agents.find((agent) => agent.id === detail?.task.agentId) ?? null;
+  const currentAgent = agents.find((agent) => agent.id === currentRun?.agentId) ?? null;
   const canCancel = currentRun
     ? !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status)
     : false;
@@ -225,12 +227,14 @@ export default function HomePage() {
         agents={agents.filter((agent) => agent.capabilities.includes('implement'))}
         criterion={criterion}
         completionPolicy={completionPolicy}
+        maxReviewRounds={maxReviewRounds}
         description={description}
         onAgentChange={setSelectedAgentId}
         onReviewerChange={setSelectedReviewerAgentId}
         onClose={() => setCreateOpen(false)}
         onCriterionChange={setCriterion}
         onCompletionPolicyChange={setCompletionPolicy}
+        onMaxReviewRoundsChange={setMaxReviewRounds}
         onDescriptionChange={setDescription}
         onSubmit={createTask}
         onTitleChange={setTitle}

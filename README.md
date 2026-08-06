@@ -42,7 +42,8 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 按 Task、Run execution 和 Workflow transaction 拆分 API 持久化职责
 - [x] 完成结构化 Builder → Reviewer Handoff、父子 Run 和可靠队列派发
 - [x] 完成结构化 Review/Finding、CompletionPolicy 与用户确认完成
-- [ ] 完成多 Agent 交接与 Review 流程
+- [x] 完成 `changes_requested` 自动返工、Review 多轮复审与轮次预算
+- [x] 完成多 Agent 交接与 Review 主流程
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定
@@ -116,7 +117,7 @@ pnpm dev
 
 还可以独立选择 Reviewer。默认 `Mock Reviewer` 会稳定演示结构化 Handoff 和第二个 Reviewer Run；后续接入的真实 Reviewer AgentProfile 可以选择不同 provider/model。Builder 完成前平台只保存 pending Handoff，成功结束后才通过 Outbox/BullMQ 唤醒 Reviewer。
 
-Reviewer 必须在结束前提交结构化 `Review`，结论为 `approved`、`changes_requested` 或 `blocked`，问题以 `Finding` 保存。创建任务时可选择审查通过后自动完成、等待用户最终确认，或仅在 Builder 存在成功命令证据时自动完成。`changes_requested` 的自动修复 Run 属于下一阶段。
+Reviewer 必须在结束前提交结构化 `Review`，结论为 `approved`、`changes_requested` 或 `blocked`，问题以 `Finding` 保存。创建任务时可选择审查通过后自动完成、等待用户最终确认，或仅在 Builder 存在成功命令证据时自动完成；还可以设置 1–10 轮 Review 预算（默认 3）。当 Reviewer 返回 `changes_requested` 时，平台会把 Review 和 Findings 注入新的 Builder 返工 Run，返工完成后再创建下一轮独立 Reviewer Run；预算耗尽则转交用户处理。
 
 Worktree 默认保存在 `~/.relay-hub/worktrees/<runId>`，任务结束后不会自动删除，方便用户检查 diff 和测试证据。可通过 `RELAY_HUB_WORKTREE_ROOT` 改变存放位置。
 

@@ -103,6 +103,7 @@ export const CreateTaskInputSchema = z.object({
   reviewerAgentId: z.string().uuid().optional(),
   acceptanceCriteria: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
   completionPolicy: z.enum(COMPLETION_POLICIES).default('require_user_confirmation'),
+  maxReviewRounds: z.number().int().min(1).max(10).default(3),
 });
 
 export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
@@ -250,6 +251,7 @@ export interface Task {
   reviewerAgentId?: string;
   acceptanceCriteria: string[];
   completionPolicy: CompletionPolicy;
+  maxReviewRounds: number;
   status: TaskStatus;
   currentRunId: string;
   version: number;
@@ -360,6 +362,7 @@ export interface ClaimedRun {
   workspace: Workspace;
   agent: AgentProfile;
   handoff?: Handoff;
+  review?: Review;
 }
 
 export interface ClaimedExecution {

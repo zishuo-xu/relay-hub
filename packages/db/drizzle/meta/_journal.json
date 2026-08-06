@@ -57,6 +57,13 @@
       "when": 1786036507461,
       "tag": "0007_brave_lila_cheney",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786037648744,
+      "tag": "0008_superb_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

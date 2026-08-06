@@ -348,6 +348,8 @@ Task 完成行为可由 Workspace 默认值和 Task override 配置：
 
 **Implemented（2026-08-07）：** Task 创建页可配置三种 CompletionPolicy。`auto_on_approval` 自动完成；`require_user_confirmation` 进入 `waiting_for_user` 并要求显式确认；当前 `risk_based` 仅在 Builder 具有非空且全部成功的命令证据时自动完成，否则保守等待用户。`changes_requested` 和 `blocked` 不受自动完成策略影响。
 
+**Implemented（2026-08-07）：** Task 还保存独立于 CompletionPolicy 的 `maxReviewRounds`（默认 3，范围 1–10）。`changes_requested` 在预算内由确定性 Orchestrator 创建新的 Builder repair Run，并将来源 Review/Findings 注入该 Run；返工完成后重新 Handoff 给独立 Reviewer。达到预算后进入 `waiting_for_user`，不会由模型自行决定继续循环。Task 保存稳定 `builderAgentId`，Run 保存每轮执行身份及 `parentRunId/retryOfRunId` 因果关系。
+
 ---
 
 ## 7. 第一版明确不做什么？

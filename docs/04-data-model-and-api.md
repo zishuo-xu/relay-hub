@@ -130,7 +130,9 @@ erDiagram
 - `acceptance_criteria jsonb`
 - `requested_by`
 - `current_run_id`
+- `builder_agent_id`: Task 的稳定 Builder 身份；当前 Run 可能属于 Reviewer，不能用它反推返工目标
 - `reviewer_agent_id`: 用户为该 Task 选择的独立 Reviewer AgentProfile；可空以兼容单 Builder 流程
+- `max_review_rounds`: 最多允许的 Review 轮数，默认 3，创建 API 限制为 1–10
 - `version`
 - `completed_at`
 
@@ -258,6 +260,8 @@ Phase 3.1 中 `handoff.requested` 继续通过受 Run Token 保护的 event 接�
 
 Phase 3.2 中 `review.submitted` 继续复用同一个受 Token 保护的 event 接口。只有 `trigger_type=review` 且 AgentProfile 与 Task `reviewer_agent_id` 一致的 Run 可以提交；每个 Reviewer Run 只能保存一个 Review，同一 Task 的 round 唯一。`approved` 不能包含 blocking/should_fix Finding，`changes_requested` 至少包含一条 actionable Finding，`blocked` 至少包含一条 blocking Finding。Reviewer 必须先提交 Review，再提交 `run.completed`。
 
+Phase 3.3 中 Reviewer `run.completed` 读取 `changes_requested` Review 后，在同一事务中创建新的 `trigger_type=retry` Builder Run、Outbox 和审计事件。返工 Run 通过 `parent_run_id=来源 Reviewer Run`、`retry_of_run_id=上一轮 Builder Run` 保存双重因果关系，并继承上一轮 Worktree。Worker claim 会把来源 Review 与 Findings 作为结构化上下文返回，Queue job 仍只包含 `runId`。达到 `max_review_rounds` 时不再创建 Run，Task 转入 `waiting_for_user`。
+
 ## 统一 Agent 事件
 
 ```ts
@@ -286,7 +290,7 @@ Workspace Bootstrap 在 `run.prepared` 与 `run.started` 之间产生 `run.boots
 
 Builder 的 `handoff.requested` 必须发生在 `run.completed` 之前。前者只创建 pending Handoff，不改变 Task owner 或创建子 Run；后者成功时才由 Orchestrator 在同一事务中创建 Reviewer Run、写 Outbox、把 Handoff 标记为 dispatched，并将 Task 切换为 reviewing。Reviewer 完成不会递归创建另一个 Reviewer。
 
-Reviewer 的 `review.submitted` 同样先保存事实而不立即结束 Run。Reviewer `run.completed` 事务读取已保存 Review，并根据 verdict 与 CompletionPolicy 原子推进 Task。`POST /api/tasks/:taskId/confirm` 只接受处于 `waiting_for_user` 且最新 Review 为 `approved` 的 Task；重复确认已完成 Task 是幂等读取。
+Reviewer 的 `review.submitted` 同样先保存事实而不立即结束 Run。Reviewer `run.completed` 事务读取已保存 Review，并根据 verdict、CompletionPolicy 和 Review 轮次预算原子推进 Task。`changes_requested` 在预算内自动创建返工 Builder Run；返工 Builder 必须再次提交 Handoff，平台才创建下一轮 Reviewer Run。`POST /api/tasks/:taskId/confirm` 只接受处于 `waiting_for_user` 且最新 Review 为 `approved` 的 Task；重复确认已完成 Task 是幂等读取。
 
 ## WebSocket 事件
 

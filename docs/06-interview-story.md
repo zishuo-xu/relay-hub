@@ -68,7 +68,7 @@ Clowder AI 是功能丰富的生产平台，包含身份、记忆、Skills、SOP
 
 准备两个固定演示：
 
-1. **正常流程**：builder 完成任务，reviewer 返回 approved，展示父子 Run 和审计时间线。
+1. **协作流程**：Builder 完成任务，Reviewer 第一轮返回 changes_requested，平台自动注入 Findings 创建 repair Run，第二轮 approved 后按策略完成。
 2. **故障流程**：执行中断开浏览器或终止 Worker，再展示补拉或恢复结果。
 
 演示时不要依赖模型一定生成某段文本。Mock Adapter 负责稳定展示平台能力，真实 Adapter 作为额外证明。

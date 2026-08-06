@@ -36,6 +36,8 @@ const eventLabels: Record<string, string> = {
   'task.changes_requested': 'Reviewer 要求修改',
   'task.review_blocked': '审查受阻',
   'task.review_failed': 'Reviewer 执行失败',
+  'task.repair_requested': '已创建返工 Run',
+  'task.repair_limit_reached': '返工轮次已达上限',
   'task.user_confirmed': '用户确认完成',
   'run.cancellation_requested': '正在取消',
   'run.cancelled': '已取消',
@@ -94,6 +96,10 @@ function eventText(event: RunEvent): string {
       return 'Reviewer 报告阻塞问题，需要用户处理。';
     case 'task.review_failed':
       return `Reviewer 执行失败，已转交用户处理：${String(event.payload.message ?? event.payload.reason)}`;
+    case 'task.repair_requested':
+      return `根据 Review #${String(event.payload.reviewRound)} 创建 Builder 修复 Run ${String(event.payload.repairRunId ?? '')}，完成后进入 Review #${String(event.payload.nextReviewRound)}。`;
+    case 'task.repair_limit_reached':
+      return 'Reviewer 仍要求修改，但已达到最大审查轮数，转交用户处理。';
     case 'task.user_confirmed':
       return '用户已确认 Reviewer 结论，任务完成。';
     case 'run.cancellation_requested':
@@ -118,7 +124,8 @@ function eventTone(event: RunEvent): string {
   if (
     event.type === 'task.changes_requested' ||
     event.type === 'task.review_blocked' ||
-    event.type === 'task.review_failed'
+    event.type === 'task.review_failed' ||
+    event.type === 'task.repair_limit_reached'
   ) return 'danger';
   if (event.type === 'output.delta') return 'output';
   if (event.type.startsWith('tool.')) return 'tool';
@@ -322,6 +329,7 @@ interface CreateTaskDrawerProps {
   description: string;
   criterion: string;
   completionPolicy: CompletionPolicy;
+  maxReviewRounds: number;
   workspaceRoot: string;
   agents: AgentProfile[];
   reviewerAgents: AgentProfile[];
@@ -336,6 +344,7 @@ interface CreateTaskDrawerProps {
   onDescriptionChange: (value: string) => void;
   onCriterionChange: (value: string) => void;
   onCompletionPolicyChange: (value: CompletionPolicy) => void;
+  onMaxReviewRoundsChange: (value: number) => void;
   onWorkspaceRootChange: (value: string) => void;
   onAgentChange: (value: string) => void;
   onReviewerChange: (value: string) => void;
@@ -347,6 +356,7 @@ export function CreateTaskDrawer({
   description,
   criterion,
   completionPolicy,
+  maxReviewRounds,
   workspaceRoot,
   agents,
   reviewerAgents,
@@ -361,6 +371,7 @@ export function CreateTaskDrawer({
   onDescriptionChange,
   onCriterionChange,
   onCompletionPolicyChange,
+  onMaxReviewRoundsChange,
   onWorkspaceRootChange,
   onAgentChange,
   onReviewerChange,
@@ -393,17 +404,29 @@ export function CreateTaskDrawer({
             Git Workspace 路径
             <input onChange={(event) => onWorkspaceRootChange(event.target.value)} required value={workspaceRoot} />
           </label>
-          <label>
-            审查通过后
-            <select
-              onChange={(event) => onCompletionPolicyChange(event.target.value as CompletionPolicy)}
-              value={completionPolicy}
-            >
-              <option value="require_user_confirmation">等待用户最终确认</option>
-              <option value="auto_on_approval">自动完成任务</option>
-              <option value="risk_based">按验证证据自动判断</option>
-            </select>
-          </label>
+          <div className="policy-grid">
+            <label>
+              审查通过后
+              <select
+                onChange={(event) => onCompletionPolicyChange(event.target.value as CompletionPolicy)}
+                value={completionPolicy}
+              >
+                <option value="require_user_confirmation">等待用户最终确认</option>
+                <option value="auto_on_approval">自动完成任务</option>
+                <option value="risk_based">按验证证据判断</option>
+              </select>
+            </label>
+            <label>
+              最大 Review 轮数
+              <input
+                max={10}
+                min={1}
+                onChange={(event) => onMaxReviewRoundsChange(Number(event.target.value))}
+                type="number"
+                value={maxReviewRounds}
+              />
+            </label>
+          </div>
           <div className="agent-flow-grid" aria-label="Agent 工作流">
             <div className="agent-flow-step">
               <label>

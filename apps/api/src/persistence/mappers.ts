@@ -33,16 +33,17 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
-export function mapTask(row: TaskRow, agentId: string): Task {
+export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     title: row.title,
     description: row.description,
-    agentId,
+    agentId: row.builderAgentId ?? fallbackAgentId,
     ...(row.reviewerAgentId ? { reviewerAgentId: row.reviewerAgentId } : {}),
     acceptanceCriteria: row.acceptanceCriteria,
     completionPolicy: row.completionPolicy,
+    maxReviewRounds: row.maxReviewRounds,
     status: row.status,
     currentRunId: row.currentRunId ?? '',
     version: row.version,

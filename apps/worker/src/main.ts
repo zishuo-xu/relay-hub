@@ -55,7 +55,8 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
 
     if (claimed.agent.adapterType !== 'mock') {
       const isReviewer = claimed.run.triggerType === 'review';
-      const prepared = isReviewer
+      const reusesPreparedWorktree = isReviewer || claimed.run.triggerType === 'retry';
+      const prepared = reusesPreparedWorktree
         ? {
             worktreePath: claimed.run.worktreePath,
             workingDirectory: claimed.run.workingDirectory,
@@ -63,7 +64,7 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
           }
         : await worktreeManager.prepare(claimed.run.workspaceRoot, claimed.run.id);
       if (!prepared.worktreePath || !prepared.workingDirectory || !prepared.branchName) {
-        throw new Error('Reviewer Run is missing the inherited Builder worktree');
+        throw new Error('Inherited Run is missing the prepared Builder worktree');
       }
       workingDirectory = prepared.workingDirectory;
       sequence += 1;
@@ -89,7 +90,7 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
           });
       }, 500);
 
-      if (!isReviewer) {
+      if (!reusesPreparedWorktree) {
         let bootstrapReachedTerminal = false;
         for await (const event of runWorkspaceBootstrap(claimed.run.bootstrapPolicySnapshot, workingDirectory, {
           signal: executionCancellation.signal,

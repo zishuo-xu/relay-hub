@@ -328,6 +328,7 @@ textarea:focus-visible {
 .create-drawer label { display: flex; flex-direction: column; gap: 5px; color: var(--text-secondary); font-size: 10px; font-weight: 700; }
 .create-drawer input, .create-drawer select, .create-drawer textarea { width: 100%; padding: 8px 10px; color: var(--text); border: 1px solid var(--border); border-radius: 8px; outline: 0; background: var(--surface-soft); font-size: 12px; resize: vertical; }
 .create-drawer input:focus, .create-drawer select:focus, .create-drawer textarea:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: white; box-shadow: 0 0 0 3px rgba(22, 124, 90, 0.08); }
+.policy-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(110px, 0.75fr); gap: 9px; }
 .agent-flow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .agent-flow-step { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
 .agent-choice { display: flex; min-width: 0; padding: 7px 8px; align-items: center; gap: 8px; border-radius: 9px; background: var(--accent-soft); }

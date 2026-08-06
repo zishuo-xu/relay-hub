@@ -15,11 +15,17 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
         '正在独立检查 Builder 交接内容与验收标准……',
         `已读取 ${claimed.handoff?.artifactRefs.length ?? 0} 个交接产物引用。`,
       ]
-    : [
+    : claimed.run.triggerType === 'retry'
+      ? [
+          `收到返工任务：Review round ${claimed.review?.round ?? 'unknown'}`,
+          `正在处理 ${claimed.review?.findings.length ?? 0} 个结构化 Finding……`,
+          '已完成修改并重新验证验收标准。',
+        ]
+      : [
         `收到任务：${claimed.task.title}`,
         '正在分析需求与验收标准……',
         `已确认 ${claimed.task.acceptanceCriteria.length} 条验收标准。`,
-      ];
+        ];
   for (const text of messages) {
     await wait(450);
     yield { type: 'output.delta', text };

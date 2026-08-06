@@ -14,9 +14,7 @@ const REVIEW_START = '<relayhub_review>';
 const REVIEW_END = '</relayhub_review>';
 
 export function codexSandboxForRun(claimed: ClaimedRun): 'read-only' | 'workspace-write' {
-  return claimed.run.triggerType === 'review' || claimed.agent.capabilities.includes('review')
-    ? 'read-only'
-    : 'workspace-write';
+  return claimed.run.triggerType === 'review' ? 'read-only' : 'workspace-write';
 }
 
 function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
@@ -76,6 +74,36 @@ function buildPrompt(claimed: ClaimedRun): string {
       'Allowed verdicts: approved, changes_requested, blocked.',
       'Each finding must include severity (blocking, should_fix, or suggestion), title, and detail.',
       'approved cannot contain blocking or should_fix findings; changes_requested requires one; blocked requires blocking.',
+    ].join('\n');
+  }
+
+  if (claimed.run.triggerType === 'retry') {
+    const review = claimed.review;
+    if (!review) throw new Error('Repair Run is missing its source Review');
+    const findings = review.findings
+      .map((finding, index) => {
+        const location = finding.filePath
+          ? ` (${finding.filePath}${finding.lineStart ? `:${finding.lineStart}` : ''})`
+          : '';
+        return `${index + 1}. [${finding.severity}] ${finding.title}${location}\n   ${finding.detail}${finding.suggestion ? `\n   Suggestion: ${finding.suggestion}` : ''}`;
+      })
+      .join('\n');
+    return [
+      'You are the Builder Agent repairing a RelayHub task after independent review.',
+      'Work only inside the inherited Git worktree. Do not commit, push, or modify other worktrees.',
+      'Address every blocking and should_fix Finding, run proportionate verification, and leave the worktree ready for another review.',
+      '',
+      `Task: ${claimed.task.title}`,
+      claimed.task.description,
+      '',
+      `Review round ${review.round}: ${review.summary}`,
+      'Findings:',
+      findings || 'No structured findings were supplied.',
+      '',
+      'Acceptance criteria:',
+      criteria,
+      '',
+      'In the final response, summarize fixes, verification performed, and any remaining risk.',
     ].join('\n');
   }
 
