@@ -22,6 +22,13 @@
       "when": 1785950799297,
       "tag": "0002_right_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786029581208,
+      "tag": "0003_daffy_master_chief",
+      "breakpoints": true
     }
   ]
 }

@@ -28,8 +28,8 @@ RelayHub 的目标不是通过增加服务数量证明架构能力，而是用�
 
 进入 Phase 3 前需要控制两个增长点：
 
-- `apps/api/src/store.ts` 当前约 490 行。加入 Handoff/Review 前，按 Task/Run 与 Review/Handoff 的事务职责拆文件，但继续共享同一个数据库和事务模型。
-- `apps/web/app/page.tsx` 当前约 361 行。加入 Review/Finding UI 前，拆出任务列表、Run Timeline 和创建任务抽屉组件，但不引入额外前端状态框架。
+- `apps/api/src/store.ts` 当前约 520 行。成功 Run 的工作流决策已抽到纯函数 Orchestrator，但加入 Handoff/Review 前仍需按 Task/Run 与 Review/Handoff 的事务职责拆文件，继续共享同一个数据库和事务模型。
+- Web 展示层已拆为约 200 行的 `page.tsx` 状态入口和独立 `dashboard.tsx` 组件；加入 Review/Finding UI 时继续复用现有固定壳层，不引入额外前端状态框架。
 
 以上是按功能边界拆代码，不是增加部署单元或抽象层。拆分后的验收标准是入口文件变薄、事务边界仍清楚、端到端链路没有增加新的跳转层。
 
@@ -282,3 +282,5 @@ Phase 1B 已用 PostgreSQL Repository 替换 JSON Store，并用 BullMQ 消费�
 Queue job 只携带 `runId`。Worker 收到消息后仍需通过 PostgreSQL 条件更新完成 `queued -> claimed`，所以重复 job 只能有一个获得执行权。Phase 1A JSON 文件保留为旧数据备份，并提供幂等导入命令，不再是运行真相源。
 
 Phase 2 已加入 Codex CLI Adapter。Worker 为真实写入任务创建独立 Git Worktree，以参数数组启动 `codex exec --json --sandbox workspace-write`，把公开 JSONL 事件转换为统一 AgentEvent。模型 reasoning 不进入 RelayHub Event；thread ID、命令摘要、文件变化、最终消息和终态进入 PostgreSQL。Worktree 在任务结束后保留，用户确认前不自动清理。
+
+Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Run 收敛为 `succeeded` 并保存结构化 `RunOutcome`，不再直接完成 Task。在 Reviewer dispatch 尚未实现时，Task 进入 `waiting_for_user` 并追加 `task.waiting_for_review` 审计事件；Phase 3 将通过同一 Orchestrator 决策入口改为 `reviewing` 并创建 Reviewer Run。`CompletionPolicy` 只允许在合法 Review verdict 之后执行。

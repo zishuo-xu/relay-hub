@@ -12,7 +12,7 @@ import {
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import type { CompletionPolicy, RunStatus, TaskStatus } from '@relay-hub/contracts';
+import type { CompletionPolicy, RunOutcome, RunStatus, TaskStatus } from '@relay-hub/contracts';
 
 const TASK_STATUS_VALUES = [
   'draft',
@@ -143,6 +143,7 @@ export const runs = pgTable(
     sessionRef: text('session_ref'),
     failureCode: text('failure_code'),
     failureDetail: text('failure_detail'),
+    outcome: jsonb('outcome').$type<RunOutcome>(),
     version: integer('version').default(1).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp('started_at', { withTimezone: true }),

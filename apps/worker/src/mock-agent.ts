@@ -24,6 +24,11 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
   yield { type: 'tool.completed', callId, outputSummary: { filesInspected: 3 } };
   await wait(450);
   yield { type: 'output.delta', text: 'Mock Agent 已完成本次任务，执行记录已持久化。' };
-  yield { type: 'run.completed', summary: 'Mock execution completed successfully.' };
+  yield {
+    type: 'run.completed',
+    outcome: {
+      summary: 'Mock execution completed successfully.',
+      commandEvidence: [],
+    },
+  };
 }
-

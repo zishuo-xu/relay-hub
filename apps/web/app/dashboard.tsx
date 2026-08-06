@@ -24,6 +24,8 @@ const eventLabels: Record<string, string> = {
   'tool.called': '工具调用',
   'tool.completed': '工具完成',
   'run.completed': '执行结束',
+  'task.waiting_for_review': '等待审查',
+  'task.review_requested': '进入审查',
   'run.cancellation_requested': '正在取消',
   'run.cancelled': '已取消',
   'run.failed': '执行失败',
@@ -46,7 +48,15 @@ function eventText(event: RunEvent): string {
     case 'tool.completed':
       return `工具调用 ${String(event.payload.callId)} 已结束`;
     case 'run.completed':
-      return String(event.payload.summary ?? 'Agent 执行完成');
+      return String(
+        event.payload.outcome && typeof event.payload.outcome === 'object'
+          ? (event.payload.outcome as { summary?: unknown }).summary ?? 'Agent 执行完成'
+          : event.payload.summary ?? 'Agent 执行完成',
+      );
+    case 'task.waiting_for_review':
+      return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
+    case 'task.review_requested':
+      return 'Builder 结果已进入独立 Reviewer 审查。';
     case 'run.cancellation_requested':
       return '用户已请求取消，正在回收 Codex 子进程。';
     case 'run.cancelled':

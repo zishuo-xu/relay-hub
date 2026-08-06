@@ -83,6 +83,22 @@ export const CreateTaskInputSchema = z.object({
 
 export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
 
+export const CommandEvidenceSchema = z.object({
+  command: z.string().min(1).max(4_000),
+  status: z.enum(['succeeded', 'failed', 'unknown']),
+  exitCode: z.number().int().optional(),
+  outputSummary: z.string().max(2_000).optional(),
+});
+
+export type CommandEvidence = z.infer<typeof CommandEvidenceSchema>;
+
+export const RunOutcomeSchema = z.object({
+  summary: z.string().min(1).max(10_000),
+  commandEvidence: z.array(CommandEvidenceSchema).max(100).default([]),
+});
+
+export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
+
 const HandoffDraftSchema = z.object({
   targetAgentId: z.string().min(1),
   summary: z.string().min(1),
@@ -116,7 +132,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('handoff.requested'), handoff: HandoffDraftSchema }),
   z.object({ type: z.literal('review.submitted'), review: ReviewDraftSchema }),
-  z.object({ type: z.literal('run.completed'), summary: z.string().optional() }),
+  z.object({ type: z.literal('run.completed'), outcome: RunOutcomeSchema }),
   z.object({ type: z.literal('run.cancelled'), reason: z.string().optional() }),
   z.object({
     type: z.literal('run.failed'),
@@ -180,6 +196,7 @@ export interface Run {
   sessionRef?: string;
   failureCode?: string;
   failureDetail?: string;
+  outcome?: RunOutcome;
   version: number;
   createdAt: string;
   startedAt?: string;

@@ -1,5 +1,24 @@
 # 07. 实现状态
 
+## 2026-08-06：Phase 2.5 RunOutcome 与工作流边界
+
+### 已实现
+
+- 新增结构化 `RunOutcome`，持久化 Agent 最终摘要以及实际命令的状态、退出码和受限输出摘要。
+- `run.completed` 现在只表示 Agent 协议成功结束，并把 Run 收敛为 `succeeded`；不再直接把 Task 改为 `completed`。
+- 新增 API 内部纯函数 Orchestrator seam。Reviewer dispatch 尚未实现时，成功 Builder Run 将 Task 路由到 `waiting_for_user`。
+- 同一事务追加 `task.waiting_for_review` 审计事件，记录来源 Run、路由原因和 Task 的 CompletionPolicy。
+- `CompletionPolicy` 保留到合法 Reviewer verdict 之后执行，Builder 自报完成不能绕过审查或人工确认。
+- Web Timeline 已识别“等待审查”和“进入审查”事件，并从结构化 Outcome 展示执行摘要。
+- PostgreSQL migration `0003_daffy_master_chief.sql` 仅为 `runs` 增加可空 `outcome jsonb` 字段，既有数据未删除或改写。
+
+### 验证证据
+
+- Contracts、API、Worker 和 Web 类型检查通过。
+- 独立测试数据库 migration 通过；API 4/4、Contracts 6/6、Worker 3/3 测试通过。
+- 使用独立测试 PostgreSQL 和临时 Redis 完成 Mock 全链路：Run=`succeeded`、Task=`waiting_for_user`、Outcome 已持久化，最后事件为 `task.waiting_for_review`。
+- 正式 RelayHub 数据库已应用非破坏性 migration，API 健康检查恢复为 PostgreSQL/BullMQ 正常。
+
 ## 2026-08-06：控制台 UX clean-room 重构
 
 ### 已实现
@@ -31,12 +50,12 @@
 - Codex 在独立 `relayhub/run-*` 分支和 Worktree 中执行只读命令，正确报告 Worktree、分支、Node 版本和 README 内容。
 - 独立源仓库和 Codex Worktree 最终都没有 tracked 修改。
 
-### 验证发现的边界
+### 当时验证发现的边界
 
 - 新 Worktree 默认没有 `node_modules`；直接运行依赖型测试会因依赖不可解析而失败。
 - Codex 沙箱内在线安装受本机 `registry.npmmirror.com` DNS 影响，且不能假定可以读取完整宿主 pnpm store。
-- 当前 `run.completed` 表示 Agent 协议正常结束，不表示验收标准通过；即使 Agent 明确报告测试失败，Run/Task 仍会进入 succeeded/completed。
-- 因此进入 Reviewer 前必须补齐显式 Worktree bootstrap policy，并将“Agent 正常结束”和“任务验收通过”拆成不同判定。
+- 当时 `run.completed` 会让 Run/Task 同时进入 succeeded/completed；该执行结果语义问题已由上方 Phase 2.5 RunOutcome 切片修复。
+- 显式 Worktree bootstrap policy 仍需在进入 Reviewer 前补齐。
 
 ## 2026-08-06：独立公开仓库
 

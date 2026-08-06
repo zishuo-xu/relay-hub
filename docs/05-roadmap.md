@@ -58,7 +58,7 @@
 
 目标：接入一个真实 Agent CLI，并处理真实执行的不确定性。
 
-当前状态：**首次真实运行里程碑已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。独立仓库运行验收进一步确认了 CLI 与文件隔离，同时暴露了依赖 bootstrap 和执行结果语义两个必须在 Phase 3 前补齐的边界。Worker lease 和崩溃 reconciliation 留到 Phase 4。
+当前状态：**首次真实运行与执行结果语义加固已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。`RunOutcome` 现已区分 Agent 协议成功、命令证据和 Task 验收；显式 Worktree bootstrap 仍需在 Phase 3 前补齐。Worker lease 和崩溃 reconciliation 留到 Phase 4。
 
 工作项：
 
@@ -68,7 +68,7 @@
 4. [x] 实现 Git Workspace 校验与独立 Worktree。
 5. [x] 固化 Run workspace 快照，并持久化 thread、branch 和 working directory。
 6. [ ] 定义并实现显式 Worktree bootstrap policy；不能假定新 Worktree 已安装依赖或可以联网。
-7. [ ] 区分 Agent 协议完成、命令/测试失败和验收通过，禁止失败结果自动收敛为 succeeded/completed。
+7. [x] 区分 Agent 协议完成、命令/测试失败和验收通过；成功 Run 保存 `RunOutcome`，Task 不再自动 completed。
 8. [ ] 加入单次 Run token 与更完整的内部接口鉴权。
 9. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
 
@@ -129,9 +129,9 @@
 
 进入 Phase 3 前先完成一个小型 hardening slice：
 
-1. 按既定简洁性基线拆分 `store.ts` 和 `page.tsx`，不改变运行行为。
+1. Web 页面拆分已完成；继续按既定简洁性基线拆分 `store.ts` 的事务职责，不改变运行行为。
 2. 为 Worktree 定义显式、可观测、可失败的 bootstrap 步骤。
-3. 将 Agent 正常结束、工具命令失败和验收结果分开建模并测试。
+3. 执行结果语义已完成；补充单次 Run token，为后续 Handoff/Review 提交建立可信执行身份。
 
 完成后再实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
 

@@ -80,6 +80,13 @@ describe('runCodexAgent', () => {
     ]);
     expect(JSON.stringify(events)).not.toContain('hidden chain');
     expect(events[0]).toMatchObject({ type: 'run.started', sessionRef: 'thread-123' });
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.completed',
+      outcome: {
+        summary: 'Implemented and tested.',
+        commandEvidence: [{ command: 'pnpm test', status: 'succeeded', exitCode: 0, outputSummary: 'ok' }],
+      },
+    });
   });
 
   it('turns an abort signal into a cancelled terminal event', async () => {

@@ -1,4 +1,4 @@
-import type { AgentEvent, ClaimedRun } from '@relay-hub/contracts';
+import type { AgentEvent, ClaimedRun, CommandEvidence } from '@relay-hub/contracts';
 import { z } from 'zod';
 import { superviseProcess } from './process-supervisor.js';
 
@@ -59,6 +59,8 @@ export async function* runCodexAgent(
   let finalMessage = '';
   let terminalEventSent = false;
   let protocolError = '';
+  const commands = new Map<string, string>();
+  const commandEvidence: CommandEvidence[] = [];
 
   for await (const processEvent of superviseProcess({
     command: codexBinary,
@@ -110,11 +112,13 @@ export async function* runCodexAgent(
       case 'item.started': {
         const item = itemOf(envelope);
         if (item?.type === 'command_execution' && typeof item.id === 'string') {
+          const command = truncate(item.command);
+          if (command) commands.set(item.id, command);
           yield {
             type: 'tool.called',
             callId: item.id,
             name: 'shell',
-            inputSummary: { command: truncate(item.command) },
+            inputSummary: { command },
           };
         }
         break;
@@ -126,6 +130,22 @@ export async function* runCodexAgent(
           finalMessage = item.text;
           yield { type: 'output.delta', text: truncate(item.text) };
         } else if (item.type === 'command_execution' && typeof item.id === 'string') {
+          const exitCode = typeof item.exit_code === 'number' ? item.exit_code : undefined;
+          const status = exitCode === 0
+            ? 'succeeded'
+            : exitCode !== undefined || item.status === 'failed'
+              ? 'failed'
+              : 'unknown';
+          const outputSummary = truncate(item.aggregated_output ?? item.output, 2_000);
+          const command = commands.get(item.id) ?? (truncate(item.command) || `command:${item.id}`);
+          if (commandEvidence.length < 100) {
+            commandEvidence.push({
+              command,
+              status,
+              ...(exitCode !== undefined ? { exitCode } : {}),
+              ...(outputSummary ? { outputSummary } : {}),
+            });
+          }
           yield {
             type: 'tool.completed',
             callId: item.id,
@@ -142,7 +162,13 @@ export async function* runCodexAgent(
       }
       case 'turn.completed':
         terminalEventSent = true;
-        yield { type: 'run.completed', summary: truncate(finalMessage || 'Codex completed the task.') };
+        yield {
+          type: 'run.completed',
+          outcome: {
+            summary: truncate(finalMessage || 'Codex completed the task.'),
+            commandEvidence,
+          },
+        };
         break;
       case 'turn.failed':
       case 'error':

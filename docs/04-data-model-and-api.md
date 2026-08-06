@@ -144,6 +144,7 @@ erDiagram
 - `worker_id`, `lease_expires_at`
 - `session_ref`: Adapter 的可恢复会话标识
 - `failure_code`, `failure_detail`
+- `outcome jsonb`: 成功 Run 的结构化执行结果，包含摘要与实际命令证据；不等同于 Task 验收通过
 - `started_at`, `finished_at`
 - `workspace_root`: 创建 Run 时固化的执行 Workspace 快照
 - `worktree_path`, `working_directory`, `branch_name`: 隔离执行与人工检查入口
@@ -243,12 +244,14 @@ type AgentEvent =
   | { type: 'tool.completed'; callId: string; outputSummary?: unknown }
   | { type: 'handoff.requested'; handoff: HandoffDraft }
   | { type: 'review.submitted'; review: ReviewDraft }
-  | { type: 'run.completed'; summary?: string }
+  | { type: 'run.completed'; outcome: RunOutcome }
   | { type: 'run.cancelled'; reason?: string }
   | { type: 'run.failed'; code: FailureCode; message: string };
 ```
 
 Adapter 事件先经过 Zod 校验，再进入平台。无法识别的供应商事件可记录为诊断数据，但不能直接推进业务状态。
+
+`RunOutcome` 当前包含执行摘要和命令证据（命令、退出码、状态和受限输出摘要）。它属于 Run 的执行事实；即使命令失败后 Agent 协议正常结束，Run 仍可以是 `succeeded`，但 Task 不能因此自动变成 `completed`。验收结论必须由后续 Reviewer verdict、CompletionPolicy 或人工裁决产生。
 
 ## WebSocket 事件
 

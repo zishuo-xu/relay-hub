@@ -27,6 +27,7 @@ import {
   type RelayDatabase,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
+import { planAfterSuccessfulRun } from './workflow-orchestrator.js';
 
 interface MutationResult<T> {
   value: T;
@@ -80,6 +81,7 @@ function mapRun(row: RunRow): Run {
     ...(row.sessionRef ? { sessionRef: row.sessionRef } : {}),
     ...(row.failureCode ? { failureCode: row.failureCode } : {}),
     ...(row.failureDetail ? { failureDetail: row.failureDetail } : {}),
+    ...(row.outcome ? { outcome: row.outcome } : {}),
     ...(row.startedAt ? { startedAt: toIso(row.startedAt) } : {}),
     ...(row.finishedAt ? { finishedAt: toIso(row.finishedAt) } : {}),
   };
@@ -404,6 +406,7 @@ export class PostgresStore {
       const now = new Date();
       let nextRunStatus: RunStatus | undefined;
       let nextTaskStatus: TaskStatus | undefined;
+      let workflowEvent: { eventType: string; payload: Record<string, unknown>; dedupeKey: string } | undefined;
       const runPatch: Partial<typeof runs.$inferInsert> = {};
       const taskPatch: Partial<typeof tasks.$inferInsert> = {};
 
@@ -422,9 +425,21 @@ export class PostgresStore {
           break;
         case 'run.completed':
           nextRunStatus = 'succeeded';
-          nextTaskStatus = 'completed';
+          {
+            const plan = planAfterSuccessfulRun(false);
+            nextTaskStatus = plan.nextTaskStatus;
+            workflowEvent = {
+              eventType: plan.eventType,
+              payload: {
+                reason: plan.reason,
+                runId: run.id,
+                completionPolicy: task.completionPolicy,
+              },
+              dedupeKey: `workflow-after-run:${run.id}`,
+            };
+          }
           runPatch.finishedAt = now;
-          taskPatch.completedAt = now;
+          runPatch.outcome = agentEvent.outcome;
           break;
         case 'run.cancelled':
           nextRunStatus = 'cancelled';
@@ -472,7 +487,24 @@ export class PostgresStore {
         })
         .returning();
       if (!eventRow) throw new Error('Agent event insert did not return a row');
-      return { taskId: run.taskId, emitted: [mapEvent(eventRow)] };
+      const emitted = [mapEvent(eventRow)];
+      if (workflowEvent) {
+        const [workflowEventRow] = await tx
+          .insert(runEvents)
+          .values({
+            taskId: run.taskId,
+            runId,
+            eventType: workflowEvent.eventType,
+            payload: workflowEvent.payload,
+            source: 'api',
+            occurredAt: now,
+            dedupeKey: workflowEvent.dedupeKey,
+          })
+          .returning();
+        if (!workflowEventRow) throw new Error('Workflow event insert did not return a row');
+        emitted.push(mapEvent(workflowEventRow));
+      }
+      return { taskId: run.taskId, emitted };
     });
 
     const detail = await this.getTaskDetail(result.taskId);
