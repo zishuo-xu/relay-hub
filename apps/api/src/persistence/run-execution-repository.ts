@@ -1,0 +1,171 @@
+import {
+  canTransitionRun,
+  canTransitionTask,
+  type ClaimedExecution,
+  type ClaimedRun,
+  type RunEvent,
+  type RunStatus,
+  type TaskDetail,
+  type TaskStatus,
+} from '@relay-hub/contracts';
+import { agentProfiles, type RelayDatabase, runEvents, runs, tasks, workspaces } from '@relay-hub/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { issueRunToken, verifyRunToken } from '../run-token.js';
+import { mapAgentProfile, mapEvent, mapRun, mapTask, mapWorkspace } from './mappers.js';
+import { getTaskDetail } from './task-repository.js';
+import type { MutationResult } from './types.js';
+
+function assertTaskTransition(from: TaskStatus, to: TaskStatus): void {
+  if (!canTransitionTask(from, to)) throw new Error(`Illegal task transition: ${from} -> ${to}`);
+}
+
+function assertRunTransition(from: RunStatus, to: RunStatus): void {
+  if (!canTransitionRun(from, to)) throw new Error(`Illegal run transition: ${from} -> ${to}`);
+}
+
+export async function claimRun(
+  db: RelayDatabase,
+  runId: string,
+  workerId: string,
+  runTokenTtlMs: number,
+): Promise<MutationResult<ClaimedExecution | null>> {
+  const token = issueRunToken(new Date(), runTokenTtlMs);
+  const result = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(runs)
+      .set({
+        status: 'claimed',
+        workerId,
+        executionTokenHash: token.hash,
+        tokenIssuedAt: token.issuedAt,
+        tokenExpiresAt: token.expiresAt,
+        tokenRevokedAt: null,
+        version: sql`${runs.version} + 1`,
+      })
+      .where(and(eq(runs.id, runId), eq(runs.status, 'queued')))
+      .returning();
+    if (!claimed) return { claimed: null, emitted: [] as RunEvent[] };
+    const [taskRow] = await tx.select().from(tasks).where(eq(tasks.id, claimed.taskId)).limit(1);
+    if (!taskRow) throw new Error(`Task not found for run: ${runId}`);
+    const [workspaceRow] = await tx.select().from(workspaces).where(eq(workspaces.id, taskRow.workspaceId)).limit(1);
+    if (!workspaceRow) throw new Error(`Workspace not found for run: ${runId}`);
+    const [agentRow] = await tx.select().from(agentProfiles).where(eq(agentProfiles.id, claimed.agentId)).limit(1);
+    if (!agentRow) throw new Error(`Agent profile not found for run: ${runId}`);
+    const [eventRow] = await tx
+      .insert(runEvents)
+      .values({
+        taskId: claimed.taskId,
+        runId: claimed.id,
+        eventType: 'run.claimed',
+        payload: { workerId },
+        source: 'worker',
+        dedupeKey: `run-claimed:${claimed.id}`,
+      })
+      .returning();
+    if (!eventRow) throw new Error('Claim event insert did not return a row');
+    return {
+      claimed: {
+        claimed: {
+          task: mapTask(taskRow, claimed.agentId),
+          run: mapRun(claimed),
+          workspace: mapWorkspace(workspaceRow),
+          agent: mapAgentProfile(agentRow),
+        } satisfies ClaimedRun,
+        executionToken: token.plaintext,
+      },
+      emitted: [mapEvent(eventRow)],
+    };
+  });
+  return { value: result.claimed, emitted: result.emitted };
+}
+
+export async function authorizeRunToken(
+  db: RelayDatabase,
+  runId: string,
+  plaintext: string,
+  now = new Date(),
+): Promise<boolean> {
+  const [run] = await db
+    .select({
+      status: runs.status,
+      executionTokenHash: runs.executionTokenHash,
+      tokenExpiresAt: runs.tokenExpiresAt,
+      tokenRevokedAt: runs.tokenRevokedAt,
+    })
+    .from(runs)
+    .where(eq(runs.id, runId))
+    .limit(1);
+  if (!run?.executionTokenHash || !run.tokenExpiresAt || run.tokenRevokedAt) return false;
+  if (run.tokenExpiresAt.getTime() <= now.getTime()) return false;
+  if (
+    run.status === 'queued' ||
+    run.status === 'succeeded' ||
+    run.status === 'failed' ||
+    run.status === 'cancelled' ||
+    run.status === 'lost'
+  ) {
+    return false;
+  }
+  return verifyRunToken(plaintext, run.executionTokenHash);
+}
+
+export async function getRunStatus(db: RelayDatabase, runId: string): Promise<RunStatus | null> {
+  const [row] = await db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)).limit(1);
+  return row?.status ?? null;
+}
+
+export async function requestRunCancellation(
+  db: RelayDatabase,
+  runId: string,
+): Promise<MutationResult<TaskDetail>> {
+  const result = await db.transaction(async (tx) => {
+    const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
+    if (!run) throw new Error(`Run not found: ${runId}`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, run.taskId)).limit(1);
+    if (!task) throw new Error(`Task not found: ${run.taskId}`);
+
+    if (run.status === 'cancelling') return { taskId: task.id, emitted: [] as RunEvent[] };
+    if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled' || run.status === 'lost') {
+      throw new Error(`Cannot cancel terminal run: ${run.status}`);
+    }
+
+    const now = new Date();
+    const nextRunStatus: RunStatus = run.status === 'queued' ? 'cancelled' : 'cancelling';
+    assertRunTransition(run.status, nextRunStatus);
+    await tx
+      .update(runs)
+      .set({
+        status: nextRunStatus,
+        version: run.version + 1,
+        ...(nextRunStatus === 'cancelled' ? { finishedAt: now, tokenRevokedAt: now } : {}),
+      })
+      .where(and(eq(runs.id, run.id), eq(runs.version, run.version)));
+
+    if (nextRunStatus === 'cancelled') {
+      assertTaskTransition(task.status, 'cancelled');
+      await tx
+        .update(tasks)
+        .set({ status: 'cancelled', version: task.version + 1, updatedAt: now })
+        .where(and(eq(tasks.id, task.id), eq(tasks.version, task.version)));
+    }
+
+    const [eventRow] = await tx
+      .insert(runEvents)
+      .values({
+        taskId: task.id,
+        runId: run.id,
+        eventType: 'run.cancellation_requested',
+        payload: { previousStatus: run.status, nextStatus: nextRunStatus },
+        source: 'user',
+        occurredAt: now,
+        dedupeKey: `run-cancellation-requested:${run.id}`,
+      })
+      .returning();
+    if (!eventRow) throw new Error('Cancellation event insert did not return a row');
+    return { taskId: task.id, emitted: [mapEvent(eventRow)] };
+  });
+
+  const detail = await getTaskDetail(db, result.taskId);
+  if (!detail) throw new Error(`Task not found after cancellation: ${result.taskId}`);
+  return { value: detail, emitted: result.emitted };
+}

@@ -39,6 +39,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 分离 Agent 执行结果与 Task 验收，持久化结构化 RunOutcome
 - [x] 完成 provider-neutral Workspace Bootstrap、Run 配置快照与失败阻断
 - [x] 完成单次 Run execution token、Worker 回调鉴权与终态撤销
+- [x] 按 Task、Run execution 和 Workflow transaction 拆分 API 持久化职责
 - [ ] 完成多 Agent 交接与 Review 流程
 - [ ] 完成可观测性、测试和演示部署
 

@@ -22,13 +22,13 @@ RelayHub 的目标不是通过增加服务数量证明架构能力，而是用�
 
 ### 当前结构健康度
 
-状态：**Implemented assessment（2026-08-06）。**
+状态：**Implemented assessment（2026-08-07）。**
 
-当前约 2,600 行 TypeScript，主链路仍可由一个人完整追踪：`Web -> API transaction/outbox -> BullMQ -> Worker -> Adapter -> persisted event`。基础设施数量虽然包含 PostgreSQL 和 Redis，但两者职责互不重叠，因此属于必要复杂度。
+主链路仍可由一个人完整追踪：`Web -> API transaction/outbox -> BullMQ -> Worker -> Adapter -> persisted event`。基础设施数量虽然包含 PostgreSQL 和 Redis，但两者职责互不重叠，因此属于必要复杂度。
 
-进入 Phase 3 前需要控制两个增长点：
+进入 Phase 3 前识别的两个增长点已经按最小范围处理：
 
-- `apps/api/src/store.ts` 当前约 520 行。成功 Run 的工作流决策已抽到纯函数 Orchestrator，但加入 Handoff/Review 前仍需按 Task/Run 与 Review/Handoff 的事务职责拆文件，继续共享同一个数据库和事务模型。
+- `apps/api/src/store.ts` 已从 578 行收敛为 98 行兼容门面；内部按 Workspace、Task、Run execution 和 Workflow transaction 拆到同一 API 包的 `persistence/` 目录。模块仍共享一个 PostgreSQL 连接和原事务边界，没有增加网络跳转、部署单元或通用 Repository 框架。
 - Web 展示层已拆为约 200 行的 `page.tsx` 状态入口和独立 `dashboard.tsx` 组件；加入 Review/Finding UI 时继续复用现有固定壳层，不引入额外前端状态框架。
 
 以上是按功能边界拆代码，不是增加部署单元或抽象层。拆分后的验收标准是入口文件变薄、事务边界仍清楚、端到端链路没有增加新的跳转层。
@@ -322,3 +322,5 @@ Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Ru
 Phase 2.6 已实现 Workspace Bootstrap。策略与 Agent provider 解耦并在 Run 创建时固化；Worker 在真实 AgentAdapter 启动前执行准备步骤，失败时记录结构化事件并阻断 Agent。当前显式 API 配置是事实来源，项目语言/锁文件探测尚未实现。
 
 Phase 2.7 已实现轻量单次 Run execution token。Worker 领取时获得一次明文凭证，API 只保存哈希并保护 control/event 回调；终态事务撤销凭证。它防止重复投递、旧 Worker 或错误进程跨 Run 上报，但不替代未来的 Worker 注册、lease 和 heartbeat。
+
+Phase 2.8 已完成 API 持久化职责整理。`PostgresStore` 保留为路由层稳定门面，Task 创建与查询、Run 领取/Token/取消、Agent Event 驱动的 Workflow transaction 以及 Workspace 配置分别由同包模块实现。此拆分只缩短文件和明确依赖，不改变数据库 schema、HTTP 合约、状态机或部署结构。

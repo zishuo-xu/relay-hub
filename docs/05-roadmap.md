@@ -127,13 +127,13 @@
 
 ## 推荐的下一步
 
-进入 Phase 3 前先完成一个小型 hardening slice：
+进入 Phase 3 前的小型 hardening slice 已完成：
 
-1. Web 页面拆分已完成；继续按既定简洁性基线拆分 `store.ts` 的事务职责，不改变运行行为。
+1. Web 页面与 API `store.ts` 职责拆分均已完成；仍保持模块化单体和一个稳定 Store 门面。
 2. Workspace Bootstrap 与执行结果语义已完成。
 3. 单次 Run token 已完成，为后续 Handoff/Review 提交建立了最小可信执行身份。
 
-下一步先把 `store.ts` 按 Task、Run execution 和 Workflow transaction 职责做一次不改变行为的小型拆分，再实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
+下一步正式进入 Phase 3，先实现最小结构化 Handoff：持久化 Builder 的交接内容、校验目标 AgentProfile、创建关联子 Run 并通过既有 Outbox/BullMQ 唤醒 Reviewer。随后再补 Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

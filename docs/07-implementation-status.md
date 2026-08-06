@@ -1,5 +1,20 @@
 # 07. 实现状态
 
+## 2026-08-07：Phase 2.8 API 持久化职责整理
+
+### 已实现
+
+- `PostgresStore` 从 578 行收敛为 98 行稳定门面，Fastify 路由和现有调用方无需改变。
+- 新增同包 `persistence/` 目录，分别承载 Workspace 配置、Task 查询/创建、Run claim/Token/取消以及 Agent Event 驱动的 Workflow transaction。
+- 行映射与 mutation result 只提取一次供这些模块复用，没有为每张表生成 Repository/Service/DTO，也没有新增依赖或运行进程。
+- PostgreSQL schema、事务内容、HTTP 合约、状态机和事件语义保持不变；本次不需要数据库 migration。
+
+### 验证证据
+
+- API 类型检查通过；隔离 PostgreSQL 下 Store、Run Token 和 Orchestrator 测试 6/6 通过。
+- `pnpm check` 全部通过，覆盖全仓类型检查、Contracts 6/6、Queue 1/1、API 单元测试 4/4、Worker 6/6 和 Next.js 生产构建。
+- 拆分后最大持久化模块 171 行，Workflow transaction 独立为 146 行；入口 `store.ts` 不再承担 SQL 和状态迁移实现。
+
 ## 2026-08-06：Phase 2.7 单次 Run execution token
 
 ### 已实现

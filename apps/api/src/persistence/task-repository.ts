@@ -1,0 +1,148 @@
+import { randomUUID } from 'node:crypto';
+import {
+  type CreateTaskInput,
+  DEFAULT_WORKSPACE_ID,
+  type RunEvent,
+  type Task,
+  type TaskDetail,
+} from '@relay-hub/contracts';
+import {
+  agentProfiles,
+  idempotencyKeys,
+  outboxEvents,
+  type RelayDatabase,
+  runEvents,
+  runs,
+  tasks,
+  workspaces,
+} from '@relay-hub/db';
+import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { mapEvent, mapRun, mapTask } from './mappers.js';
+import type { MutationResult } from './types.js';
+
+export async function listTasks(db: RelayDatabase): Promise<Task[]> {
+  const rows = await db
+    .select({ task: tasks, agentId: runs.agentId })
+    .from(tasks)
+    .leftJoin(runs, eq(tasks.currentRunId, runs.id))
+    .orderBy(desc(tasks.createdAt));
+  return rows.map(({ task, agentId }) => mapTask(task, agentId ?? ''));
+}
+
+export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<TaskDetail | null> {
+  const [taskRow] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+  if (!taskRow) return null;
+  const runRows = await db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(asc(runs.createdAt));
+  const eventRows = await db
+    .select()
+    .from(runEvents)
+    .where(eq(runEvents.taskId, taskId))
+    .orderBy(asc(runEvents.id));
+  const currentRun = runRows.find((run) => run.id === taskRow.currentRunId) ?? runRows[0];
+  return {
+    task: mapTask(taskRow, currentRun?.agentId ?? ''),
+    runs: runRows.map(mapRun),
+    events: eventRows.map(mapEvent),
+  };
+}
+
+export async function getTaskEvents(
+  db: RelayDatabase,
+  taskId: string,
+  afterEventId: number,
+): Promise<RunEvent[]> {
+  const rows = await db
+    .select()
+    .from(runEvents)
+    .where(and(eq(runEvents.taskId, taskId), gt(runEvents.id, afterEventId)))
+    .orderBy(asc(runEvents.id));
+  return rows.map(mapEvent);
+}
+
+export async function createTask(
+  db: RelayDatabase,
+  input: CreateTaskInput,
+  idempotencyKey?: string,
+): Promise<MutationResult<{ detail: TaskDetail; created: boolean }>> {
+  const taskId = randomUUID();
+  const runId = randomUUID();
+  const result = await db.transaction(async (tx) => {
+    if (idempotencyKey) {
+      const reserved = await tx
+        .insert(idempotencyKeys)
+        .values({ scope: 'task.create', key: idempotencyKey, resourceType: 'task', resourceId: taskId })
+        .onConflictDoNothing()
+        .returning({ resourceId: idempotencyKeys.resourceId });
+      if (reserved.length === 0) {
+        const [existing] = await tx
+          .select({ resourceId: idempotencyKeys.resourceId })
+          .from(idempotencyKeys)
+          .where(and(eq(idempotencyKeys.scope, 'task.create'), eq(idempotencyKeys.key, idempotencyKey)))
+          .limit(1);
+        if (!existing) throw new Error('Idempotency reservation disappeared');
+        return { taskId: existing.resourceId, created: false, emitted: [] as RunEvent[] };
+      }
+    }
+
+    const [agent] = await tx
+      .select({ id: agentProfiles.id, enabled: agentProfiles.enabled })
+      .from(agentProfiles)
+      .where(and(eq(agentProfiles.id, input.agentId), eq(agentProfiles.workspaceId, DEFAULT_WORKSPACE_ID)))
+      .limit(1);
+    if (!agent?.enabled) throw new Error(`Agent is missing or disabled: ${input.agentId}`);
+    const [workspace] = await tx
+      .select({ rootPath: workspaces.rootPath, bootstrapPolicy: workspaces.bootstrapPolicy })
+      .from(workspaces)
+      .where(eq(workspaces.id, DEFAULT_WORKSPACE_ID))
+      .limit(1);
+    if (!workspace?.rootPath) throw new Error('Default workspace root is not configured');
+
+    const now = new Date();
+    await tx.insert(tasks).values({
+      id: taskId,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      title: input.title,
+      description: input.description,
+      acceptanceCriteria: input.acceptanceCriteria,
+      completionPolicy: input.completionPolicy,
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(runs).values({
+      id: runId,
+      taskId,
+      agentId: input.agentId,
+      status: 'queued',
+      triggerType: 'user',
+      workspaceRoot: workspace.rootPath,
+      bootstrapPolicySnapshot: workspace.bootstrapPolicy,
+      createdAt: now,
+    });
+    await tx.update(tasks).set({ currentRunId: runId }).where(eq(tasks.id, taskId));
+    const [eventRow] = await tx
+      .insert(runEvents)
+      .values({
+        taskId,
+        runId,
+        eventType: 'task.created',
+        payload: { title: input.title, agentId: input.agentId },
+        source: 'user',
+        occurredAt: now,
+        dedupeKey: `task-created:${taskId}`,
+      })
+      .returning();
+    await tx.insert(outboxEvents).values({
+      aggregateType: 'run',
+      aggregateId: runId,
+      eventType: 'run.queued',
+      payload: { runId },
+    });
+    if (!eventRow) throw new Error('Task event insert did not return a row');
+    return { taskId, created: true, emitted: [mapEvent(eventRow)] };
+  });
+
+  const detail = await getTaskDetail(db, result.taskId);
+  if (!detail) throw new Error(`Created task not found: ${result.taskId}`);
+  return { value: { detail, created: result.created }, emitted: result.emitted };
+}

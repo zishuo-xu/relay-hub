@@ -384,6 +384,8 @@ flowchart TB
 
 先保持模块化单体 API，只把 Worker 独立成进程。未来是否拆服务必须由吞吐、故障隔离或部署数据证明。
 
+**Implemented（2026-08-07）：** API 持久化代码已按 Workspace、Task、Run execution 和 Workflow transaction 拆分为同包模块，并保留 `PostgresStore` 稳定门面。该边界用于承载 Phase 3 Handoff/Review 的增长，不代表新增服务或额外架构层。
+
 ---
 
 ## 十条系统不变量
