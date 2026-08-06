@@ -139,6 +139,18 @@ Handoff 的目标写入顺序：
 - 管理子进程、取消信号、退出码和输出流。
 - 将原始事件交给 Adapter 转换，再批量提交平台事件。
 
+### Run execution token
+
+状态：**Implemented（2026-08-06）。**
+
+Worker 原子领取 Run 时，API 生成一个带 `rht_` 前缀的 256-bit 随机不透明 Token。领取响应将执行上下文和明文 Token 分开返回；数据库只保存 SHA-256 哈希、签发时间、过期时间和撤销时间。
+
+- Token 只绑定领取到的单个 Run，不能用于另一个 Run。
+- Worker 仅在进程内存中持有明文，并通过 Bearer header 访问该 Run 的 control 和 event 接口。
+- `ClaimedRun` 执行上下文进入 AgentAdapter；`executionToken` 不进入 Agent 子进程、Prompt、Event、日志 payload 或公有 API。
+- 默认有效期为 2 小时，可由 `RELAY_HUB_RUN_TOKEN_TTL_MS` 配置；Run 成功、失败、取消或丢失后必须失效，当前已在成功、失败和取消终态事务中立即撤销。
+- 这是本地优先 MVP 的执行隔离，不是用户登录、RBAC 或多租户认证。claim 接口的 Worker 身份认证和 lease/heartbeat 属于后续可靠性边界。
+
 ### Workspace Bootstrap
 
 状态：**Implemented（2026-08-06）。**
@@ -308,3 +320,5 @@ Phase 2 已加入 Codex CLI Adapter。Worker 为真实写入任务创建独立 G
 Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Run 收敛为 `succeeded` 并保存结构化 `RunOutcome`，不再直接完成 Task。在 Reviewer dispatch 尚未实现时，Task 进入 `waiting_for_user` 并追加 `task.waiting_for_review` 审计事件；Phase 3 将通过同一 Orchestrator 决策入口改为 `reviewing` 并创建 Reviewer Run。`CompletionPolicy` 只允许在合法 Review verdict 之后执行。
 
 Phase 2.6 已实现 Workspace Bootstrap。策略与 Agent provider 解耦并在 Run 创建时固化；Worker 在真实 AgentAdapter 启动前执行准备步骤，失败时记录结构化事件并阻断 Agent。当前显式 API 配置是事实来源，项目语言/锁文件探测尚未实现。
+
+Phase 2.7 已实现轻量单次 Run execution token。Worker 领取时获得一次明文凭证，API 只保存哈希并保护 control/event 回调；终态事务撤销凭证。它防止重复投递、旧 Worker 或错误进程跨 Run 上报，但不替代未来的 Worker 注册、lease 和 heartbeat。

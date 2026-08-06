@@ -267,6 +267,11 @@ export interface ClaimedRun {
   agent: AgentProfile;
 }
 
+export interface ClaimedExecution {
+  claimed: ClaimedRun;
+  executionToken: string;
+}
+
 export interface RealtimeEnvelope {
   eventId: number;
   taskId: string;

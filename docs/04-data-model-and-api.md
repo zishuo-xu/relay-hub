@@ -143,6 +143,7 @@ erDiagram
 - `trigger_type`: `user`、`handoff`、`review`、`retry`
 - `status`, `attempt`, `version`
 - `worker_id`, `lease_expires_at`
+- `execution_token_hash`, `token_issued_at`, `token_expires_at`, `token_revoked_at`: 单次 Run 执行凭证的哈希和生命周期；不保存明文
 - `session_ref`: Adapter 的可恢复会话标识
 - `failure_code`, `failure_detail`
 - `outcome jsonb`: 成功 Run 的结构化执行结果，包含摘要与实际命令证据；不等同于 Task 验收通过
@@ -234,6 +235,19 @@ POST   /internal/runs/:runId/reviews
 ```
 
 内部接口使用单次 Run token，服务端根据 token 解析 run、agent 和 workspace，不接受客户端自行声明这些身份。
+
+Phase 2.7 当前实现的最小闭环为：
+
+```http
+POST /internal/runs/:runId/claim
+  -> { claimed: ClaimedRun, executionToken: string }
+
+GET  /internal/runs/:runId/control
+POST /internal/runs/:runId/events
+Authorization: Bearer rht_<opaque-random-token>
+```
+
+claim 只在 `queued -> claimed` 的原子更新成功时返回一次明文 Token。control/event 根据 URL 中的 Run ID 查询该 Run 的哈希，再校验 Token、过期时间、撤销时间和非终态状态；不接受请求体自报 agentId、taskId 或 workspaceId。缺失、错误、过期、跨 Run 或已撤销凭证统一返回 `401 invalid_run_token`。claim 自身的 Worker 身份认证尚未实现，当前仍位于单机内部信任边界；后续与 Worker lease/heartbeat 一起补齐。
 
 ## 统一 Agent 事件
 

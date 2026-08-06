@@ -1,5 +1,25 @@
 # 07. 实现状态
 
+## 2026-08-06：Phase 2.7 单次 Run execution token
+
+### 已实现
+
+- Worker 原子领取 Run 时生成 `rht_` 前缀的 256-bit 随机不透明 Token，领取响应把 `ClaimedRun` 与 `executionToken` 分离。
+- PostgreSQL migration `0005_neat_menace.sql` 仅为 Run 增加 Token 哈希、签发、过期和撤销时间；数据库不保存明文。
+- control/event 内部接口要求 Bearer Token，并校验 Run 绑定、SHA-256 哈希、有效期、撤销时间和非终态状态。
+- Worker 仅在内存中持有 Token；AgentAdapter 仍只接收 `ClaimedRun`，因此 Token 不进入 Agent、Prompt、Event、日志 payload 或公有 Task/Run API。
+- 默认有效期 2 小时，可由 `RELAY_HUB_RUN_TOKEN_TTL_MS` 配置；成功、失败或取消终态在同一事务中立即撤销。
+- 当前保持轻量本地边界：没有引入 JWT、登录、RBAC 或认证服务；claim 接口的 Worker 身份认证与 lease/heartbeat 后续共同实现。
+
+### 验证证据
+
+- Run token 单元测试 2/2 通过，覆盖随机格式、哈希存储语义和恒定时间匹配路径。
+- 独立 PostgreSQL 测试库 migration 成功，Repository 集成测试 2/2 通过，验证明文不落库、错误/过期 Token 拒绝和终态撤销。
+- 独立 API `4110` 与临时 Redis `56380` 完成 HTTP 全链路：无 Token=401、错误 Token=401、正确 Token=200、started/completed=200、终态复用=401。
+- 同一隔离环境启动真实 BullMQ Worker 并执行 Mock Run，验证 Worker 可领取 `{ claimed, executionToken }`、携带凭证连续上报 11 个事件并正常完成队列 Job。
+- 全链路最终 Task=`waiting_for_user`、Run=`succeeded`，公有 Task detail 不包含 Token 或 `rht_` 明文。
+- 正式 PostgreSQL 已应用纯新增列 migration；4 个 Token 生命周期字段存在，API health 与 Web `3010` 均返回 200。
+
 ## 2026-08-06：Phase 2.6 provider-neutral Workspace Bootstrap
 
 ### 已实现

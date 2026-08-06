@@ -6,6 +6,7 @@ import {
   type BootstrapPolicy,
   canTransitionRun,
   canTransitionTask,
+  type ClaimedExecution,
   type ClaimedRun,
   type CreateTaskInput,
   DEFAULT_WORKSPACE_ID,
@@ -28,6 +29,7 @@ import {
   type RelayDatabase,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
+import { DEFAULT_RUN_TOKEN_TTL_MS, issueRunToken, verifyRunToken } from './run-token.js';
 import { planAfterSuccessfulRun } from './workflow-orchestrator.js';
 
 interface MutationResult<T> {
@@ -133,7 +135,10 @@ function mapEvent(row: RunEventRow): RunEvent {
 }
 
 export class PostgresStore {
-  constructor(private readonly db: RelayDatabase) {}
+  constructor(
+    private readonly db: RelayDatabase,
+    private readonly runTokenTtlMs = DEFAULT_RUN_TOKEN_TTL_MS,
+  ) {}
 
   async listTasks(): Promise<Task[]> {
     const rows = await this.db
@@ -283,13 +288,18 @@ export class PostgresStore {
     return { value: { detail, created: result.created }, emitted: result.emitted };
   }
 
-  async claimRun(runId: string, workerId: string): Promise<MutationResult<ClaimedRun | null>> {
+  async claimRun(runId: string, workerId: string): Promise<MutationResult<ClaimedExecution | null>> {
+    const token = issueRunToken(new Date(), this.runTokenTtlMs);
     const result = await this.db.transaction(async (tx) => {
       const [claimed] = await tx
         .update(runs)
         .set({
           status: 'claimed',
           workerId,
+          executionTokenHash: token.hash,
+          tokenIssuedAt: token.issuedAt,
+          tokenExpiresAt: token.expiresAt,
+          tokenRevokedAt: null,
           version: sql`${runs.version} + 1`,
         })
         .where(and(eq(runs.id, runId), eq(runs.status, 'queued')))
@@ -323,15 +333,43 @@ export class PostgresStore {
       if (!eventRow) throw new Error('Claim event insert did not return a row');
       return {
         claimed: {
-          task: mapTask(taskRow, claimed.agentId),
-          run: mapRun(claimed),
-          workspace: mapWorkspace(workspaceRow),
-          agent: mapAgentProfile(agentRow),
+          claimed: {
+            task: mapTask(taskRow, claimed.agentId),
+            run: mapRun(claimed),
+            workspace: mapWorkspace(workspaceRow),
+            agent: mapAgentProfile(agentRow),
+          } satisfies ClaimedRun,
+          executionToken: token.plaintext,
         },
         emitted: [mapEvent(eventRow)],
       };
     });
     return { value: result.claimed, emitted: result.emitted };
+  }
+
+  async authorizeRunToken(runId: string, plaintext: string, now = new Date()): Promise<boolean> {
+    const [run] = await this.db
+      .select({
+        status: runs.status,
+        executionTokenHash: runs.executionTokenHash,
+        tokenExpiresAt: runs.tokenExpiresAt,
+        tokenRevokedAt: runs.tokenRevokedAt,
+      })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .limit(1);
+    if (!run?.executionTokenHash || !run.tokenExpiresAt || run.tokenRevokedAt) return false;
+    if (run.tokenExpiresAt.getTime() <= now.getTime()) return false;
+    if (
+      run.status === 'queued' ||
+      run.status === 'succeeded' ||
+      run.status === 'failed' ||
+      run.status === 'cancelled' ||
+      run.status === 'lost'
+    ) {
+      return false;
+    }
+    return verifyRunToken(plaintext, run.executionTokenHash);
   }
 
   async getRunStatus(runId: string): Promise<RunStatus | null> {
@@ -359,7 +397,7 @@ export class PostgresStore {
         .set({
           status: nextRunStatus,
           version: run.version + 1,
-          ...(nextRunStatus === 'cancelled' ? { finishedAt: now } : {}),
+          ...(nextRunStatus === 'cancelled' ? { finishedAt: now, tokenRevokedAt: now } : {}),
         })
         .where(and(eq(runs.id, run.id), eq(runs.version, run.version)));
 
@@ -455,11 +493,13 @@ export class PostgresStore {
           }
           runPatch.finishedAt = now;
           runPatch.outcome = agentEvent.outcome;
+          runPatch.tokenRevokedAt = now;
           break;
         case 'run.cancelled':
           nextRunStatus = 'cancelled';
           nextTaskStatus = 'cancelled';
           runPatch.finishedAt = now;
+          runPatch.tokenRevokedAt = now;
           break;
         case 'run.failed':
           nextRunStatus = 'failed';
@@ -467,6 +507,7 @@ export class PostgresStore {
           runPatch.failureCode = agentEvent.code;
           runPatch.failureDetail = agentEvent.message;
           runPatch.finishedAt = now;
+          runPatch.tokenRevokedAt = now;
           break;
         default:
           if (run.status !== 'running') {

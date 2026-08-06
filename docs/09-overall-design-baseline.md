@@ -200,7 +200,7 @@ sequenceDiagram
 |---|---|
 | 身份 | 每个 Agent 有独立 AgentProfile、Adapter、模型标签和工具策略 |
 | Session | Session scope = workspace + agent + task/thread；不能恢复别的 Agent Session |
-| Invocation | 每次 Run 有独立 token、有效期、幂等键和执行身份 |
+| Invocation | 每次 Run 有独立 token、有效期、幂等键和执行身份；Phase 2.7 已实现 Worker 回调的最小闭环 |
 | 并发 | 同一个可恢复 Session 单飞；重复 resume 必须排队或拒绝 |
 | 文件 | 每个写入型 Run 使用独立 Git worktree；Reviewer 默认只读 |
 | 上下文 | Agent 只获得本 Run 被授权的任务、事件、Handoff 和知识 |
@@ -394,7 +394,7 @@ flowchart TB
 4. Queue 投递不能直接决定 Task 或 Run 的业务终态。
 5. Handoff 必须先持久化，再唤醒目标 Agent。
 6. 自由文本不能直接改变责任人、状态或权限。
-7. Agent 回调身份由服务端 token 解析，不能信任请求自报的 agentId/taskId。
+7. Agent 回调身份由服务端 token 解析，不能信任请求自报的 agentId/taskId。**Implemented：** control/event 已绑定单次 Run token；claim 的 Worker 身份认证待 lease 阶段补齐。
 8. 写入型并行 Run 必须隔离 worktree；Reviewer 默认只读。
 9. 关键状态变化必须留下 append-only Event 和因果引用。
 10. 模型输出不是完成证明；完成由合法终态事件和必要证据共同决定。

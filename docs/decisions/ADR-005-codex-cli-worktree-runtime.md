@@ -23,4 +23,4 @@ RelayHub 需要验证平台能够管理真实 Agent，而不只运行 Mock 流�
 - Mock 与 Codex Builder 可以通过 AgentProfile 在同一任务入口选择。
 - Codex session 不与其他 Agent 共享，thread ID 只属于对应 Run。
 - 原始 Workspace 不被直接写入，所有修改留在可检查的独立分支。
-- 当前内部 Worker API 仍是本地信任边界；单次 Run token 和 lease 属于后续可靠性/安全增强。
+- Worker control/event API 已由 Phase 2.7 单次 Run token 保护；claim 的 Worker 身份认证与 lease 仍属于后续可靠性增强。

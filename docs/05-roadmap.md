@@ -58,7 +58,7 @@
 
 目标：接入一个真实 Agent CLI，并处理真实执行的不确定性。
 
-当前状态：**首次真实运行、执行结果语义和 Workspace Bootstrap 已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。`RunOutcome` 区分 Agent 协议成功、命令证据和 Task 验收；provider-neutral Bootstrap 在 Agent 启动前确定性准备项目环境。Worker lease 和崩溃 reconciliation 留到 Phase 4。
+当前状态：**首次真实运行、执行结果语义、Workspace Bootstrap 和单次 Run token 已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。`RunOutcome` 区分 Agent 协议成功、命令证据和 Task 验收；provider-neutral Bootstrap 在 Agent 启动前确定性准备项目环境；Worker 回调已绑定单次 Run 的临时执行身份。Worker lease 和崩溃 reconciliation 留到 Phase 4。
 
 工作项：
 
@@ -69,7 +69,7 @@
 5. [x] 固化 Run workspace 快照，并持久化 thread、branch 和 working directory。
 6. [x] 实现显式、可观测、可失败的 Worktree bootstrap policy，并在 Run 创建时固化配置快照。
 7. [x] 区分 Agent 协议完成、命令/测试失败和验收通过；成功 Run 保存 `RunOutcome`，Task 不再自动 completed。
-8. [ ] 加入单次 Run token 与更完整的内部接口鉴权。
+8. [x] 加入单次 Run token，保护 Worker control/event 内部接口；claim 身份认证随 lease/heartbeat 后续补齐。
 9. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
 
 退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。首次真实运行已通过；lease/reconciliation 作为可靠性增强继续保留在 Phase 4。
@@ -131,9 +131,9 @@
 
 1. Web 页面拆分已完成；继续按既定简洁性基线拆分 `store.ts` 的事务职责，不改变运行行为。
 2. Workspace Bootstrap 与执行结果语义已完成。
-3. 下一步补充单次 Run token，为后续 Handoff/Review 提交建立可信执行身份。
+3. 单次 Run token 已完成，为后续 Handoff/Review 提交建立了最小可信执行身份。
 
-完成后再实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
+下一步先把 `store.ts` 按 Task、Run execution 和 Workflow transaction 职责做一次不改变行为的小型拆分，再实现结构化 Handoff、独立 Reviewer AgentProfile、Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

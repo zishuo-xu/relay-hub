@@ -2,9 +2,11 @@ import cors from '@fastify/cors';
 import { AgentEventSchema, BootstrapPolicySchema, CreateTaskInputSchema, type RunEvent } from '@relay-hub/contracts';
 import { createDatabase } from '@relay-hub/db';
 import Fastify from 'fastify';
+import type { FastifyRequest } from 'fastify';
 import { Server as SocketServer } from 'socket.io';
 import { z } from 'zod';
 import { OutboxPublisher } from './outbox-publisher.js';
+import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { PostgresStore } from './store.js';
 import { validateWorkspaceRoot } from './workspace-root.js';
 
@@ -27,8 +29,20 @@ io.on('connection', (socket) => {
 });
 
 const database = createDatabase();
-const store = new PostgresStore(database.db);
+const runTokenTtlMs = z.coerce
+  .number()
+  .int()
+  .positive()
+  .parse(process.env.RELAY_HUB_RUN_TOKEN_TTL_MS ?? DEFAULT_RUN_TOKEN_TTL_MS);
+const store = new PostgresStore(database.db, runTokenTtlMs);
 const publisher = new OutboxPublisher(database.db, process.env.REDIS_URL);
+
+function readBearerToken(request: FastifyRequest): string | null {
+  const authorization = request.headers.authorization;
+  if (!authorization) return null;
+  const match = /^Bearer (rht_[A-Za-z0-9_-]+)$/i.exec(authorization);
+  return match?.[1] ?? null;
+}
 
 function broadcast(events: RunEvent[]): void {
   for (const event of events) {
@@ -117,13 +131,21 @@ app.post('/internal/runs/:runId/claim', async (request, reply) => {
 
 app.get('/internal/runs/:runId/control', async (request, reply) => {
   const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
+  const token = readBearerToken(request);
+  if (!token || !(await store.authorizeRunToken(runId, token))) {
+    return reply.code(401).send({ error: 'invalid_run_token' });
+  }
   const status = await store.getRunStatus(runId);
   if (!status) return reply.code(404).send({ error: 'run_not_found' });
   return { status };
 });
 
-app.post('/internal/runs/:runId/events', async (request) => {
+app.post('/internal/runs/:runId/events', async (request, reply) => {
   const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
+  const token = readBearerToken(request);
+  if (!token || !(await store.authorizeRunToken(runId, token))) {
+    return reply.code(401).send({ error: 'invalid_run_token' });
+  }
   const body = z
     .object({
       dedupeKey: z.string().min(1).max(200),

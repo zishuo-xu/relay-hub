@@ -1,5 +1,11 @@
 import { hostname } from 'node:os';
-import { AgentEventSchema, RunQueueJobSchema, type AgentEvent, type ClaimedRun } from '@relay-hub/contracts';
+import {
+  AgentEventSchema,
+  RunQueueJobSchema,
+  type AgentEvent,
+  type ClaimedExecution,
+  type ClaimedRun,
+} from '@relay-hub/contracts';
 import { createRunWorker } from '@relay-hub/queue';
 import { runWorkspaceBootstrap } from './bootstrap-runner.js';
 import { runCodexAgent } from './codex-adapter.js';
@@ -10,7 +16,7 @@ const apiUrl = process.env.RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
 const workerId = process.env.RELAY_HUB_WORKER_ID ?? `${hostname()}-${process.pid}`;
 const worktreeManager = new WorktreeManager();
 
-async function claimRun(runId: string): Promise<ClaimedRun | null> {
+async function claimRun(runId: string): Promise<ClaimedExecution | null> {
   const response = await fetch(`${apiUrl}/internal/runs/${runId}/claim`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -18,26 +24,28 @@ async function claimRun(runId: string): Promise<ClaimedRun | null> {
   });
   if (response.status === 409) return null;
   if (!response.ok) throw new Error(`Claim failed: ${response.status} ${await response.text()}`);
-  return (await response.json()) as ClaimedRun;
+  return (await response.json()) as ClaimedExecution;
 }
 
-async function reportEvent(runId: string, sequence: number, event: unknown): Promise<void> {
+async function reportEvent(runId: string, executionToken: string, sequence: number, event: unknown): Promise<void> {
   const parsedEvent = AgentEventSchema.parse(event);
   const response = await fetch(`${apiUrl}/internal/runs/${runId}/events`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${executionToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({ dedupeKey: `${runId}:${sequence}`, event: parsedEvent }),
   });
   if (!response.ok) throw new Error(`Event report failed: ${response.status} ${await response.text()}`);
 }
 
-async function getRunControl(runId: string): Promise<{ status: string }> {
-  const response = await fetch(`${apiUrl}/internal/runs/${runId}/control`);
+async function getRunControl(runId: string, executionToken: string): Promise<{ status: string }> {
+  const response = await fetch(`${apiUrl}/internal/runs/${runId}/control`, {
+    headers: { authorization: `Bearer ${executionToken}` },
+  });
   if (!response.ok) throw new Error(`Control check failed: ${response.status} ${await response.text()}`);
   return (await response.json()) as { status: string };
 }
 
-async function execute(claimed: ClaimedRun): Promise<void> {
+async function execute(claimed: ClaimedRun, executionToken: string): Promise<void> {
   let sequence = 0;
   let cancellationPoll: ReturnType<typeof setInterval> | undefined;
   try {
@@ -49,7 +57,7 @@ async function execute(claimed: ClaimedRun): Promise<void> {
       const prepared = await worktreeManager.prepare(claimed.run.workspaceRoot, claimed.run.id);
       workingDirectory = prepared.workingDirectory;
       sequence += 1;
-      await reportEvent(claimed.run.id, sequence, {
+      await reportEvent(claimed.run.id, executionToken, sequence, {
         type: 'run.prepared',
         worktreePath: prepared.worktreePath,
         workingDirectory: prepared.workingDirectory,
@@ -61,7 +69,7 @@ async function execute(claimed: ClaimedRun): Promise<void> {
       cancellationPoll = setInterval(() => {
         if (checkingCancellation) return;
         checkingCancellation = true;
-        void getRunControl(claimed.run.id)
+        void getRunControl(claimed.run.id, executionToken)
           .then((control) => {
             if (control.status === 'cancelling') executionCancellation.abort();
           })
@@ -76,7 +84,7 @@ async function execute(claimed: ClaimedRun): Promise<void> {
         signal: executionCancellation.signal,
       })) {
         sequence += 1;
-        await reportEvent(claimed.run.id, sequence, event);
+        await reportEvent(claimed.run.id, executionToken, sequence, event);
         if (event.type === 'run.failed' || event.type === 'run.cancelled') bootstrapReachedTerminal = true;
       }
       if (bootstrapReachedTerminal) return;
@@ -92,13 +100,17 @@ async function execute(claimed: ClaimedRun): Promise<void> {
 
     for await (const event of events) {
       sequence += 1;
-      await reportEvent(claimed.run.id, sequence, event);
+      await reportEvent(claimed.run.id, executionToken, sequence, event);
     }
   } catch (error) {
     sequence += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
-      await reportEvent(claimed.run.id, sequence, { type: 'run.failed', code: 'unknown', message });
+      await reportEvent(claimed.run.id, executionToken, sequence, {
+        type: 'run.failed',
+        code: 'unknown',
+        message,
+      });
     } catch (reportError) {
       console.error('Unable to report worker failure', reportError);
       throw error;
@@ -115,7 +127,7 @@ const worker = createRunWorker(async (job) => {
     console.log(`Ignoring duplicate delivery for non-queued run ${runId}`);
     return;
   }
-  await execute(claimed);
+  await execute(claimed.claimed, claimed.executionToken);
 });
 
 worker.on('completed', (job) => console.log(`Run job ${job.id ?? job.data.runId} completed`));

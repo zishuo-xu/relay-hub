@@ -38,6 +38,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成真实 Codex CLI Builder、隔离 Worktree、子进程监管与取消链路
 - [x] 分离 Agent 执行结果与 Task 验收，持久化结构化 RunOutcome
 - [x] 完成 provider-neutral Workspace Bootstrap、Run 配置快照与失败阻断
+- [x] 完成单次 Run execution token、Worker 回调鉴权与终态撤销
 - [ ] 完成多 Agent 交接与 Review 流程
 - [ ] 完成可观测性、测试和演示部署
 
@@ -121,6 +122,8 @@ curl -X PATCH http://127.0.0.1:4100/api/workspaces/00000000-0000-4000-8000-00000
 ```
 
 不要在 Bootstrap 参数中放入密钥。项目语言或锁文件自动探测目前不会直接执行命令，持久化的显式 Workspace 策略才是运行事实来源。
+
+Worker 领取 Run 时会获得只属于该次执行的临时 Token。API 只保存 SHA-256 哈希，Worker 仅在内存中持有明文，并用它访问 Run control 和 event 接口；Token 不进入 Agent、Prompt、Timeline 或公有 Task/Run API。默认有效期为 2 小时，可通过 `RELAY_HUB_RUN_TOKEN_TTL_MS` 调整，Run 进入终态时会立即撤销。
 
 如果本地已有 Phase 1A 的 `relay-hub/.data/state.json`，可执行一次无损导入：
 
