@@ -1,5 +1,26 @@
 # 07. 实现状态
 
+## 2026-08-07：Phase 3.1 结构化 Handoff 与 Reviewer Run 派发
+
+### 已实现
+
+- Task 支持可选 Reviewer AgentProfile；创建时校验 Builder/Reviewer 不同、Reviewer 启用且具有 `review` capability。正式 seed 新增独立 `Mock Reviewer`。
+- `HandoffDraft` 固化目标、objective、context summary、artifact refs 和 acceptance criteria，并限制每个来源 Run 最多一个 Handoff。
+- Builder 的 `handoff.requested` 事务只保存 pending Handoff 和持久 Event；不会在 Builder 完成前启动 Reviewer。
+- Builder `run.completed` 事务原子保存 Outcome、创建 `triggerType=review` 的父子 Run、关联 target Run、更新 Handoff=`dispatched`、Task=`reviewing` 并写 Outbox。
+- Reviewer claim 从 PostgreSQL 获得 Handoff、自己的 AgentProfile 和独立 Run Token，不接收 Builder Session 或隐藏 reasoning。
+- Reviewer 复用 Builder 已完成的 Worktree；真实 Codex Reviewer 使用 `read-only` sandbox 并跳过写入型 Bootstrap。Reviewer 不能再次请求 Reviewer，避免递归派发。
+- Web 新建任务可分别选择 Builder/Reviewer，Timeline 识别 Handoff、Reviewer 派发和 Reviewer Run 完成。
+- migration `0006_aberrant_mauler.sql` 只增加可空 `reviewer_agent_id` 外键和 Handoff 来源唯一索引；既有 Task 数据保持兼容。
+
+### 验证证据
+
+- Contracts 8/8、Worker 8/8 通过；Codex Adapter 覆盖 Builder Handoff 顺序、Reviewer 独立 Prompt、无递归 Handoff 和 read-only sandbox 选择。
+- 隔离 PostgreSQL 中 API Store + Orchestrator 6/6 通过，验证 pending 阶段仍只有一个 Run、错误目标拒绝、完成后父子 Run/Outbox 原子创建，以及 Reviewer 完成后的确定收敛。
+- 独立 API `4110`、临时 Redis `56380` 和真实 BullMQ Worker 完成双 Run 全链路：Builder 与 Reviewer 均 `succeeded`，Task=`waiting_for_user`，Handoff=`dispatched`。
+- 全链路共 22 个有序事件；`handoff.requested` 先于 Builder `run.completed`，Reviewer 输出证明其收到交接上下文，公有详情没有 Run Token 泄漏。
+- 正式 PostgreSQL 已应用纯新增 migration，并成功 seed Mock Reviewer；结构化 Review verdict/Finding 尚未实现，属于 Phase 3.2。
+
 ## 2026-08-07：Phase 2.8 API 持久化职责整理
 
 ### 已实现
@@ -197,10 +218,10 @@ Task queued
 - Worktree 测试使用真实 Git 命令验证独立分支与源仓库边界。
 - PostgreSQL 测试覆盖 active Run 的 `cancelling -> cancelled` 收敛。
 
-### 仍未实现
+### 此阶段之后仍未实现
 
-- Builder → Reviewer Handoff、Review/Finding 和返工闭环。
-- 单次 Run token、Worker lease、heartbeat 和崩溃 reconciliation。
+- Builder → Reviewer Handoff 已在 Phase 3.1 实现；Review/Finding 和返工闭环仍未实现。
+- 单次 Run token 已在 Phase 2.7 实现；Worker lease、heartbeat 和崩溃 reconciliation 仍未实现。
 - 用户批准后合并/提交 Worktree 的产品流程。
 - Workspace Bootstrap 已在 Phase 2.6 实现；当前仍需由用户显式配置步骤，自动项目探测尚未实现。
 
@@ -240,11 +261,11 @@ POST Task
 - 独立 Docker PostgreSQL 与 Redis healthcheck：healthy。
 - 端到端冒烟：Task=`completed`、Run=`succeeded`、10 个有序 Event、Outbox=`published`。
 
-### 尚未实现
+### 当时尚未实现
 
 - Worker lease、heartbeat 与崩溃 reconciliation。
 - 真实 Agent CLI、Worktree 隔离与进程监管。
-- Handoff/Review 应用服务和 Builder → Reviewer 闭环。
+- Handoff 已在 Phase 3.1 实现；Review 裁决闭环仍未实现。
 - `require_user_confirmation` 的交互流程；当前 Mock 单 Agent 纵向切片仍直接完成 Task。
 
 ### 下一个可运行里程碑
@@ -286,12 +307,12 @@ POST Task
 - API + 独立 Worker 冒烟测试：Task 最终为 `completed`，Run 最终为 `succeeded`，共生成 10 个有序事件。
 - `pnpm audit --prod --registry=https://registry.npmjs.org`：无已知漏洞。
 
-### 有意保留的原型边界
+### 当时有意保留的原型边界
 
 - 当前存储是 API 独占写入的 JSON 文件，不支持 API 多实例。
 - Worker 使用短轮询领取任务，尚未接 Redis/BullMQ。
 - 只有 Mock Adapter，尚未启动真实 Agent CLI 子进程。
-- 尚未实现取消、lease、重启恢复、Handoff 和 Review。
+- 当时尚未实现取消、lease、重启恢复、Handoff 和 Review；其中取消与 Handoff 已在后续阶段完成。
 
 这些不是隐藏缺陷，而是 Phase 1A 的明确范围；后续按路线逐项替换，同时保持 API、Worker 和 Web 之间的协议稳定。
 

@@ -28,8 +28,10 @@ const eventLabels: Record<string, string> = {
   'tool.called': '工具调用',
   'tool.completed': '工具完成',
   'run.completed': '执行结束',
+  'handoff.requested': '已准备交接',
   'task.waiting_for_review': '等待审查',
   'task.review_requested': '进入审查',
+  'task.review_run_completed': 'Reviewer 执行完成',
   'run.cancellation_requested': '正在取消',
   'run.cancelled': '已取消',
   'run.failed': '执行失败',
@@ -65,10 +67,16 @@ function eventText(event: RunEvent): string {
           ? (event.payload.outcome as { summary?: unknown }).summary ?? 'Agent 执行完成'
           : event.payload.summary ?? 'Agent 执行完成',
       );
+    case 'handoff.requested': {
+      const handoff = event.payload.handoff as { targetAgentId?: unknown; summary?: unknown } | undefined;
+      return `Builder 已准备交接给 ${String(handoff?.targetAgentId ?? 'Reviewer')}：${String(handoff?.summary ?? '')}`;
+    }
     case 'task.waiting_for_review':
       return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
     case 'task.review_requested':
-      return 'Builder 结果已进入独立 Reviewer 审查。';
+      return `Builder 结果已持久化，并创建 Reviewer Run ${String(event.payload.targetRunId ?? '')}。`;
+    case 'task.review_run_completed':
+      return 'Reviewer Run 已完成；结构化 verdict 将在下一切片接入。';
     case 'run.cancellation_requested':
       return '用户已请求取消，正在回收 Agent 子进程。';
     case 'run.cancelled':
@@ -82,7 +90,11 @@ function eventText(event: RunEvent): string {
 
 function eventTone(event: RunEvent): string {
   if (event.type === 'run.failed' || event.type === 'run.cancelled' || event.type === 'run.bootstrap_failed') return 'danger';
-  if (event.type === 'run.completed' || event.type === 'run.bootstrap_completed') return 'success';
+  if (
+    event.type === 'run.completed' ||
+    event.type === 'run.bootstrap_completed' ||
+    event.type === 'task.review_run_completed'
+  ) return 'success';
   if (event.type === 'output.delta') return 'output';
   if (event.type.startsWith('tool.')) return 'tool';
   return 'system';
@@ -155,7 +167,7 @@ export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebar
       </div>
       <footer className="sidebar-footer">
         <span className="footer-status"><i />Local runtime</span>
-        <span>Phase 2</span>
+        <span>Phase 3</span>
       </footer>
     </aside>
   );
@@ -263,8 +275,11 @@ interface CreateTaskDrawerProps {
   criterion: string;
   workspaceRoot: string;
   agents: AgentProfile[];
+  reviewerAgents: AgentProfile[];
   selectedAgentId: string;
   selectedAgent: AgentProfile | null;
+  selectedReviewerAgentId: string;
+  selectedReviewer: AgentProfile | null;
   submitting: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -273,6 +288,7 @@ interface CreateTaskDrawerProps {
   onCriterionChange: (value: string) => void;
   onWorkspaceRootChange: (value: string) => void;
   onAgentChange: (value: string) => void;
+  onReviewerChange: (value: string) => void;
 }
 
 export function CreateTaskDrawer({
@@ -282,8 +298,11 @@ export function CreateTaskDrawer({
   criterion,
   workspaceRoot,
   agents,
+  reviewerAgents,
   selectedAgentId,
   selectedAgent,
+  selectedReviewerAgentId,
+  selectedReviewer,
   submitting,
   onClose,
   onSubmit,
@@ -292,6 +311,7 @@ export function CreateTaskDrawer({
   onCriterionChange,
   onWorkspaceRootChange,
   onAgentChange,
+  onReviewerChange,
 }: CreateTaskDrawerProps) {
   return (
     <>
@@ -311,27 +331,51 @@ export function CreateTaskDrawer({
           </label>
           <label>
             需求描述
-            <textarea onChange={(event) => onDescriptionChange(event.target.value)} required rows={4} value={description} />
+            <textarea onChange={(event) => onDescriptionChange(event.target.value)} required rows={3} value={description} />
           </label>
           <label>
             验收标准
-            <textarea onChange={(event) => onCriterionChange(event.target.value)} rows={3} value={criterion} />
+            <textarea onChange={(event) => onCriterionChange(event.target.value)} rows={2} value={criterion} />
           </label>
           <label>
             Git Workspace 路径
             <input onChange={(event) => onWorkspaceRootChange(event.target.value)} required value={workspaceRoot} />
           </label>
-          <label>
-            执行 Agent
-            <select onChange={(event) => onAgentChange(event.target.value)} value={selectedAgentId}>
-              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-            </select>
-          </label>
-          <div className="agent-choice">
-            <span className="agent-mark">{selectedAgent?.adapterType === 'codex_cli' ? 'C' : 'M'}</span>
-            <div>
-              <strong>{selectedAgent?.name ?? '正在加载 Agent'}</strong>
-              <small>{selectedAgent?.adapterType === 'codex_cli' ? '真实 Codex CLI · 隔离 Worktree' : '稳定演示 · 流式输出'}</small>
+          <div className="agent-flow-grid" aria-label="Agent 工作流">
+            <div className="agent-flow-step">
+              <label>
+                Builder
+                <select onChange={(event) => onAgentChange(event.target.value)} value={selectedAgentId}>
+                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+              </label>
+              <div className="agent-choice">
+                <span className="agent-mark">{selectedAgent?.adapterType === 'codex_cli' ? 'C' : 'M'}</span>
+                <div>
+                  <strong>{selectedAgent?.name ?? '正在加载'}</strong>
+                  <small>{selectedAgent?.adapterType === 'codex_cli' ? '真实 CLI · 隔离执行' : '实现任务 · 生成交接'}</small>
+                </div>
+              </div>
+            </div>
+            <div className="agent-flow-step">
+              <label>
+                Reviewer
+                <select
+                  disabled={reviewerAgents.length === 0}
+                  onChange={(event) => onReviewerChange(event.target.value)}
+                  value={selectedReviewerAgentId}
+                >
+                  {reviewerAgents.length === 0 ? <option value="">暂不启用</option> : null}
+                  {reviewerAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+              </label>
+              <div className="agent-choice">
+                <span className="agent-mark">R</span>
+                <div>
+                  <strong>{selectedReviewer?.name ?? '尚未配置'}</strong>
+                  <small>独立 Run · 只读审查</small>
+                </div>
+              </div>
             </div>
           </div>
           <button className="primary-button" disabled={submitting} type="submit">

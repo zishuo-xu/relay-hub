@@ -167,9 +167,10 @@ sequenceDiagram
     API->>DB: Task + Builder Run + Event + Outbox
     DB-->>Q: 发布 Builder Run
     Q->>B: 领取并执行
-    B->>API: 输出、工具事件、产物和完成结果
-    API->>DB: 持久化 Run 结果
-    API->>DB: 创建 Handoff + Reviewer Run + Outbox
+    B->>API: 输出、工具事件和 pending Handoff
+    API->>DB: 先持久化 Handoff 事实
+    B->>API: run.completed + Outcome
+    API->>DB: 原子完成 Builder + 创建 Reviewer Run + Outbox
     DB-->>Q: 发布 Reviewer Run
     Q->>R: 原始需求 + Diff + Tests + Handoff
     R->>API: 提交结构化 Review
@@ -315,10 +316,13 @@ cancelling -> cancelled | failed
 
 ```text
 pending -> accepted -> dispatched
+pending -> dispatched
 pending -> rejected | cancelled | expired
 ```
 
 `dispatched` 只表示目标 Run 已创建并进入可靠投递，不表示目标工作已经完成。工作结果由 target Run 表达。
+
+**Implemented（2026-08-07）：** 本地自动 Review 路径使用 `pending -> dispatched` 原子派发；`accepted` 保留给未来需要目标 Agent 或用户显式接单的路由策略。Builder 完成前只保存 pending Handoff，完成事务才创建 Reviewer 子 Run 和 Outbox。Reviewer 使用不同 AgentProfile、独立 Run/Token/Session，并只读继承 Builder Worktree。
 
 ### Review
 

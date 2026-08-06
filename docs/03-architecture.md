@@ -124,13 +124,16 @@ PostgreSQL 和 Redis/BullMQ 都是正式运行架构的基础设施，不是二�
 Handoff 的目标写入顺序：
 
 ```text
-验证来源 Run
-  -> 在同一事务写 Handoff + 审计事件 + Outbox
+Builder running
+  -> 验证来源 Run、Task 配置与目标 AgentProfile
+  -> 在同一事务写 pending Handoff + handoff.requested Event
+Builder run.completed
+  -> 在同一事务写 Builder Outcome + Reviewer 子 Run + dispatched Handoff + Outbox
   -> Outbox Publisher 投递 Queue
-  -> Worker 为目标 Agent 创建或领取子 Run
+  -> Reviewer Worker 领取子 Run
 ```
 
-即使 Queue 消息重复、过期或已经被消费，平台仍能从 PostgreSQL 还原谁在何时向谁交接了什么。
+Handoff 请求不会在 Builder 尚未完成时提前唤醒 Reviewer。即使 Queue 消息重复、过期或已经被消费，平台仍能从 PostgreSQL 还原谁在何时向谁交接了什么。
 
 ### Agent Worker
 
@@ -317,10 +320,12 @@ Queue job 只携带 `runId`。Worker 收到消息后仍需通过 PostgreSQL 条�
 
 Phase 2 已加入 Codex CLI Adapter。Worker 为真实写入任务创建独立 Git Worktree，以参数数组启动 `codex exec --json --sandbox workspace-write`，把公开 JSONL 事件转换为统一 AgentEvent。模型 reasoning 不进入 RelayHub Event；thread ID、命令摘要、文件变化、最终消息和终态进入 PostgreSQL。Worktree 在任务结束后保留，用户确认前不自动清理。
 
-Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Run 收敛为 `succeeded` 并保存结构化 `RunOutcome`，不再直接完成 Task。在 Reviewer dispatch 尚未实现时，Task 进入 `waiting_for_user` 并追加 `task.waiting_for_review` 审计事件；Phase 3 将通过同一 Orchestrator 决策入口改为 `reviewing` 并创建 Reviewer Run。`CompletionPolicy` 只允许在合法 Review verdict 之后执行。
+Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Run 收敛为 `succeeded` 并保存结构化 `RunOutcome`，不再直接完成 Task。未配置或未产生 Handoff 时，Task 仍进入 `waiting_for_user`；存在合法 pending Handoff 时，Phase 3.1 已通过同一决策入口改为 `reviewing` 并创建 Reviewer Run。`CompletionPolicy` 只允许在后续合法 Review verdict 之后执行。
 
 Phase 2.6 已实现 Workspace Bootstrap。策略与 Agent provider 解耦并在 Run 创建时固化；Worker 在真实 AgentAdapter 启动前执行准备步骤，失败时记录结构化事件并阻断 Agent。当前显式 API 配置是事实来源，项目语言/锁文件探测尚未实现。
 
 Phase 2.7 已实现轻量单次 Run execution token。Worker 领取时获得一次明文凭证，API 只保存哈希并保护 control/event 回调；终态事务撤销凭证。它防止重复投递、旧 Worker 或错误进程跨 Run 上报，但不替代未来的 Worker 注册、lease 和 heartbeat。
 
 Phase 2.8 已完成 API 持久化职责整理。`PostgresStore` 保留为路由层稳定门面，Task 创建与查询、Run 领取/Token/取消、Agent Event 驱动的 Workflow transaction 以及 Workspace 配置分别由同包模块实现。此拆分只缩短文件和明确依赖，不改变数据库 schema、HTTP 合约、状态机或部署结构。
+
+Phase 3.1 已实现最小结构化 Handoff。用户在 Task 创建时选择独立 Reviewer AgentProfile；Builder Adapter 在完成前提交 objective、context summary、artifact refs 和 acceptance criteria。API 先持久化 pending Handoff，Builder 成功后再原子创建 `triggerType=review` 的父子 Run、更新 Task=`reviewing` 并写 Outbox。Reviewer 领取时只获得 Task、自己的 AgentProfile、Handoff 和继承的 Builder Worktree；真实 Codex Reviewer 使用 `read-only` sandbox 且跳过写入型 Bootstrap。当前 Reviewer Run 完成后进入 `waiting_for_user`，结构化 verdict/Finding 属于下一切片。

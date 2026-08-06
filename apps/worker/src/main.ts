@@ -54,7 +54,17 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
     let cancellation: AbortController | undefined;
 
     if (claimed.agent.adapterType !== 'mock') {
-      const prepared = await worktreeManager.prepare(claimed.run.workspaceRoot, claimed.run.id);
+      const isReviewer = claimed.run.triggerType === 'review';
+      const prepared = isReviewer
+        ? {
+            worktreePath: claimed.run.worktreePath,
+            workingDirectory: claimed.run.workingDirectory,
+            branchName: claimed.run.branchName,
+          }
+        : await worktreeManager.prepare(claimed.run.workspaceRoot, claimed.run.id);
+      if (!prepared.worktreePath || !prepared.workingDirectory || !prepared.branchName) {
+        throw new Error('Reviewer Run is missing the inherited Builder worktree');
+      }
       workingDirectory = prepared.workingDirectory;
       sequence += 1;
       await reportEvent(claimed.run.id, executionToken, sequence, {
@@ -79,15 +89,17 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
           });
       }, 500);
 
-      let bootstrapReachedTerminal = false;
-      for await (const event of runWorkspaceBootstrap(claimed.run.bootstrapPolicySnapshot, workingDirectory, {
-        signal: executionCancellation.signal,
-      })) {
-        sequence += 1;
-        await reportEvent(claimed.run.id, executionToken, sequence, event);
-        if (event.type === 'run.failed' || event.type === 'run.cancelled') bootstrapReachedTerminal = true;
+      if (!isReviewer) {
+        let bootstrapReachedTerminal = false;
+        for await (const event of runWorkspaceBootstrap(claimed.run.bootstrapPolicySnapshot, workingDirectory, {
+          signal: executionCancellation.signal,
+        })) {
+          sequence += 1;
+          await reportEvent(claimed.run.id, executionToken, sequence, event);
+          if (event.type === 'run.failed' || event.type === 'run.cancelled') bootstrapReachedTerminal = true;
+        }
+        if (bootstrapReachedTerminal) return;
       }
-      if (bootstrapReachedTerminal) return;
     }
 
     if (claimed.agent.adapterType === 'codex_cli') {

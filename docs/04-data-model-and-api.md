@@ -130,6 +130,7 @@ erDiagram
 - `acceptance_criteria jsonb`
 - `requested_by`
 - `current_run_id`
+- `reviewer_agent_id`: 用户为该 Task 选择的独立 Reviewer AgentProfile；可空以兼容单 Builder 流程
 - `version`
 - `completed_at`
 
@@ -173,11 +174,14 @@ erDiagram
 
 - `source_run_id`
 - `target_agent_id`
-- `summary`
+- `objective`
+- `context_summary`
 - `artifact_refs jsonb`
 - `acceptance_criteria jsonb`
 - `target_run_id`
 - `status`
+
+`source_run_id` 唯一，当前一个 Builder Run 最多产生一个 Handoff。`pending` 表示交接事实已保存但 Builder 尚未完成；`dispatched` 表示 Reviewer 子 Run 与 Outbox 已在同一事务中创建，不表示 Review 已通过。
 
 ### `outbox_events`
 
@@ -249,6 +253,8 @@ Authorization: Bearer rht_<opaque-random-token>
 
 claim 只在 `queued -> claimed` 的原子更新成功时返回一次明文 Token。control/event 根据 URL 中的 Run ID 查询该 Run 的哈希，再校验 Token、过期时间、撤销时间和非终态状态；不接受请求体自报 agentId、taskId 或 workspaceId。缺失、错误、过期、跨 Run 或已撤销凭证统一返回 `401 invalid_run_token`。claim 自身的 Worker 身份认证尚未实现，当前仍位于单机内部信任边界；后续与 Worker lease/heartbeat 一起补齐。
 
+Phase 3.1 中 `handoff.requested` 继续通过受 Run Token 保护的 event 接口提交，不新增旁路 Handoff API。服务端要求目标 ID 与 Task 的 `reviewer_agent_id` 一致、目标 AgentProfile 启用且具有 `review` capability，并拒绝 Builder 把工作交给自己。Reviewer Run 通过既有 claim 接口获得持久化 Handoff；Queue job 仍只携带 `runId`。
+
 ## 统一 Agent 事件
 
 ```ts
@@ -274,6 +280,8 @@ Adapter 事件先经过 Zod 校验，再进入平台。无法识别的供应商�
 Workspace Bootstrap 在 `run.prepared` 与 `run.started` 之间产生 `run.bootstrap_started`、`run.bootstrap_step_completed`、`run.bootstrap_completed` 或 `run.bootstrap_failed`。失败后紧接 `run.failed(code=bootstrap_failed)`；因此“环境准备失败”和“Agent 执行或测试失败”具有不同机器语义。
 
 `RunOutcome` 当前包含执行摘要和命令证据（命令、退出码、状态和受限输出摘要）。它属于 Run 的执行事实；即使命令失败后 Agent 协议正常结束，Run 仍可以是 `succeeded`，但 Task 不能因此自动变成 `completed`。验收结论必须由后续 Reviewer verdict、CompletionPolicy 或人工裁决产生。
+
+Builder 的 `handoff.requested` 必须发生在 `run.completed` 之前。前者只创建 pending Handoff，不改变 Task owner 或创建子 Run；后者成功时才由 Orchestrator 在同一事务中创建 Reviewer Run、写 Outbox、把 Handoff 标记为 dispatched，并将 Task 切换为 reviewing。Reviewer 完成不会递归创建另一个 Reviewer。
 
 ## WebSocket 事件
 

@@ -5,6 +5,12 @@ import { superviseProcess } from './process-supervisor.js';
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
 const MAX_EVENT_TEXT = 4_000;
 
+export function codexSandboxForRun(claimed: ClaimedRun): 'read-only' | 'workspace-write' {
+  return claimed.run.triggerType === 'review' || claimed.agent.capabilities.includes('review')
+    ? 'read-only'
+    : 'workspace-write';
+}
+
 function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   if (!text) return '';
@@ -17,13 +23,40 @@ function itemOf(event: Record<string, unknown>): Record<string, unknown> | null 
 }
 
 function buildPrompt(claimed: ClaimedRun): string {
+  const isReviewer = codexSandboxForRun(claimed) === 'read-only';
   const criteria = claimed.task.acceptanceCriteria.length
     ? claimed.task.acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`).join('\n')
     : 'No additional acceptance criteria were supplied.';
+  if (isReviewer) {
+    const handoff = claimed.handoff;
+    if (!handoff) throw new Error('Reviewer Run is missing its persisted Handoff');
+    const artifacts = handoff.artifactRefs.length
+      ? handoff.artifactRefs.map((artifact) => `- ${artifact.kind}: ${artifact.value}`).join('\n')
+      : '- Current inherited Builder worktree';
+    return [
+      'You are the independent Reviewer Agent for a RelayHub task.',
+      'Inspect the current Builder worktree in read-only mode. Do not modify files, commit, or push.',
+      'Check the implementation and available verification evidence against the acceptance criteria.',
+      '',
+      `Task: ${claimed.task.title}`,
+      claimed.task.description,
+      '',
+      `Review objective: ${handoff.objective}`,
+      `Builder handoff: ${handoff.contextSummary}`,
+      'Artifacts:',
+      artifacts,
+      '',
+      'Acceptance criteria:',
+      criteria,
+      '',
+      'In the final response, summarize findings, risks, and whether further changes are needed.',
+    ].join('\n');
+  }
+
   return [
     'You are the Builder Agent for a RelayHub task.',
     'Work only inside the current Git worktree. Do not commit, push, or modify other worktrees.',
-    'Implement the requested change, run proportionate verification, and leave the worktree ready for human review.',
+    'Implement the requested change, run proportionate verification, and leave the worktree ready for Reviewer inspection.',
     '',
     `Task: ${claimed.task.title}`,
     claimed.task.description,
@@ -42,11 +75,12 @@ export async function* runCodexAgent(
 ): AsyncGenerator<AgentEvent> {
   const codexBinary = options.processOverride?.command ?? process.env.RELAY_HUB_CODEX_BIN ?? 'codex';
   const timeoutMs = Number(process.env.RELAY_HUB_AGENT_TIMEOUT_MS ?? 15 * 60 * 1_000);
+  const isReviewer = codexSandboxForRun(claimed) === 'read-only';
   const args = options.processOverride?.args ?? [
     'exec',
     '--json',
     '--sandbox',
-    'workspace-write',
+    codexSandboxForRun(claimed),
     '--ignore-user-config',
     '--ignore-rules',
     '-c',
@@ -162,6 +196,18 @@ export async function* runCodexAgent(
       }
       case 'turn.completed':
         terminalEventSent = true;
+        if (!isReviewer && claimed.task.reviewerAgentId) {
+          yield {
+            type: 'handoff.requested',
+            handoff: {
+              targetAgentId: claimed.task.reviewerAgentId,
+              objective: `Review Builder result for: ${claimed.task.title}`,
+              summary: truncate(finalMessage || 'Builder completed the task and requested independent review.'),
+              artifactRefs: [{ kind: 'worktree', value: workingDirectory, label: 'Builder worktree' }],
+              acceptanceCriteria: claimed.task.acceptanceCriteria,
+            },
+          };
+        }
         yield {
           type: 'run.completed',
           outcome: {

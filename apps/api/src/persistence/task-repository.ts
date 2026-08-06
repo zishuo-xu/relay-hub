@@ -8,6 +8,7 @@ import {
 } from '@relay-hub/contracts';
 import {
   agentProfiles,
+  handoffs,
   idempotencyKeys,
   outboxEvents,
   type RelayDatabase,
@@ -17,7 +18,7 @@ import {
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt } from 'drizzle-orm';
-import { mapEvent, mapRun, mapTask } from './mappers.js';
+import { mapEvent, mapHandoff, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
 
 export async function listTasks(db: RelayDatabase): Promise<Task[]> {
@@ -38,11 +39,18 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     .from(runEvents)
     .where(eq(runEvents.taskId, taskId))
     .orderBy(asc(runEvents.id));
+  const handoffRows = await db
+    .select({ handoff: handoffs })
+    .from(handoffs)
+    .innerJoin(runs, eq(handoffs.sourceRunId, runs.id))
+    .where(eq(runs.taskId, taskId))
+    .orderBy(asc(handoffs.createdAt));
   const currentRun = runRows.find((run) => run.id === taskRow.currentRunId) ?? runRows[0];
   return {
     task: mapTask(taskRow, currentRun?.agentId ?? ''),
     runs: runRows.map(mapRun),
     events: eventRows.map(mapEvent),
+    handoffs: handoffRows.map(({ handoff }) => mapHandoff(handoff)),
   };
 }
 
@@ -90,6 +98,22 @@ export async function createTask(
       .where(and(eq(agentProfiles.id, input.agentId), eq(agentProfiles.workspaceId, DEFAULT_WORKSPACE_ID)))
       .limit(1);
     if (!agent?.enabled) throw new Error(`Agent is missing or disabled: ${input.agentId}`);
+    if (input.reviewerAgentId) {
+      if (input.reviewerAgentId === input.agentId) throw new Error('Builder and Reviewer AgentProfile must be different');
+      const [reviewer] = await tx
+        .select({ enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
+        .from(agentProfiles)
+        .where(
+          and(
+            eq(agentProfiles.id, input.reviewerAgentId),
+            eq(agentProfiles.workspaceId, DEFAULT_WORKSPACE_ID),
+          ),
+        )
+        .limit(1);
+      if (!reviewer?.enabled || !reviewer.capabilities.includes('review')) {
+        throw new Error(`Reviewer is missing, disabled, or lacks review capability: ${input.reviewerAgentId}`);
+      }
+    }
     const [workspace] = await tx
       .select({ rootPath: workspaces.rootPath, bootstrapPolicy: workspaces.bootstrapPolicy })
       .from(workspaces)
@@ -105,6 +129,7 @@ export async function createTask(
       description: input.description,
       acceptanceCriteria: input.acceptanceCriteria,
       completionPolicy: input.completionPolicy,
+      reviewerAgentId: input.reviewerAgentId,
       status: 'queued',
       createdAt: now,
       updatedAt: now,
@@ -126,7 +151,11 @@ export async function createTask(
         taskId,
         runId,
         eventType: 'task.created',
-        payload: { title: input.title, agentId: input.agentId },
+        payload: {
+          title: input.title,
+          agentId: input.agentId,
+          ...(input.reviewerAgentId ? { reviewerAgentId: input.reviewerAgentId } : {}),
+        },
         source: 'user',
         occurredAt: now,
         dedupeKey: `task-created:${taskId}`,

@@ -12,7 +12,14 @@ import {
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import type { BootstrapPolicy, CompletionPolicy, RunOutcome, RunStatus, TaskStatus } from '@relay-hub/contracts';
+import type {
+  BootstrapPolicy,
+  CompletionPolicy,
+  HandoffArtifactRef,
+  RunOutcome,
+  RunStatus,
+  TaskStatus,
+} from '@relay-hub/contracts';
 
 const TASK_STATUS_VALUES = [
   'draft',
@@ -112,6 +119,7 @@ export const tasks = pgTable(
       .default('require_user_confirmation')
       .notNull(),
     currentRunId: uuid('current_run_id').references((): AnyPgColumn => runs.id),
+    reviewerAgentId: uuid('reviewer_agent_id').references(() => agentProfiles.id),
     requestedBy: text('requested_by').default('local-operator').notNull(),
     version: integer('version').default(1).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -218,23 +226,27 @@ export const outboxEvents = pgTable(
   (table) => [index('outbox_pending_idx').on(table.status, table.availableAt, table.createdAt)],
 );
 
-export const handoffs = pgTable('handoffs', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  sourceRunId: uuid('source_run_id')
-    .notNull()
-    .references(() => runs.id),
-  targetAgentId: uuid('target_agent_id')
-    .notNull()
-    .references(() => agentProfiles.id),
-  targetRunId: uuid('target_run_id').references(() => runs.id),
-  objective: text('objective').notNull(),
-  contextSummary: text('context_summary').notNull(),
-  artifactRefs: jsonb('artifact_refs').$type<Record<string, unknown>[]>().default([]).notNull(),
-  acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
-  status: handoffStatusEnum('status').default('pending').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const handoffs = pgTable(
+  'handoffs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceRunId: uuid('source_run_id')
+      .notNull()
+      .references(() => runs.id),
+    targetAgentId: uuid('target_agent_id')
+      .notNull()
+      .references(() => agentProfiles.id),
+    targetRunId: uuid('target_run_id').references(() => runs.id),
+    objective: text('objective').notNull(),
+    contextSummary: text('context_summary').notNull(),
+    artifactRefs: jsonb('artifact_refs').$type<HandoffArtifactRef[]>().default([]).notNull(),
+    acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
+    status: handoffStatusEnum('status').default('pending').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('handoffs_source_run_uidx').on(table.sourceRunId)],
+);
 
 export const reviews = pgTable('reviews', {
   id: uuid('id').primaryKey().defaultRandom(),

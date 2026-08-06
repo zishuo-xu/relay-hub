@@ -2,6 +2,7 @@
 
 import {
   DEFAULT_MOCK_AGENT_ID,
+  DEFAULT_MOCK_REVIEWER_AGENT_ID,
   type AgentProfile,
   type RealtimeEnvelope,
   type Task,
@@ -27,6 +28,7 @@ export default function HomePage() {
   const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState(DEFAULT_MOCK_AGENT_ID);
+  const [selectedReviewerAgentId, setSelectedReviewerAgentId] = useState(DEFAULT_MOCK_REVIEWER_AGENT_ID);
   const [createOpen, setCreateOpen] = useState(false);
 
   const loadTasks = useCallback(async () => {
@@ -57,7 +59,18 @@ export default function HomePage() {
     });
     if (!agentResponse.ok) throw new Error('无法读取 AgentProfile');
     const agentPayload = (await agentResponse.json()) as { agents: AgentProfile[] };
-    setAgents(agentPayload.agents.filter((agent) => agent.enabled));
+    const enabledAgents = agentPayload.agents.filter((agent) => agent.enabled);
+    setAgents(enabledAgents);
+    setSelectedAgentId((current) =>
+      enabledAgents.some((agent) => agent.id === current && agent.capabilities.includes('implement'))
+        ? current
+        : enabledAgents.find((agent) => agent.capabilities.includes('implement'))?.id ?? '',
+    );
+    setSelectedReviewerAgentId((current) =>
+      enabledAgents.some((agent) => agent.id === current && agent.capabilities.includes('review'))
+        ? current
+        : enabledAgents.find((agent) => agent.capabilities.includes('review'))?.id ?? '',
+    );
   }, []);
 
   useEffect(() => {
@@ -130,6 +143,7 @@ export default function HomePage() {
           title,
           description,
           agentId: selectedAgentId,
+          ...(selectedReviewerAgentId ? { reviewerAgentId: selectedReviewerAgentId } : {}),
           acceptanceCriteria: criterion.trim() ? [criterion.trim()] : [],
         }),
       });
@@ -161,6 +175,7 @@ export default function HomePage() {
     [detail],
   );
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const selectedReviewer = agents.find((agent) => agent.id === selectedReviewerAgentId) ?? null;
   const currentAgent = agents.find((agent) => agent.id === detail?.task.agentId) ?? null;
   const canCancel = currentRun
     ? !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status)
@@ -180,10 +195,11 @@ export default function HomePage() {
         onNewTask={() => setCreateOpen(true)}
       />
       <CreateTaskDrawer
-        agents={agents}
+        agents={agents.filter((agent) => agent.capabilities.includes('implement'))}
         criterion={criterion}
         description={description}
         onAgentChange={setSelectedAgentId}
+        onReviewerChange={setSelectedReviewerAgentId}
         onClose={() => setCreateOpen(false)}
         onCriterionChange={setCriterion}
         onDescriptionChange={setDescription}
@@ -193,6 +209,9 @@ export default function HomePage() {
         open={createOpen}
         selectedAgent={selectedAgent}
         selectedAgentId={selectedAgentId}
+        reviewerAgents={agents.filter((agent) => agent.capabilities.includes('review'))}
+        selectedReviewer={selectedReviewer}
+        selectedReviewerAgentId={selectedReviewerAgentId}
         submitting={submitting}
         title={title}
         workspaceRoot={workspaceRoot}

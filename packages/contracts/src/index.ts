@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const DEFAULT_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 export const DEFAULT_MOCK_AGENT_ID = '00000000-0000-4000-8000-000000000002';
 export const DEFAULT_CODEX_AGENT_ID = '00000000-0000-4000-8000-000000000003';
+export const DEFAULT_MOCK_REVIEWER_AGENT_ID = '00000000-0000-4000-8000-000000000004';
 export const RUN_QUEUE_NAME = 'relay-hub-runs';
 
 export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli'] as const;
@@ -93,6 +94,7 @@ export const CreateTaskInputSchema = z.object({
   title: z.string().trim().min(3).max(120),
   description: z.string().trim().min(1).max(10_000),
   agentId: z.string().uuid().default(DEFAULT_MOCK_AGENT_ID),
+  reviewerAgentId: z.string().uuid().optional(),
   acceptanceCriteria: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
   completionPolicy: z.enum(COMPLETION_POLICIES).default('require_user_confirmation'),
 });
@@ -115,11 +117,23 @@ export const RunOutcomeSchema = z.object({
 
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
-const HandoffDraftSchema = z.object({
-  targetAgentId: z.string().min(1),
-  summary: z.string().min(1),
-  acceptanceCriteria: z.array(z.string()).default([]),
+export const HandoffArtifactRefSchema = z.object({
+  kind: z.enum(['worktree', 'file', 'url', 'text']),
+  value: z.string().min(1).max(4_096),
+  label: z.string().min(1).max(200).optional(),
 });
+
+export type HandoffArtifactRef = z.infer<typeof HandoffArtifactRefSchema>;
+
+export const HandoffDraftSchema = z.object({
+  targetAgentId: z.string().uuid(),
+  objective: z.string().min(1).max(2_000),
+  summary: z.string().min(1).max(10_000),
+  artifactRefs: z.array(HandoffArtifactRefSchema).max(100).default([]),
+  acceptanceCriteria: z.array(z.string().min(1).max(500)).max(20).default([]),
+});
+
+export type HandoffDraft = z.infer<typeof HandoffDraftSchema>;
 
 const ReviewDraftSchema = z.object({
   verdict: z.enum(['approved', 'changes_requested', 'blocked']),
@@ -187,11 +201,26 @@ export interface Task {
   title: string;
   description: string;
   agentId: string;
+  reviewerAgentId?: string;
   acceptanceCriteria: string[];
   completionPolicy: CompletionPolicy;
   status: TaskStatus;
   currentRunId: string;
   version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Handoff {
+  id: string;
+  sourceRunId: string;
+  targetAgentId: string;
+  targetRunId?: string;
+  objective: string;
+  contextSummary: string;
+  artifactRefs: HandoffArtifactRef[];
+  acceptanceCriteria: string[];
+  status: 'pending' | 'accepted' | 'dispatched' | 'rejected' | 'cancelled' | 'expired';
   createdAt: string;
   updatedAt: string;
 }
@@ -258,6 +287,7 @@ export interface TaskDetail {
   task: Task;
   runs: Run[];
   events: RunEvent[];
+  handoffs: Handoff[];
 }
 
 export interface ClaimedRun {
@@ -265,6 +295,7 @@ export interface ClaimedRun {
   run: Run;
   workspace: Workspace;
   agent: AgentProfile;
+  handoff?: Handoff;
 }
 
 export interface ClaimedExecution {

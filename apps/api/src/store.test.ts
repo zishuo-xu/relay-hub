@@ -1,4 +1,8 @@
-import { DEFAULT_MOCK_AGENT_ID } from '@relay-hub/contracts';
+import {
+  DEFAULT_CODEX_AGENT_ID,
+  DEFAULT_MOCK_AGENT_ID,
+  DEFAULT_MOCK_REVIEWER_AGENT_ID,
+} from '@relay-hub/contracts';
 import { createDatabase, runs } from '@relay-hub/db';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -103,5 +107,93 @@ suite('PostgresStore integration', () => {
     expect(detail?.task.status).toBe('cancelled');
     expect(detail?.runs[0]?.status).toBe('cancelled');
     expect(await store.authorizeRunToken(runId, claimed.value?.executionToken ?? '')).toBe(false);
+  });
+
+  it('persists a pending Handoff before dispatching an isolated Reviewer Run', async () => {
+    const created = await store.createTask({
+      title: 'Dispatch independent Reviewer',
+      description: 'Persist Builder facts before waking a separate Reviewer Run.',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      reviewerAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      acceptanceCriteria: ['Reviewer receives the structured Handoff'],
+      completionPolicy: 'require_user_confirmation',
+    });
+    const builderRunId = created.value.detail.task.currentRunId;
+    await store.claimRun(builderRunId, 'handoff-builder');
+    await store.recordAgentEvent(builderRunId, 'handoff-started', { type: 'run.started' });
+    await expect(
+      store.recordAgentEvent(builderRunId, 'handoff-wrong-target', {
+        type: 'handoff.requested',
+        handoff: {
+          targetAgentId: DEFAULT_CODEX_AGENT_ID,
+          objective: 'Bypass the configured Reviewer',
+          summary: 'This target must be rejected.',
+          artifactRefs: [],
+          acceptanceCriteria: [],
+        },
+      }),
+    ).rejects.toThrow('Handoff target must match the Task reviewerAgentId');
+    await store.recordAgentEvent(builderRunId, 'handoff-requested', {
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+        objective: 'Review the completed Builder result',
+        summary: 'Builder changed the implementation and ran the relevant tests.',
+        artifactRefs: [{ kind: 'worktree', value: '/tmp/relay-hub-review-fixture' }],
+        acceptanceCriteria: ['Reviewer receives the structured Handoff'],
+      },
+    });
+
+    const pending = await store.getTaskDetail(created.value.detail.task.id);
+    expect(pending?.task.status).toBe('running');
+    expect(pending?.runs).toHaveLength(1);
+    expect(pending?.handoffs).toMatchObject([
+      {
+        sourceRunId: builderRunId,
+        targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+        status: 'pending',
+        contextSummary: 'Builder changed the implementation and ran the relevant tests.',
+      },
+    ]);
+
+    await store.recordAgentEvent(builderRunId, 'handoff-builder-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Builder completed successfully.', commandEvidence: [] },
+    });
+    const reviewing = await store.getTaskDetail(created.value.detail.task.id);
+    const reviewerRun = reviewing?.runs.find((run) => run.parentRunId === builderRunId);
+    expect(reviewing?.task.status).toBe('reviewing');
+    expect(reviewing?.runs).toHaveLength(2);
+    expect(reviewerRun).toMatchObject({
+      agentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      status: 'queued',
+      triggerType: 'review',
+    });
+    expect(reviewing?.task.currentRunId).toBe(reviewerRun?.id);
+    expect(reviewing?.handoffs[0]).toMatchObject({ status: 'dispatched', targetRunId: reviewerRun?.id });
+    expect(reviewing?.events.at(-1)).toMatchObject({
+      type: 'task.review_requested',
+      payload: { targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID, targetRunId: reviewerRun?.id },
+    });
+
+    if (!reviewerRun) throw new Error('Reviewer Run was not created');
+    const reviewerClaim = await store.claimRun(reviewerRun.id, 'handoff-reviewer');
+    expect(reviewerClaim.value?.claimed.handoff).toMatchObject({
+      sourceRunId: builderRunId,
+      targetRunId: reviewerRun.id,
+      status: 'dispatched',
+    });
+    await store.recordAgentEvent(reviewerRun.id, 'reviewer-started', { type: 'run.started' });
+    await store.recordAgentEvent(reviewerRun.id, 'reviewer-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Reviewer execution completed.', commandEvidence: [] },
+    });
+    const reviewed = await store.getTaskDetail(created.value.detail.task.id);
+    expect(reviewed?.task.status).toBe('waiting_for_user');
+    expect(reviewed?.runs).toHaveLength(2);
+    expect(reviewed?.events.at(-1)).toMatchObject({
+      type: 'task.review_run_completed',
+      payload: { reason: 'review_verdict_not_available' },
+    });
   });
 });

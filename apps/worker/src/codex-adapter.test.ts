@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
-import { runCodexAgent } from './codex-adapter.js';
+import { codexSandboxForRun, runCodexAgent } from './codex-adapter.js';
 
 const claimed: ClaimedRun = {
   workspace: {
@@ -107,5 +107,81 @@ describe('runCodexAgent', () => {
     }
     expect(events.at(-1)?.type).toBe('run.cancelled');
     expect(events.some((event) => event.type === 'run.failed')).toBe(false);
+  });
+
+  it('emits a structured Handoff before Builder completion when a Reviewer is configured', async () => {
+    const builderWithReviewer: ClaimedRun = {
+      ...claimed,
+      task: { ...claimed.task, reviewerAgentId: '00000000-0000-4000-8000-000000000004' },
+    };
+    const fixture = [
+      { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'Implemented and tested.' } },
+      { type: 'turn.completed' },
+    ];
+    const script = `for (const item of ${JSON.stringify(fixture)}) console.log(JSON.stringify(item));`;
+    const events = [];
+    for await (const event of runCodexAgent(builderWithReviewer, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(['output.delta', 'handoff.requested', 'run.completed']);
+    expect(events[1]).toMatchObject({
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: '00000000-0000-4000-8000-000000000004',
+        summary: 'Implemented and tested.',
+        artifactRefs: [{ kind: 'worktree' }],
+      },
+    });
+  });
+
+  it('builds isolated Reviewer context without requesting another Handoff', async () => {
+    const reviewer: ClaimedRun = {
+      ...claimed,
+      agent: { ...claimed.agent, id: '00000000-0000-4000-8000-000000000004', capabilities: ['review'] },
+      run: {
+        ...claimed.run,
+        id: '00000000-0000-4000-8000-000000000012',
+        agentId: '00000000-0000-4000-8000-000000000004',
+        triggerType: 'review',
+      },
+      handoff: {
+        id: '00000000-0000-4000-8000-000000000020',
+        sourceRunId: '00000000-0000-4000-8000-000000000011',
+        targetAgentId: '00000000-0000-4000-8000-000000000004',
+        targetRunId: '00000000-0000-4000-8000-000000000012',
+        objective: 'Review the Builder result',
+        contextSummary: 'Builder says the implementation is complete.',
+        artifactRefs: [],
+        acceptanceCriteria: ['Terminal event is emitted'],
+        status: 'dispatched',
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+    };
+    const script = [
+      "let input = '';",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "console.log(JSON.stringify({type:'item.completed',item:{id:'msg',type:'agent_message',text:input}}));",
+      "console.log(JSON.stringify({type:'turn.completed'}));",
+      '});',
+    ].join('');
+    const events = [];
+    for await (const event of runCodexAgent(reviewer, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) {
+      events.push(event);
+    }
+
+    expect(events.some((event) => event.type === 'handoff.requested')).toBe(false);
+    expect(codexSandboxForRun(reviewer)).toBe('read-only');
+    expect(codexSandboxForRun(claimed)).toBe('workspace-write');
+    expect(events[0]).toMatchObject({ type: 'output.delta' });
+    expect((events[0] as { text?: string }).text).toContain('independent Reviewer Agent');
+    expect((events[0] as { text?: string }).text).toContain('Builder says the implementation is complete.');
+    expect(events.at(-1)?.type).toBe('run.completed');
   });
 });

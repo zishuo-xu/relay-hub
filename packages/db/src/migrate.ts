@@ -1,4 +1,9 @@
-import { DEFAULT_CODEX_AGENT_ID, DEFAULT_MOCK_AGENT_ID, DEFAULT_WORKSPACE_ID } from '@relay-hub/contracts';
+import {
+  DEFAULT_CODEX_AGENT_ID,
+  DEFAULT_MOCK_AGENT_ID,
+  DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  DEFAULT_WORKSPACE_ID,
+} from '@relay-hub/contracts';
 import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDatabase } from './index.js';
@@ -30,6 +35,19 @@ try {
       modelFamily: 'codex',
       capabilities: ['implement'],
       config: { sandbox: 'workspace-write' },
+    })
+    .onConflictDoNothing();
+  await database.db
+    .insert(agentProfiles)
+    .values({
+      id: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      name: 'Mock Reviewer',
+      adapterType: 'mock',
+      provider: 'local',
+      modelLabel: 'deterministic-mock-reviewer',
+      modelFamily: 'mock',
+      capabilities: ['review'],
     })
     .onConflictDoNothing();
   await database.db

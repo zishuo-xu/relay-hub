@@ -40,6 +40,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成 provider-neutral Workspace Bootstrap、Run 配置快照与失败阻断
 - [x] 完成单次 Run execution token、Worker 回调鉴权与终态撤销
 - [x] 按 Task、Run execution 和 Workflow transaction 拆分 API 持久化职责
+- [x] 完成结构化 Builder → Reviewer Handoff、父子 Run 和可靠队列派发
 - [ ] 完成多 Agent 交接与 Review 流程
 - [ ] 完成可观测性、测试和演示部署
 
@@ -111,6 +112,8 @@ pnpm dev
 
 - `Mock Builder`：不调用外部模型，用于稳定演示平台链路。
 - `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
+
+还可以独立选择 Reviewer。默认 `Mock Reviewer` 会稳定演示结构化 Handoff 和第二个 Reviewer Run；后续接入的真实 Reviewer AgentProfile 可以选择不同 provider/model。Builder 完成前平台只保存 pending Handoff，成功结束后才通过 Outbox/BullMQ 唤醒 Reviewer。
 
 Worktree 默认保存在 `~/.relay-hub/worktrees/<runId>`，任务结束后不会自动删除，方便用户检查 diff 和测试证据。可通过 `RELAY_HUB_WORKTREE_ROOT` 改变存放位置。
 

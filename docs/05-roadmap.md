@@ -80,12 +80,12 @@
 
 工作项：
 
-1. Handoff schema 与目标 Agent 校验。
-2. 父子 Run 和最大交接深度。
-3. builder → reviewer 工作流。
-4. Review 与 Finding 结构化展示。
-5. `changes_requested` 后的修复 Run。
-6. Timeline 中展示完整协作图。
+1. [x] Handoff schema、Task Reviewer 选择与目标 AgentProfile 校验。
+2. [x] Builder → Reviewer 父子 Run、持久 Handoff 与 Outbox/BullMQ 可靠派发。
+3. [x] Reviewer 独立上下文、Run Token 和继承 Worktree 的只读执行边界。
+4. [ ] Review、Finding 与 `approved/changes_requested/blocked` 结构化裁决。
+5. [ ] `changes_requested` 后的修复 Run。
+6. [ ] Timeline 中展示完整协作图与审查详情。
 
 退出条件：标准演示场景端到端通过，且交接链可以由数据库查询重建。
 
@@ -133,14 +133,14 @@
 2. Workspace Bootstrap 与执行结果语义已完成。
 3. 单次 Run token 已完成，为后续 Handoff/Review 提交建立了最小可信执行身份。
 
-下一步正式进入 Phase 3，先实现最小结构化 Handoff：持久化 Builder 的交接内容、校验目标 AgentProfile、创建关联子 Run 并通过既有 Outbox/BullMQ 唤醒 Reviewer。随后再补 Review/Finding 和返工闭环。架构继续保持 provider/model-neutral。
+Phase 3.1 最小结构化 Handoff 已完成。下一步实现 Reviewer 的结构化 Review/Finding：只有 Reviewer Run 可以提交 verdict，`approved` 再交给 CompletionPolicy，`changes_requested` 创建新的 Builder 修复 Run。架构继续保持 provider/model-neutral。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 
 以下能力不属于这次“首次真实运行”，需要后续阶段继续完成：
 
-- Builder 向 Reviewer 的结构化 Handoff。
-- 不同 AgentProfile、provider 或 model 的独立审查。
+- Reviewer 的结构化 verdict/Finding 与 `changes_requested` 返工。
+- 真实不同 provider/model Reviewer 的运行验收；当前确定性全链路使用独立 Mock Reviewer AgentProfile。
 - `approved`、`changes_requested` 和用户最终确认闭环。
 - Worker 崩溃后的 lease reconciliation 与完整故障演示。
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   type AgentEvent,
   canTransitionRun,
@@ -7,7 +8,7 @@ import {
   type TaskDetail,
   type TaskStatus,
 } from '@relay-hub/contracts';
-import { type RelayDatabase, runEvents, runs, tasks } from '@relay-hub/db';
+import { agentProfiles, handoffs, outboxEvents, type RelayDatabase, runEvents, runs, tasks } from '@relay-hub/db';
 import { and, eq } from 'drizzle-orm';
 import { planAfterSuccessfulRun } from '../workflow-orchestrator.js';
 import { mapEvent } from './mappers.js';
@@ -67,16 +68,110 @@ export async function recordAgentEvent(
       case 'run.bootstrap_failed':
         if (run.status !== 'starting') throw new Error(`Cannot append ${agentEvent.type} while run is ${run.status}`);
         break;
+      case 'handoff.requested': {
+        if (run.status !== 'running') throw new Error(`Cannot request handoff while run is ${run.status}`);
+        if (run.triggerType === 'review') throw new Error('Reviewer Runs cannot dispatch another Reviewer');
+        if (!task.reviewerAgentId || task.reviewerAgentId !== agentEvent.handoff.targetAgentId) {
+          throw new Error('Handoff target must match the Task reviewerAgentId');
+        }
+        if (agentEvent.handoff.targetAgentId === run.agentId) {
+          throw new Error('Builder and Reviewer AgentProfile must be different');
+        }
+        const [targetAgent] = await tx
+          .select({
+            enabled: agentProfiles.enabled,
+            workspaceId: agentProfiles.workspaceId,
+            capabilities: agentProfiles.capabilities,
+          })
+          .from(agentProfiles)
+          .where(eq(agentProfiles.id, agentEvent.handoff.targetAgentId))
+          .limit(1);
+        if (
+          !targetAgent?.enabled ||
+          targetAgent.workspaceId !== task.workspaceId ||
+          !targetAgent.capabilities.includes('review')
+        ) {
+          throw new Error(`Invalid Reviewer AgentProfile: ${agentEvent.handoff.targetAgentId}`);
+        }
+        const [existingHandoff] = await tx
+          .select({ id: handoffs.id })
+          .from(handoffs)
+          .where(eq(handoffs.sourceRunId, run.id))
+          .limit(1);
+        if (existingHandoff) throw new Error(`Run already has a Handoff: ${run.id}`);
+        await tx.insert(handoffs).values({
+          sourceRunId: run.id,
+          targetAgentId: agentEvent.handoff.targetAgentId,
+          objective: agentEvent.handoff.objective,
+          contextSummary: agentEvent.handoff.summary,
+          artifactRefs: agentEvent.handoff.artifactRefs,
+          acceptanceCriteria: agentEvent.handoff.acceptanceCriteria,
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        });
+        break;
+      }
       case 'run.completed':
         nextRunStatus = 'succeeded';
         {
-          const plan = planAfterSuccessfulRun(false);
+          const [pendingHandoff] = await tx
+            .select()
+            .from(handoffs)
+            .where(and(eq(handoffs.sourceRunId, run.id), eq(handoffs.status, 'pending')))
+            .limit(1);
+          const plan = planAfterSuccessfulRun({
+            reviewDispatchAvailable: Boolean(pendingHandoff),
+            isReviewRun: run.triggerType === 'review',
+          });
           nextTaskStatus = plan.nextTaskStatus;
+          let targetRunId: string | undefined;
+          if (pendingHandoff) {
+            targetRunId = randomUUID();
+            const [targetAgent] = await tx
+              .select({ enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
+              .from(agentProfiles)
+              .where(eq(agentProfiles.id, pendingHandoff.targetAgentId))
+              .limit(1);
+            if (!targetAgent?.enabled || !targetAgent.capabilities.includes('review')) {
+              throw new Error(`Reviewer became unavailable: ${pendingHandoff.targetAgentId}`);
+            }
+            await tx.insert(runs).values({
+              id: targetRunId,
+              taskId: task.id,
+              agentId: pendingHandoff.targetAgentId,
+              parentRunId: run.id,
+              triggerType: 'review',
+              status: 'queued',
+              workspaceRoot: run.workspaceRoot,
+              bootstrapPolicySnapshot: { steps: [] },
+              worktreePath: run.worktreePath,
+              workingDirectory: run.workingDirectory,
+              branchName: run.branchName,
+              createdAt: now,
+            });
+            await tx
+              .update(handoffs)
+              .set({ status: 'dispatched', targetRunId, updatedAt: now })
+              .where(and(eq(handoffs.id, pendingHandoff.id), eq(handoffs.status, 'pending')));
+            await tx.insert(outboxEvents).values({
+              aggregateType: 'run',
+              aggregateId: targetRunId,
+              eventType: 'run.queued',
+              payload: { runId: targetRunId },
+            });
+            taskPatch.currentRunId = targetRunId;
+          }
           workflowEvent = {
             eventType: plan.eventType,
             payload: { reason: plan.reason, runId: run.id, completionPolicy: task.completionPolicy },
             dedupeKey: `workflow-after-run:${run.id}`,
           };
+          if (pendingHandoff && targetRunId) {
+            workflowEvent.payload.handoffId = pendingHandoff.id;
+            workflowEvent.payload.targetAgentId = pendingHandoff.targetAgentId;
+            workflowEvent.payload.targetRunId = targetRunId;
+          }
         }
         runPatch.finishedAt = now;
         runPatch.outcome = agentEvent.outcome;

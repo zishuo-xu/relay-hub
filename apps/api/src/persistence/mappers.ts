@@ -1,11 +1,12 @@
-import type { AgentAdapterType, AgentProfile, Run, RunEvent, Task, Workspace } from '@relay-hub/contracts';
-import { agentProfiles, runEvents, runs, tasks, workspaces } from '@relay-hub/db';
+import type { AgentAdapterType, AgentProfile, Handoff, Run, RunEvent, Task, Workspace } from '@relay-hub/contracts';
+import { agentProfiles, handoffs, runEvents, runs, tasks, workspaces } from '@relay-hub/db';
 
 type TaskRow = typeof tasks.$inferSelect;
 type RunRow = typeof runs.$inferSelect;
 type RunEventRow = typeof runEvents.$inferSelect;
 type WorkspaceRow = typeof workspaces.$inferSelect;
 type AgentProfileRow = typeof agentProfiles.$inferSelect;
+type HandoffRow = typeof handoffs.$inferSelect;
 
 function toIso(value: Date): string {
   return value.toISOString();
@@ -18,6 +19,7 @@ export function mapTask(row: TaskRow, agentId: string): Task {
     title: row.title,
     description: row.description,
     agentId,
+    ...(row.reviewerAgentId ? { reviewerAgentId: row.reviewerAgentId } : {}),
     acceptanceCriteria: row.acceptanceCriteria,
     completionPolicy: row.completionPolicy,
     status: row.status,
@@ -25,6 +27,22 @@ export function mapTask(row: TaskRow, agentId: string): Task {
     version: row.version,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
+  };
+}
+
+export function mapHandoff(row: HandoffRow): Handoff {
+  return {
+    id: row.id,
+    sourceRunId: row.sourceRunId,
+    targetAgentId: row.targetAgentId,
+    objective: row.objective,
+    contextSummary: row.contextSummary,
+    artifactRefs: row.artifactRefs,
+    acceptanceCriteria: row.acceptanceCriteria,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+    ...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
   };
 }
 

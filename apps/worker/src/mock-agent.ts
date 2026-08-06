@@ -7,11 +7,19 @@ function wait(milliseconds: number): Promise<void> {
 export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEvent> {
   yield { type: 'run.started', sessionRef: `mock-${claimed.run.id}` };
 
-  const messages = [
-    `收到任务：${claimed.task.title}`,
-    '正在分析需求与验收标准……',
-    `已确认 ${claimed.task.acceptanceCriteria.length} 条验收标准。`,
-  ];
+  const isReviewer = claimed.run.triggerType === 'review' || claimed.agent.capabilities.includes('review');
+
+  const messages = isReviewer
+    ? [
+        `收到 Reviewer 任务：${claimed.handoff?.objective ?? claimed.task.title}`,
+        '正在独立检查 Builder 交接内容与验收标准……',
+        `已读取 ${claimed.handoff?.artifactRefs.length ?? 0} 个交接产物引用。`,
+      ]
+    : [
+        `收到任务：${claimed.task.title}`,
+        '正在分析需求与验收标准……',
+        `已确认 ${claimed.task.acceptanceCriteria.length} 条验收标准。`,
+      ];
   for (const text of messages) {
     await wait(450);
     yield { type: 'output.delta', text };
@@ -23,11 +31,26 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
   await wait(500);
   yield { type: 'tool.completed', callId, outputSummary: { filesInspected: 3 } };
   await wait(450);
-  yield { type: 'output.delta', text: 'Mock Agent 已完成本次任务，执行记录已持久化。' };
+  yield {
+    type: 'output.delta',
+    text: isReviewer ? 'Mock Reviewer 已完成独立检查。' : 'Mock Agent 已完成本次任务，执行记录已持久化。',
+  };
+  if (!isReviewer && claimed.task.reviewerAgentId) {
+    yield {
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: claimed.task.reviewerAgentId,
+        objective: `Review Builder result for: ${claimed.task.title}`,
+        summary: 'Mock Builder completed the requested work and prepared it for independent review.',
+        artifactRefs: [],
+        acceptanceCriteria: claimed.task.acceptanceCriteria,
+      },
+    };
+  }
   yield {
     type: 'run.completed',
     outcome: {
-      summary: 'Mock execution completed successfully.',
+      summary: isReviewer ? 'Mock review execution completed successfully.' : 'Mock execution completed successfully.',
       commandEvidence: [],
     },
   };

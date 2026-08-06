@@ -43,6 +43,13 @@
       "when": 1786031456632,
       "tag": "0005_neat_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786035252461,
+      "tag": "0006_aberrant_mauler",
+      "breakpoints": true
     }
   ]
 }
