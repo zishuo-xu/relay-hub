@@ -12,7 +12,7 @@ import type {
   Task,
   TaskDetail,
 } from '@relay-hub/contracts';
-import type { FormEvent } from 'react';
+import { type FormEvent, useState } from 'react';
 
 const statusLabels: Record<Task['status'], string> = {
   draft: '草稿',
@@ -42,6 +42,7 @@ const eventLabels: Record<string, string> = {
   'handoff.requested': '已准备交接',
   'task.waiting_for_review': '等待审查',
   'task.review_requested': '进入审查',
+  'task.review_run_completed': 'Reviewer 执行完成',
   'review.submitted': 'Reviewer 已提交结论',
   'task.review_approved': '审查通过',
   'task.changes_requested': 'Reviewer 要求修改',
@@ -93,6 +94,8 @@ function eventText(event: RunEvent): string {
       return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
     case 'task.review_requested':
       return `Builder 结果已持久化，并创建 Reviewer Run ${String(event.payload.targetRunId ?? '')}。`;
+    case 'task.review_run_completed':
+      return 'Reviewer Run 已完成，正在根据完成策略更新任务状态。';
     case 'review.submitted': {
       const review = event.payload.review as { verdict?: unknown; summary?: unknown; findings?: unknown[] } | undefined;
       return `${String(review?.verdict ?? 'unknown')} · ${String(review?.summary ?? '')} · ${review?.findings?.length ?? 0} findings`;
@@ -168,8 +171,20 @@ interface TaskSidebarProps {
 }
 
 export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebarProps) {
-  const activeCount = tasks.filter((task) => ['queued', 'running', 'reviewing'].includes(task.status)).length;
-  const completedCount = tasks.filter((task) => task.status === 'completed').length;
+  const [taskFilter, setTaskFilter] = useState<'focus' | 'all'>('focus');
+  const focusStatuses: Task['status'][] = [
+    'draft',
+    'queued',
+    'running',
+    'reviewing',
+    'changes_requested',
+    'waiting_for_user',
+    'failed',
+  ];
+  const focusCount = tasks.filter((task) => focusStatuses.includes(task.status)).length;
+  const visibleTasks = taskFilter === 'all'
+    ? tasks
+    : tasks.filter((task) => focusStatuses.includes(task.status) || task.id === selectedTaskId);
 
   return (
     <aside className="task-sidebar">
@@ -180,17 +195,33 @@ export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebar
       <div className="sidebar-heading">
         <div>
           <p>任务</p>
-          <span>{tasks.length} 个任务</span>
+          <span>{focusCount > 0 ? `${focusCount} 个需要关注` : '当前没有待处理任务'}</span>
         </div>
-        <span className="task-total">{tasks.length}</span>
       </div>
-      <div className="task-summary" aria-label="任务概览">
-        <span><i className="summary-dot active" />{activeCount} 进行中</span>
-        <span><i className="summary-dot completed" />{completedCount} 已完成</span>
+      <div className="task-filters" aria-label="任务筛选">
+        <button
+          aria-pressed={taskFilter === 'focus'}
+          className={taskFilter === 'focus' ? 'active' : ''}
+          onClick={() => setTaskFilter('focus')}
+          type="button"
+        >
+          待处理 <span>{focusCount}</span>
+        </button>
+        <button
+          aria-pressed={taskFilter === 'all'}
+          className={taskFilter === 'all' ? 'active' : ''}
+          onClick={() => setTaskFilter('all')}
+          type="button"
+        >
+          全部 <span>{tasks.length}</span>
+        </button>
       </div>
       <div className="task-list">
         {tasks.length === 0 ? <p className="empty">创建第一个任务，观察完整执行链。</p> : null}
-        {tasks.map((task) => (
+        {visibleTasks.length === 0 && tasks.length > 0 ? (
+          <p className="empty">没有待处理任务，可以切换到“全部”查看历史记录。</p>
+        ) : null}
+        {visibleTasks.map((task) => (
           <button
             className={`task-item ${task.id === selectedTaskId ? 'selected' : ''}`}
             key={task.id}
@@ -245,7 +276,20 @@ export function TimelineWorkspace({
   onConfigureAgents,
   onNewTask,
 }: TimelineWorkspaceProps) {
+  const [workspaceView, setWorkspaceView] = useState<'overview' | 'activity'>('overview');
   const latestReview = detail?.reviews.at(-1);
+  const milestoneEvents = detail?.events.filter((event) => ![
+    'output.delta',
+    'tool.called',
+    'tool.completed',
+    'run.claimed',
+  ].includes(event.type)).slice(-4).reverse() ?? [];
+  const builderRuns = detail?.runs.filter((run) => run.triggerType === 'user' || run.triggerType === 'retry') ?? [];
+  const reviewerRuns = detail?.runs.filter((run) => run.triggerType === 'review') ?? [];
+  const builderDone = builderRuns.some((run) => run.status === 'succeeded');
+  const reviewDone = Boolean(latestReview) || reviewerRuns.some((run) => run.status === 'succeeded');
+  const taskDone = detail?.task.status === 'completed';
+  const completionLabel = detail?.task.completionPolicy === 'require_user_confirmation' ? '用户确认' : '自动完成';
   return (
     <section className="workspace">
       <header className="workspace-header">
@@ -257,7 +301,6 @@ export function TimelineWorkspace({
           </div>
         </div>
         <div className="workspace-actions">
-          <span className="runtime-label"><i />Agent Runtime</span>
           <button className="secondary-button" onClick={onConfigureAgents} type="button">Agent 配置</button>
           <button className="new-task-button" onClick={onNewTask} type="button">新建任务</button>
         </div>
@@ -280,50 +323,123 @@ export function TimelineWorkspace({
             ) : null}
           </section>
 
-          {currentRun?.worktreePath ? (
-            <div className="worktree-strip">
-              <span>隔离工作区</span>
-              <code>{currentRun.branchName}</code>
-              <code title={currentRun.workingDirectory}>{currentRun.workingDirectory}</code>
-            </div>
-          ) : null}
+          <div className="workspace-tabs" role="tablist" aria-label="任务详情视图">
+            <button
+              aria-selected={workspaceView === 'overview'}
+              className={workspaceView === 'overview' ? 'active' : ''}
+              onClick={() => setWorkspaceView('overview')}
+              role="tab"
+              type="button"
+            >
+              任务概览
+            </button>
+            <button
+              aria-selected={workspaceView === 'activity'}
+              className={workspaceView === 'activity' ? 'active' : ''}
+              onClick={() => setWorkspaceView('activity')}
+              role="tab"
+              type="button"
+            >
+              运行日志 <span>{detail.events.length}</span>
+            </button>
+          </div>
 
-          {latestReview ? (
-            <section className="review-strip" data-verdict={latestReview.verdict} aria-label="最新审查结论">
-              <div>
-                <span>Review #{latestReview.round}</span>
-                <strong>{latestReview.verdict.replace('_', ' ')}</strong>
-              </div>
-              <p>{latestReview.summary}</p>
-              <span>{latestReview.findings.length} findings</span>
-            </section>
-          ) : null}
-
-          <section className="timeline-surface">
-            <header className="timeline-heading">
-              <div>
-                <h2>执行记录</h2>
-                <p>已持久化的 Agent 与平台事件</p>
-              </div>
-              <span>{detail.events.length} events</span>
-            </header>
-            <ol className="timeline">
-              {detail.events.map((event, index) => (
-                <li data-tone={eventTone(event)} key={event.id}>
-                  <span className="event-marker">{String(index + 1).padStart(2, '0')}</span>
-                  <div className="event-body">
-                    <div className="event-meta">
-                      <div>
-                        <strong>{eventLabels[event.type] ?? event.type}</strong>
-                        <code>{event.type}</code>
-                      </div>
-                      <time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time>
-                    </div>
-                    <p>{eventText(event)}</p>
+          <section className="workspace-panel" role="tabpanel">
+            {workspaceView === 'overview' ? (
+              <div className="overview-grid">
+                <article className="overview-card task-brief-card">
+                  <header>
+                    <div><span>任务目标</span><h2>这次需要完成什么</h2></div>
+                  </header>
+                  <p>{detail.task.description}</p>
+                  <div className="acceptance-block">
+                    <span>验收标准</span>
+                    {detail.task.acceptanceCriteria.length > 0 ? (
+                      <ul>{detail.task.acceptanceCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
+                    ) : <p>未设置单独的验收标准。</p>}
                   </div>
-                </li>
-              ))}
-            </ol>
+                </article>
+
+                <article className="overview-card workflow-card">
+                  <header>
+                    <div><span>协作流程</span><h2>当前走到哪一步</h2></div>
+                  </header>
+                  <ol className="workflow-steps">
+                    <li data-state={builderDone ? 'done' : 'current'}>
+                      <i>{builderDone ? '✓' : '1'}</i><div><strong>Builder</strong><span>{builderRuns.length} 个 Run</span></div>
+                    </li>
+                    <li data-state={reviewDone ? 'done' : builderDone ? 'current' : 'pending'}>
+                      <i>{reviewDone ? '✓' : '2'}</i><div><strong>Reviewer</strong><span>{reviewerRuns.length} 个 Run</span></div>
+                    </li>
+                    <li data-state={taskDone ? 'done' : reviewDone ? 'current' : 'pending'}>
+                      <i>{taskDone ? '✓' : '3'}</i><div><strong>{completionLabel}</strong><span>{statusLabels[detail.task.status]}</span></div>
+                    </li>
+                  </ol>
+                </article>
+
+                <article className="overview-card result-card">
+                  <header>
+                    <div><span>{latestReview ? `Review #${latestReview.round}` : '当前结果'}</span><h2>{latestReview ? '最近审查结论' : '最近执行进展'}</h2></div>
+                    {latestReview ? <strong className={`review-verdict ${latestReview.verdict}`}>{latestReview.verdict.replace('_', ' ')}</strong> : null}
+                  </header>
+                  <p>{latestReview?.summary ?? currentRun?.outcome?.summary ?? 'Agent 正在准备结果，关键进展会显示在这里。'}</p>
+                  {latestReview ? <small>{latestReview.findings.length} 个 finding</small> : null}
+                </article>
+
+                <article className="overview-card milestone-card">
+                  <header>
+                    <div><span>关键节点</span><h2>最近发生了什么</h2></div>
+                    <button onClick={() => setWorkspaceView('activity')} type="button">查看全部日志</button>
+                  </header>
+                  <ol>
+                    {milestoneEvents.map((event) => (
+                      <li key={event.id}>
+                        <i data-tone={eventTone(event)} />
+                        <div><strong>{eventLabels[event.type] ?? event.type}</strong><span>{eventText(event)}</span></div>
+                        <time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time>
+                      </li>
+                    ))}
+                  </ol>
+                </article>
+
+                {currentRun?.worktreePath ? (
+                  <article className="overview-card worktree-card">
+                    <header><div><span>隔离工作区</span><h2>本次 Run 的代码环境</h2></div></header>
+                    <dl>
+                      <div><dt>分支</dt><dd><code>{currentRun.branchName}</code></dd></div>
+                      <div><dt>目录</dt><dd><code title={currentRun.workingDirectory}>{currentRun.workingDirectory}</code></dd></div>
+                    </dl>
+                  </article>
+                ) : null}
+              </div>
+            ) : (
+              <section className="timeline-surface">
+                <header className="timeline-heading">
+                  <div>
+                    <h2>完整运行日志</h2>
+                    <p>Agent 输出、工具调用和平台状态都在这里，便于排查和审计</p>
+                  </div>
+                  <span>{detail.events.length} events</span>
+                </header>
+                <ol className="timeline">
+                  {detail.events.map((event, index) => (
+                    <li data-tone={eventTone(event)} key={event.id}>
+                      <span className="event-marker">{String(index + 1).padStart(2, '0')}</span>
+                      <div className="event-body">
+                        <div className="event-meta">
+                          <div>
+                            <strong>{eventLabels[event.type] ?? event.type}</strong>
+                            <code>{event.type}</code>
+                          </div>
+                          <time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time>
+                        </div>
+                        <p>{eventText(event)}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
           </section>
         </>
       ) : (

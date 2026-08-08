@@ -55,7 +55,7 @@ export default function HomePage() {
     if (!response.ok) throw new Error('无法读取任务列表');
     const payload = (await response.json()) as { tasks: Task[] };
     setTasks(payload.tasks);
-    setSelectedTaskId((current) => current ?? payload.tasks[0]?.id ?? null);
+    setSelectedTaskId((current) => current ?? payload.tasks.find((task) => !['completed', 'cancelled'].includes(task.status))?.id ?? payload.tasks[0]?.id ?? null);
   }, []);
 
   const loadDetail = useCallback(async (taskId: string) => {
@@ -280,6 +280,7 @@ export default function HomePage() {
       <AppRail />
       <TaskSidebar tasks={tasks} selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId} />
       <TimelineWorkspace
+        key={selectedTaskId ?? 'empty'}
         canCancel={canCancel}
         canConfirm={canConfirm}
         confirming={confirming}
@@ -290,7 +291,10 @@ export default function HomePage() {
         onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onConfigureAgents={() => void openAgentConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
-        onNewTask={() => setCreateOpen(true)}
+        onNewTask={() => {
+          setAgentConfigOpen(false);
+          setCreateOpen(true);
+        }}
       />
       <CreateTaskDrawer
         agents={agents.filter((agent) => agent.capabilities.includes('implement'))}
