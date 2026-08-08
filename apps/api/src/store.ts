@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentProfileInput,
   AgentProfile,
   BootstrapPolicy,
   ClaimedExecution,
@@ -26,9 +27,12 @@ import {
 } from './persistence/task-repository.js';
 import type { MutationResult } from './persistence/types.js';
 import {
+  createAgentProfile as createAgentProfileInDb,
+  getAgentProfile as getAgentProfileFromDb,
   listAgentProfiles as listAgentProfilesFromDb,
   listWorkspaces as listWorkspacesFromDb,
   updateWorkspace as updateWorkspaceInDb,
+  updateAgentProfile as updateAgentProfileInDb,
 } from './persistence/workspace-repository.js';
 import { recordAgentEvent as recordAgentEventInDb } from './persistence/workflow-repository.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
@@ -56,6 +60,18 @@ export class PostgresStore {
 
   listAgentProfiles(workspaceId: string): Promise<AgentProfile[]> {
     return listAgentProfilesFromDb(this.db, workspaceId);
+  }
+
+  createAgentProfile(workspaceId: string, input: AgentProfileInput): Promise<AgentProfile | null> {
+    return createAgentProfileInDb(this.db, workspaceId, input);
+  }
+
+  updateAgentProfile(agentId: string, input: AgentProfileInput): Promise<AgentProfile | null> {
+    return updateAgentProfileInDb(this.db, agentId, input);
+  }
+
+  getAgentProfile(agentId: string): Promise<AgentProfile | null> {
+    return getAgentProfileFromDb(this.db, agentId);
   }
 
   getTaskDetail(taskId: string): Promise<TaskDetail | null> {

@@ -1,10 +1,17 @@
 import cors from '@fastify/cors';
-import { AgentEventSchema, BootstrapPolicySchema, CreateTaskInputSchema, type RunEvent } from '@relay-hub/contracts';
+import {
+  AgentEventSchema,
+  AgentProfileInputSchema,
+  BootstrapPolicySchema,
+  CreateTaskInputSchema,
+  type RunEvent,
+} from '@relay-hub/contracts';
 import { createDatabase } from '@relay-hub/db';
 import Fastify from 'fastify';
 import type { FastifyRequest } from 'fastify';
 import { Server as SocketServer } from 'socket.io';
 import { z } from 'zod';
+import { checkAgentHealth, listOpenCodeModels } from './agent-runtime-health.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { PostgresStore } from './store.js';
@@ -89,6 +96,42 @@ app.patch('/api/workspaces/:workspaceId', async (request, reply) => {
 app.get('/api/workspaces/:workspaceId/agents', async (request) => {
   const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
   return { agents: await store.listAgentProfiles(workspaceId) };
+});
+
+app.post('/api/workspaces/:workspaceId/agents', async (request, reply) => {
+  const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
+  const input = AgentProfileInputSchema.parse(request.body);
+  const agent = await store.createAgentProfile(workspaceId, input);
+  if (!agent) return reply.code(404).send({ error: 'workspace_not_found' });
+  return reply.code(201).send(agent);
+});
+
+app.put('/api/agents/:agentId', async (request, reply) => {
+  const { agentId } = z.object({ agentId: z.string().uuid() }).parse(request.params);
+  const input = AgentProfileInputSchema.parse(request.body);
+  const agent = await store.updateAgentProfile(agentId, input);
+  if (!agent) return reply.code(404).send({ error: 'agent_not_found' });
+  return agent;
+});
+
+app.post('/api/agents/:agentId/health-check', async (request, reply) => {
+  const { agentId } = z.object({ agentId: z.string().uuid() }).parse(request.params);
+  const agent = await store.getAgentProfile(agentId);
+  if (!agent) return reply.code(404).send({ error: 'agent_not_found' });
+  return checkAgentHealth(agent);
+});
+
+app.get('/api/agent-runtimes/opencode', async (_request, reply) => {
+  try {
+    const runtime = await listOpenCodeModels();
+    return { available: true, ...runtime };
+  } catch (error) {
+    return reply.code(503).send({
+      available: false,
+      models: [],
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 });
 
 app.post('/api/tasks', async (request, reply) => {

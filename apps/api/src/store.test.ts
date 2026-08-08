@@ -23,6 +23,44 @@ suite('PostgresStore integration', () => {
     await database?.close();
   });
 
+  it('creates and updates a user-configured OpenCode AgentProfile', async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const created = await store.createAgentProfile('00000000-0000-4000-8000-000000000001', {
+      name: `OpenCode Builder ${suffix}`,
+      adapterType: 'opencode_cli',
+      capabilities: ['implement'],
+      model: 'opencode/north-mini-code-free',
+      variant: 'high',
+      credentialEnv: 'OPENCODE_API_KEY',
+      enabled: true,
+    });
+    expect(created).toMatchObject({
+      adapterType: 'opencode_cli',
+      provider: 'opencode',
+      modelLabel: 'opencode/north-mini-code-free',
+      capabilities: ['implement'],
+      config: {
+        model: 'opencode/north-mini-code-free',
+        variant: 'high',
+        credentialEnv: 'OPENCODE_API_KEY',
+      },
+    });
+    if (!created) throw new Error('OpenCode AgentProfile was not created');
+    const updated = await store.updateAgentProfile(created.id, {
+      name: created.name,
+      adapterType: 'opencode_cli',
+      capabilities: ['implement', 'review'],
+      model: 'opencode/longcat-2.0-free',
+      enabled: false,
+    });
+    expect(updated).toMatchObject({
+      id: created.id,
+      enabled: false,
+      capabilities: ['implement', 'review'],
+      config: { model: 'opencode/longcat-2.0-free' },
+    });
+  });
+
   it('atomically creates, claims, deduplicates, and records a successful run outcome', async () => {
     const idempotencyKey = `test-${crypto.randomUUID()}`;
     const input = {

@@ -3,6 +3,7 @@
 import {
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  type AgentHealth,
   type AgentProfile,
   type CompletionPolicy,
   type RealtimeEnvelope,
@@ -12,7 +13,7 @@ import {
 } from '@relay-hub/contracts';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
-import { AppRail, CreateTaskDrawer, TaskSidebar, TimelineWorkspace } from './dashboard';
+import { AgentConfigDrawer, AppRail, CreateTaskDrawer, TaskSidebar, TimelineWorkspace } from './dashboard';
 
 const apiUrl = process.env.NEXT_PUBLIC_RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
 
@@ -34,6 +35,17 @@ export default function HomePage() {
   const [maxReviewRounds, setMaxReviewRounds] = useState(3);
   const [createOpen, setCreateOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [agentConfigOpen, setAgentConfigOpen] = useState(false);
+  const [agentConfigName, setAgentConfigName] = useState('OpenCode Builder');
+  const [agentConfigRole, setAgentConfigRole] = useState<'implement' | 'review'>('implement');
+  const [agentConfigModel, setAgentConfigModel] = useState('');
+  const [agentConfigVariant, setAgentConfigVariant] = useState('');
+  const [agentConfigAgentName, setAgentConfigAgentName] = useState('');
+  const [agentConfigCredentialEnv, setAgentConfigCredentialEnv] = useState('');
+  const [agentConfigSaving, setAgentConfigSaving] = useState(false);
+  const [openCodeVersion, setOpenCodeVersion] = useState('');
+  const [openCodeModels, setOpenCodeModels] = useState<string[]>([]);
+  const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -190,6 +202,57 @@ export default function HomePage() {
     }
   }
 
+  async function openAgentConfiguration() {
+    setCreateOpen(false);
+    setAgentConfigOpen(true);
+    setAgentHealth(null);
+    const response = await fetch(`${apiUrl}/api/agent-runtimes/opencode`, { cache: 'no-store' });
+    const payload = (await response.json()) as {
+      available: boolean;
+      version?: string;
+      models?: string[];
+      message?: string;
+    };
+    if (!response.ok || !payload.available) throw new Error(payload.message ?? 'OpenCode CLI 不可用');
+    const models = payload.models ?? [];
+    setOpenCodeVersion(payload.version ?? 'unknown');
+    setOpenCodeModels(models);
+    setAgentConfigModel((current) => current || models[0] || '');
+  }
+
+  async function createOpenCodeAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspace) throw new Error('Workspace 尚未加载完成');
+    setAgentConfigSaving(true);
+    setAgentHealth(null);
+    setError(null);
+    try {
+      const response = await fetch(`${apiUrl}/api/workspaces/${workspace.id}/agents`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: agentConfigName,
+          adapterType: 'opencode_cli',
+          capabilities: [agentConfigRole],
+          model: agentConfigModel,
+          ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
+          ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
+          ...(agentConfigCredentialEnv.trim() ? { credentialEnv: agentConfigCredentialEnv.trim() } : {}),
+          enabled: true,
+        }),
+      });
+      if (!response.ok) throw new Error(`保存 OpenCode Agent 失败：${response.status} ${await response.text()}`);
+      const created = (await response.json()) as AgentProfile;
+      await loadRuntimeConfiguration();
+      if (agentConfigRole === 'implement') setSelectedAgentId(created.id);
+      else setSelectedReviewerAgentId(created.id);
+      const healthResponse = await fetch(`${apiUrl}/api/agents/${created.id}/health-check`, { method: 'POST' });
+      if (healthResponse.ok) setAgentHealth((await healthResponse.json()) as AgentHealth);
+    } finally {
+      setAgentConfigSaving(false);
+    }
+  }
+
   const currentRun = useMemo(
     () => detail?.runs.find((run) => run.id === detail.task.currentRunId) ?? null,
     [detail],
@@ -221,6 +284,7 @@ export default function HomePage() {
         error={error}
         onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+        onConfigureAgents={() => void openAgentConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onNewTask={() => setCreateOpen(true)}
       />
       <CreateTaskDrawer
@@ -248,6 +312,27 @@ export default function HomePage() {
         submitting={submitting}
         title={title}
         workspaceRoot={workspaceRoot}
+      />
+      <AgentConfigDrawer
+        agentName={agentConfigAgentName}
+        credentialEnv={agentConfigCredentialEnv}
+        health={agentHealth}
+        model={agentConfigModel}
+        models={openCodeModels}
+        name={agentConfigName}
+        onClose={() => setAgentConfigOpen(false)}
+        onAgentNameChange={setAgentConfigAgentName}
+        onCredentialEnvChange={setAgentConfigCredentialEnv}
+        onModelChange={setAgentConfigModel}
+        onNameChange={setAgentConfigName}
+        onRoleChange={setAgentConfigRole}
+        onSubmit={createOpenCodeAgent}
+        onVariantChange={setAgentConfigVariant}
+        open={agentConfigOpen}
+        role={agentConfigRole}
+        saving={agentConfigSaving}
+        variant={agentConfigVariant}
+        version={openCodeVersion}
       />
     </main>
   );

@@ -58,7 +58,7 @@
 
 目标：接入一个真实 Agent CLI，并处理真实执行的不确定性。
 
-当前状态：**首次真实运行、执行结果语义、Workspace Bootstrap 和单次 Run token 已完成。** Codex CLI Builder、JSONL 事件转换、隔离 Worktree、子进程超时与取消状态已经实现。`RunOutcome` 区分 Agent 协议成功、命令证据和 Task 验收；provider-neutral Bootstrap 在 Agent 启动前确定性准备项目环境；Worker 回调已绑定单次 Run 的临时执行身份。Worker lease 和崩溃 reconciliation 留到 Phase 4。
+当前状态：**真实 Codex/OpenCode 运行、执行结果语义、Workspace Bootstrap 和单次 Run token 已完成。** Codex CLI 与 OpenCode CLI Adapter、事件转换、隔离 Worktree、子进程超时与取消状态已经实现。`RunOutcome` 区分 Agent 协议成功、命令证据和 Task 验收；provider-neutral Bootstrap 在 Agent 启动前确定性准备项目环境；Worker 回调已绑定单次 Run 的临时执行身份。Worker lease 和崩溃 reconciliation 留到 Phase 4。
 
 工作项：
 
@@ -70,7 +70,8 @@
 6. [x] 实现显式、可观测、可失败的 Worktree bootstrap policy，并在 Run 创建时固化配置快照。
 7. [x] 区分 Agent 协议完成、命令/测试失败和验收通过；成功 Run 保存 `RunOutcome`，Task 不再自动 completed。
 8. [x] 加入单次 Run token，保护 Worker control/event 内部接口；claim 身份认证随 lease/heartbeat 后续补齐。
-9. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
+9. [x] 实现 OpenCode AgentProfile 配置、运行时目录检测和 Builder/Reviewer Adapter。
+10. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
 
 退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。首次真实运行已通过；lease/reconciliation 作为可靠性增强继续保留在 Phase 4。
 
@@ -133,13 +134,13 @@
 2. Workspace Bootstrap 与执行结果语义已完成。
 3. 单次 Run token 已完成，为后续 Handoff/Review 提交建立了最小可信执行身份。
 
-Phase 3.3 自动返工主链已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，claim 时注入来源 Review/Findings，修复后再走 Handoff 并产生新的 Review round；达到可配置轮次预算则停止自动循环并转交用户。架构继续保持 provider/model-neutral。下一步是 Phase 3.4：在一屏 Timeline 中更直观地展示 Builder、Reviewer、返工和多轮 Review 的完整协作图。
+Phase 3.3 自动返工主链和 OpenCode 可配置 Adapter 已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，claim 时注入来源 Review/Findings，修复后再走 Handoff 并产生新的 Review round；达到可配置轮次预算则停止自动循环并转交用户。用户现在可以从 Web 新建 OpenCode Builder 或 Reviewer，并把它与 Codex/Mock Profile 组合使用。架构继续保持 provider/model-neutral。下一步是 Phase 3.4：在一屏 Timeline 中更直观地展示 Builder、Reviewer、返工和多轮 Review 的完整协作图。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 
-以下能力不属于这次“首次真实运行”，需要后续阶段继续完成：
+以下能力仍需要后续阶段继续完成：
 
-- 真实不同 provider/model Reviewer 的运行验收；当前确定性全链路使用独立 Mock Reviewer AgentProfile。
+- 使用用户有效 provider 凭证完成真实 OpenCode Builder/Reviewer 的外部模型验收；无凭证时仍由独立 Mock Reviewer 提供确定性全链路演示。
 - Worker 崩溃后的 lease reconciliation 与完整故障演示。
 
 因此里程碑应区分为：

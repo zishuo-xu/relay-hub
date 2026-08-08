@@ -44,6 +44,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成结构化 Review/Finding、CompletionPolicy 与用户确认完成
 - [x] 完成 `changes_requested` 自动返工、Review 多轮复审与轮次预算
 - [x] 完成多 Agent 交接与 Review 主流程
+- [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定
@@ -62,7 +63,7 @@ relay-hub/
 │   └── decisions/
 ├── apps/
 │   ├── api/               # Task/Run 状态、持久事件与实时广播
-│   ├── worker/            # BullMQ Consumer、Mock/Codex Adapter 与 Worktree 隔离
+│   ├── worker/            # BullMQ Consumer、Mock/Codex/OpenCode Adapter 与 Worktree 隔离
 │   └── web/               # 任务控制台与实时 Timeline
 └── packages/
     ├── contracts/         # 跨进程共享协议与状态机
@@ -93,12 +94,22 @@ RelayHub 拥有独立 Git 仓库、提交历史、依赖、包名、数据模型
 
 ## 本地启动
 
-真实 Codex Builder 需要先安装并登录 Codex CLI：
+使用真实 Codex Builder 时，需要先安装并登录 Codex CLI：
 
 ```bash
 codex --version
 codex login status
 ```
+
+使用 OpenCode Builder 或 Reviewer 时，需要先安装 OpenCode，并通过 OpenCode 自己的登录流程或环境变量准备 provider 凭证：
+
+```bash
+opencode --version
+opencode providers login
+opencode models
+```
+
+RelayHub 的“Agent 配置”面板只保存精确的 `provider/model`、可选 variant、OpenCode agent 名称和凭证环境变量名称，不保存 API Key。运行时配置参考 OpenCode 官方的 [Config](https://opencode.ai/docs/config/)、[Providers](https://opencode.ai/docs/providers/) 和 [Permissions](https://opencode.ai/docs/permissions/) 约定。
 
 ```bash
 cd relay-hub
@@ -114,6 +125,9 @@ pnpm dev
 
 - `Mock Builder`：不调用外部模型，用于稳定演示平台链路。
 - `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
+- 自定义 `OpenCode Builder/Reviewer`：点击页面右上方“Agent 配置”，填写角色和 OpenCode `provider/model` 后保存；Worker 在同一套 Run、Worktree、Handoff 和 Review 流程中调用 `opencode run --format json`。
+
+Agent 健康检测只确认本机 CLI 可启动且所填模型出现在 `opencode models` 目录中，不会为了检测而发起计费模型请求；provider 凭证是否有效会在第一次真实任务中得到验证。
 
 还可以独立选择 Reviewer。默认 `Mock Reviewer` 会稳定演示结构化 Handoff 和第二个 Reviewer Run；后续接入的真实 Reviewer AgentProfile 可以选择不同 provider/model。Builder 完成前平台只保存 pending Handoff，成功结束后才通过 Outbox/BullMQ 唤醒 Reviewer。
 

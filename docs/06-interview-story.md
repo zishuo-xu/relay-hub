@@ -15,7 +15,7 @@
 
 实现后再把括号替换为真实数据，不能提前虚构指标。
 
-- 设计统一 `AgentAdapter` 协议，将不同 CLI 的命令、NDJSON 输出和会话语义转换为标准事件，完成（实际数量）类 Agent 的可插拔接入。
+- 设计统一 `AgentAdapter` 协议，将不同 CLI 的命令、JSON/NDJSON 输出和会话语义转换为标准事件，完成 Mock、Codex CLI、OpenCode CLI 三类 Adapter 接入，其中两个是真实 Agent CLI。
 - 基于 PostgreSQL 状态机、Outbox 和 Redis 队列实现长任务编排，处理重复投递、Worker lease、取消、失败重试与重启恢复。
 - 构建 Task 级持久事件流和 WebSocket 实时 Timeline，通过递增事件 ID 与补拉机制保证断线重连后的完整性。
 - 将 Agent-to-Agent 交接和 Review 设计为结构化领域对象，支持父子 Run 追踪、循环保护和阻塞问题驱动的返工流程。
@@ -39,6 +39,8 @@
 ### 为什么不用模型 API，偏要接 CLI？
 
 CLI 已经包含工具调用、文件访问、会话恢复和用户现有认证；平台要复用的是完整 Agent 能力。代价是协议不统一和子进程管理更复杂，所以需要 Adapter 和 ProcessSupervisor。
+
+Codex 与 OpenCode 不共用命令行参数或事件协议。RelayHub 只在 Adapter 内处理这些差异，向上继续输出同一套 `run.started`、`output.delta`、`tool.called`、`review.submitted` 和终态事件，因此 Orchestrator、数据库和 Web 不需要识别供应商。
 
 ### 为什么 Queue 和数据库都保存状态？
 

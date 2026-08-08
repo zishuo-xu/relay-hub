@@ -6,8 +6,43 @@ export const DEFAULT_CODEX_AGENT_ID = '00000000-0000-4000-8000-000000000003';
 export const DEFAULT_MOCK_REVIEWER_AGENT_ID = '00000000-0000-4000-8000-000000000004';
 export const RUN_QUEUE_NAME = 'relay-hub-runs';
 
-export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli'] as const;
+export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli', 'opencode_cli'] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
+
+export const AGENT_CAPABILITIES = ['implement', 'review'] as const;
+export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
+
+export const AgentProfileInputSchema = z
+  .object({
+    name: z.string().trim().min(2).max(80),
+    adapterType: z.enum(AGENT_ADAPTER_TYPES),
+    capabilities: z.array(z.enum(AGENT_CAPABILITIES)).min(1).max(2),
+    model: z.string().trim().min(3).max(240).optional(),
+    variant: z.string().trim().min(1).max(80).optional(),
+    agentName: z.string().trim().min(1).max(80).optional(),
+    credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((input, context) => {
+    if (input.adapterType === 'opencode_cli' && !input.model?.includes('/')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['model'],
+        message: 'OpenCode model must use provider/model format',
+      });
+    }
+  });
+
+export type AgentProfileInput = z.infer<typeof AgentProfileInputSchema>;
+
+export const OpenCodeRuntimeConfigSchema = z.object({
+  model: z.string().trim().min(3).max(240).refine((value) => value.includes('/'), 'Expected provider/model'),
+  variant: z.string().trim().min(1).max(80).optional(),
+  agentName: z.string().trim().min(1).max(80).optional(),
+  credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
+});
+
+export type OpenCodeRuntimeConfig = z.infer<typeof OpenCodeRuntimeConfigSchema>;
 
 export const TASK_STATUSES = [
   'draft',
@@ -309,7 +344,17 @@ export interface AgentProfile {
   modelLabel?: string;
   modelFamily?: string;
   capabilities: string[];
+  config: Record<string, unknown>;
   enabled: boolean;
+}
+
+export interface AgentHealth {
+  status: 'healthy' | 'unhealthy';
+  adapterType: AgentAdapterType;
+  version?: string;
+  model?: string;
+  modelAvailable?: boolean;
+  message: string;
 }
 
 export interface Run {

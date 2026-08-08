@@ -136,7 +136,7 @@ export function mapWorkspace(row: WorkspaceRow): Workspace {
 }
 
 export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
-  if (row.adapterType !== 'mock' && row.adapterType !== 'codex_cli') {
+  if (row.adapterType !== 'mock' && row.adapterType !== 'codex_cli' && row.adapterType !== 'opencode_cli') {
     throw new Error(`Unsupported adapter type: ${row.adapterType}`);
   }
   const adapterType: AgentAdapterType = row.adapterType;
@@ -146,6 +146,7 @@ export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
     name: row.name,
     adapterType,
     capabilities: row.capabilities,
+    config: row.config,
     enabled: row.enabled,
     ...(row.provider ? { provider: row.provider } : {}),
     ...(row.modelLabel ? { modelLabel: row.modelLabel } : {}),

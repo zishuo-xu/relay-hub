@@ -1,11 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import {
   AgentEventSchema,
+  AgentProfileInputSchema,
   CreateTaskInputSchema,
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
   ReviewDraftSchema,
 } from './index.js';
+
+describe('AgentProfile configuration contract', () => {
+  it('accepts an OpenCode profile with an explicit provider/model', () => {
+    expect(AgentProfileInputSchema.parse({
+      name: 'OpenCode Reviewer',
+      adapterType: 'opencode_cli',
+      capabilities: ['review'],
+      model: 'opencode/north-mini-code-free',
+    })).toMatchObject({ adapterType: 'opencode_cli', enabled: true });
+  });
+
+  it('rejects an OpenCode model without a provider prefix', () => {
+    expect(() => AgentProfileInputSchema.parse({
+      name: 'Broken OpenCode',
+      adapterType: 'opencode_cli',
+      capabilities: ['implement'],
+      model: 'north-mini-code-free',
+    })).toThrow('provider/model');
+  });
+});
 
 describe('Task review policy contract', () => {
   const baseInput = {

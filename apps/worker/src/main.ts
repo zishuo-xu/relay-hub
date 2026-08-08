@@ -10,6 +10,7 @@ import { createRunWorker } from '@relay-hub/queue';
 import { runWorkspaceBootstrap } from './bootstrap-runner.js';
 import { runCodexAgent } from './codex-adapter.js';
 import { runMockAgent } from './mock-agent.js';
+import { runOpenCodeAgent } from './opencode-adapter.js';
 import { WorktreeManager } from './worktree-manager.js';
 
 const apiUrl = process.env.RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
@@ -105,6 +106,8 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
 
     if (claimed.agent.adapterType === 'codex_cli') {
       events = runCodexAgent(claimed, workingDirectory, { ...(cancellation ? { signal: cancellation.signal } : {}) });
+    } else if (claimed.agent.adapterType === 'opencode_cli') {
+      events = runOpenCodeAgent(claimed, workingDirectory, { ...(cancellation ? { signal: cancellation.signal } : {}) });
     } else if (claimed.agent.adapterType === 'mock') {
       events = runMockAgent(claimed);
     } else {

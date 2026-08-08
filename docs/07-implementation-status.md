@@ -1,5 +1,26 @@
 # 07. 实现状态
 
+## 2026-08-08：可配置 OpenCode Builder / Reviewer
+
+### 已实现
+
+- AgentProfile 输入合约支持 `opencode_cli`，保存角色能力、精确 `provider/model`、可选 variant、OpenCode agent 名称和凭证环境变量名称；API Key 值不落库。
+- 新增 AgentProfile 创建、完整更新、单 Profile 健康检测和 OpenCode CLI/模型目录查询 API；通用 JSONB `config` 已满足需求，本次无需数据库 migration。
+- 新增 OpenCode Adapter，使用 `opencode run --pure --format json`，把 text、tool、session、error 和进程终态转换为平台统一事件，并复用 Codex 已有 Prompt、Worktree、Handoff、Review 与返工流程。
+- Builder 只在当前 Worktree 内工作；Reviewer 每次 Run 强制禁用 edit、bash、外部目录、交互提问和子 Agent task。OpenCode error envelope 即使伴随退出码 0，也会收敛为失败 Run。
+- 子进程只获得安全环境白名单、用户明确选择的单个凭证变量和 XDG 配置路径；也支持 `opencode providers login` 管理的本地凭证。
+- Web 顶部新增“Agent 配置”入口，可选择 Builder/Reviewer、实际 CLI 模型目录、variant、OpenCode agent 和凭证环境变量名称。保存后自动检测并选中新 Profile。
+- 健康检测只验证 CLI 与模型目录，不发送外部模型请求；真实 provider 凭证和额度由第一次任务执行验证。
+- 架构与安全取舍固化在 `ADR-011-configurable-opencode-agent-runtime.md`。
+
+### 验证证据
+
+- 本机实际检测到 OpenCode CLI `1.18.15` 和 15 个当前项目可见模型，API health 同时确认 PostgreSQL 与 BullMQ 正常。
+- Contracts 14/14、Worker 13/13、API 单元测试 7/7 通过；隔离 PostgreSQL 的 API Store/Orchestrator 12/12 通过。
+- 仓库级 `pnpm check` 完整通过，覆盖全 workspace 类型检查、测试与 Next.js 生产构建。
+- 真实浏览器在 `741 × 772` 视口验收：配置抽屉为 `420 × 748`，页面尺寸等于视口，表单 `clientHeight` 与 `scrollHeight` 均为 681；全部配置字段单屏可见，Builder/Reviewer 切换成功，浏览器控制台无错误。
+- 浏览器验收没有提交 Profile，不向正式 PostgreSQL 写入虚构模型配置；页面保留在 `http://localhost:3010/` 供用户填写真实选择。
+
 ## 2026-08-07：Phase 3.3 Review 驱动的自动返工循环
 
 ### 已实现

@@ -43,7 +43,7 @@ RelayHub 不负责替模型推理，也不把多个模型融合成一个“大�
 ### 第一目标用户
 
 - 单用户、本地优先的软件开发者。
-- 已经使用 Codex、Claude Code 等 Agent CLI。
+- 已经使用 Codex、OpenCode、Claude Code 等 Agent CLI。
 - 希望把多个独立 Agent 组织成可靠开发流程。
 
 这里的“单用户、本地优先”表示：
@@ -360,7 +360,7 @@ Task 完成行为可由 Workspace 默认值和 Task override 配置：
 - 自动学习用户品味或自动修改 AgentProfile。
 - 完整 RAG、向量数据库和主动记忆系统。
 - Agent 群体投票、开放式 swarm 和无限自治。
-- 同时支持所有 Agent CLI；先完成一个 Builder Adapter 和一个 Reviewer Adapter。
+- 同时支持所有 Agent CLI；先完成 Codex 与 OpenCode 两个真实 CLI Adapter，再按实际需求扩展。
 - 企业 SSO、复杂 RBAC、计费和多租户运营。
 - 微服务拆分和跨机器水平扩展。
 - Exactly-once 执行承诺；采用 at-least-once delivery + 幂等状态提交。
@@ -421,6 +421,8 @@ flowchart TB
 - Bootstrap 不盘点整台机器的全部依赖，也不把某个 Agent CLI 写入项目准备策略。
 - 自动识别锁文件或语言只能作为待确认建议；持久化的显式策略才是执行事实来源。
 - Run 必须保存 Workspace 策略快照，保证历史执行能够解释和复现。
+
+**Implemented（2026-08-08）：** AgentProfile 已支持 `mock`、`codex_cli` 和 `opencode_cli`。OpenCode 配置保存精确 `provider/model` 及可选 variant、agent 名称和凭证环境变量引用；不保存密钥值。Builder/Reviewer 复用同一 Run、Worktree、Handoff、Review 和事件协议，角色权限由 Adapter 在每次执行时注入。健康检测只确认 CLI/模型目录，不把外部鉴权或模型调用混入配置写入事务。
 
 ---
 

@@ -70,6 +70,7 @@ flowchart LR
     WK --> A["AgentAdapter"]
     A --> M["Mock Agent"]
     A --> C["Codex CLI"]
+    A --> OC["OpenCode CLI"]
     WK -->|"append events and outcomes"| API
 
     API --> O["Orchestrator"]
@@ -180,9 +181,13 @@ Workspace bootstrap policy
 
 - 隔离不同 CLI 的命令、事件协议和 Session 语义。
 - 只产生平台统一事件，不直接修改 Task 状态。
-- Mock Adapter 用于确定性演示；Codex CLI Adapter 已使用非交互 JSONL 协议实现。
+- Mock Adapter 用于确定性演示；Codex CLI 与 OpenCode CLI Adapter 已分别使用各自的非交互 JSON/JSONL 协议实现。
 
 Builder 与 Reviewer 是工作流角色，不绑定具体模型或供应商。AgentProfile 分别选择 Adapter、provider、model 和 tool policy。同一工作流可以使用 Codex Builder + Claude Reviewer，也可以使用其他组合。
+
+OpenCode AgentProfile 使用精确的 `provider/model` 作为运行时模型标识，并可保存 variant、OpenCode agent 名称和凭证环境变量名称。API Key 值不进入 PostgreSQL、Run snapshot、Prompt 或 Timeline；用户可使用 `opencode providers login` 管理 OpenCode 自己的凭证。健康检测只验证 CLI 可启动且模型出现在本机 `opencode models` 目录，不发送计费请求，因此真实凭证只会在任务执行时验证。
+
+OpenCode Adapter 仍服从统一 Worktree 和角色边界：Builder 可以在当前 Worktree 内编辑和执行命令；Reviewer 通过每次 Run 注入的高优先级配置禁用 `edit`、`bash`、`external_directory`、`question` 和子 Agent `task` 权限。两者都使用 `--pure`、JSON 事件流和显式工作目录，不共享 Session 或隐藏推理。
 
 ReviewPolicy 可以配置：
 
@@ -215,7 +220,8 @@ worker/
 ├── process-supervisor
 ├── adapters
 │   ├── mock
-│   └── codex-or-claude
+│   ├── codex
+│   └── opencode
 └── event-reporter
 ```
 

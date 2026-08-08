@@ -1,7 +1,8 @@
 import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
-import { codexSandboxForRun, parseReviewDraft, runCodexAgent } from './codex-adapter.js';
+import { parseReviewDraft } from './agent-prompt.js';
+import { codexSandboxForRun, runCodexAgent } from './codex-adapter.js';
 
 const claimed: ClaimedRun = {
   workspace: {
@@ -19,6 +20,7 @@ const claimed: ClaimedRun = {
     name: 'Codex Builder',
     adapterType: 'codex_cli',
     capabilities: ['implement'],
+    config: {},
     enabled: true,
   },
   task: {
