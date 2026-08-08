@@ -71,7 +71,8 @@
 7. [x] 区分 Agent 协议完成、命令/测试失败和验收通过；成功 Run 保存 `RunOutcome`，Task 不再自动 completed。
 8. [x] 加入单次 Run token，保护 Worker control/event 内部接口；claim 身份认证随 lease/heartbeat 后续补齐。
 9. [x] 实现 OpenCode AgentProfile 配置、运行时目录检测和 Builder/Reviewer Adapter。
-10. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
+10. [x] 将 Agent 身份与 CLI 配置分层，并在每个 Run 固化不可变 AgentProfile 快照。
+11. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
 
 退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。首次真实运行已通过；lease/reconciliation 作为可靠性增强继续保留在 Phase 4。
 

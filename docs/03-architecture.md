@@ -185,6 +185,10 @@ Workspace bootstrap policy
 
 Builder 与 Reviewer 是工作流角色，不绑定具体模型或供应商。AgentProfile 分别选择 Adapter、provider、model 和 tool policy。同一工作流可以使用 Codex Builder + Claude Reviewer，也可以使用其他组合。
 
+AgentProfile 是用户定义的协作者身份，CLI/Adapter 只是它的运行载体。用户先命名 Agent、选择 `implement`/`review` 能力，再选择 Mock、Codex CLI 或 OpenCode CLI；CLI 专属字段由对应 Adapter schema 管理，不能反过来把“OpenCode”本身建模成 Agent。
+
+AgentProfile 可以修改并被未来 Run 复用，但每个 Run 在创建事务中保存不可变 `agentProfileSnapshot`。Worker claim 只使用快照，不再读取 AgentProfile 当前值；因此排队后修改名称、CLI、模型或配置不会改变该 Run。Reviewer、repair Builder 等后续 Run 在各自创建时获取当时的最新 Profile，再独立固化。
+
 OpenCode AgentProfile 使用精确的 `provider/model` 作为运行时模型标识，并可保存 variant、OpenCode agent 名称和凭证环境变量名称。API Key 值不进入 PostgreSQL、Run snapshot、Prompt 或 Timeline；用户可使用 `opencode providers login` 管理 OpenCode 自己的凭证。健康检测只验证 CLI 可启动且模型出现在本机 `opencode models` 目录，不发送计费请求，因此真实凭证只会在任务执行时验证。
 
 OpenCode Adapter 仍服从统一 Worktree 和角色边界：Builder 可以在当前 Worktree 内编辑和执行命令；Reviewer 通过每次 Run 注入的高优先级配置禁用 `edit`、`bash`、`external_directory`、`question` 和子 Agent `task` 权限。两者都使用 `--pure`、JSON 事件流和显式工作目录，不共享 Session 或隐藏推理。

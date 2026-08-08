@@ -1,6 +1,17 @@
 'use client';
 
-import type { AgentHealth, AgentProfile, CompletionPolicy, RunEvent, Task, TaskDetail } from '@relay-hub/contracts';
+import type {
+  AgentAdapterType,
+  AgentCapability,
+  AgentHealth,
+  AgentProfile,
+  AgentProfileSnapshotSummary,
+  AgentRuntimeDescriptor,
+  CompletionPolicy,
+  RunEvent,
+  Task,
+  TaskDetail,
+} from '@relay-hub/contracts';
 import type { FormEvent } from 'react';
 
 const statusLabels: Record<Task['status'], string> = {
@@ -210,7 +221,7 @@ type CurrentRun = TaskDetail['runs'][number] | null;
 interface TimelineWorkspaceProps {
   detail: TaskDetail | null;
   currentRun: CurrentRun;
-  currentAgent: AgentProfile | null;
+  currentAgent: AgentProfile | AgentProfileSnapshotSummary | null;
   canCancel: boolean;
   canConfirm: boolean;
   confirming: boolean;
@@ -487,20 +498,21 @@ export function CreateTaskDrawer({
 interface AgentConfigDrawerProps {
   open: boolean;
   name: string;
-  role: 'implement' | 'review';
+  capabilities: AgentCapability[];
+  adapterType: AgentAdapterType;
   model: string;
   variant: string;
   agentName: string;
   credentialEnv: string;
-  version: string;
-  models: string[];
+  runtimes: AgentRuntimeDescriptor[];
   saving: boolean;
   health: AgentHealth | null;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onAdapterChange: (value: AgentAdapterType) => void;
   onAgentNameChange: (value: string) => void;
+  onCapabilitiesChange: (value: AgentCapability[]) => void;
   onNameChange: (value: string) => void;
-  onRoleChange: (value: 'implement' | 'review') => void;
   onModelChange: (value: string) => void;
   onVariantChange: (value: string) => void;
   onCredentialEnvChange: (value: string) => void;
@@ -509,24 +521,31 @@ interface AgentConfigDrawerProps {
 export function AgentConfigDrawer({
   open,
   name,
-  role,
+  capabilities,
+  adapterType,
   model,
   variant,
   agentName,
   credentialEnv,
-  version,
-  models,
+  runtimes,
   saving,
   health,
   onClose,
   onSubmit,
+  onAdapterChange,
   onAgentNameChange,
+  onCapabilitiesChange,
   onNameChange,
-  onRoleChange,
   onModelChange,
   onVariantChange,
   onCredentialEnvChange,
 }: AgentConfigDrawerProps) {
+  const selectedRuntime = runtimes.find((runtime) => runtime.adapterType === adapterType);
+  const runtimeMark = adapterType === 'codex_cli' ? 'C' : adapterType === 'opencode_cli' ? 'O' : 'M';
+  const runtimeLabel = selectedRuntime?.label ?? (
+    adapterType === 'codex_cli' ? 'Codex CLI' : adapterType === 'opencode_cli' ? 'OpenCode CLI' : 'Mock'
+  );
+  const openCodeModels = runtimes.find((runtime) => runtime.adapterType === 'opencode_cli')?.models ?? [];
   return (
     <>
       {open ? <button aria-label="关闭 Agent 配置" className="drawer-backdrop" onClick={onClose} type="button" /> : null}
@@ -534,16 +553,16 @@ export function AgentConfigDrawer({
         <header className="drawer-header">
           <div>
             <p>Agent profile</p>
-            <h2>配置 OpenCode</h2>
+            <h2>新建 Agent</h2>
           </div>
           <button aria-label="关闭" className="drawer-close" onClick={onClose} type="button">×</button>
         </header>
         <form onSubmit={onSubmit}>
           <div className="runtime-card">
-            <span className="agent-mark">O</span>
+            <span className="agent-mark">{runtimeMark}</span>
             <div>
-              <strong>OpenCode CLI {version || '检测中…'}</strong>
-              <small>{models.length} 个当前项目可见模型</small>
+              <strong>{runtimeLabel}{selectedRuntime?.version ? ` · ${selectedRuntime.version}` : ''}</strong>
+              <small>{selectedRuntime?.message ?? '正在检测本机 CLI…'}</small>
             </div>
           </div>
           <label>
@@ -551,54 +570,90 @@ export function AgentConfigDrawer({
             <input minLength={2} onChange={(event) => onNameChange(event.target.value)} required value={name} />
           </label>
           <label>
-            角色
-            <select onChange={(event) => onRoleChange(event.target.value as 'implement' | 'review')} value={role}>
-              <option value="implement">Builder · 可修改代码</option>
-              <option value="review">Reviewer · 强制只读</option>
+            运行 CLI
+            <select onChange={(event) => onAdapterChange(event.target.value as AgentAdapterType)} value={adapterType}>
+              <option value="mock">Mock · 内置确定性运行时</option>
+              <option value="codex_cli">Codex CLI</option>
+              <option value="opencode_cli">OpenCode CLI</option>
             </select>
           </label>
-          <label>
-            模型（provider/model）
-            <input
-              list="opencode-models"
-              onChange={(event) => onModelChange(event.target.value)}
-              placeholder="例如 opencode/big-pickle"
-              required
-              value={model}
-            />
-            <datalist id="opencode-models">
-              {models.map((candidate) => <option key={candidate} value={candidate} />)}
-            </datalist>
-          </label>
-          <div className="policy-grid">
+          <fieldset className="capability-fieldset">
+            <legend>能力（至少选择一项）</legend>
+            <div className="capability-grid">
+              {([
+                ['implement', 'Builder', '实现与修改代码'],
+                ['review', 'Reviewer', '独立只读审查'],
+              ] as const).map(([capability, label, description]) => (
+                <label className="capability-option" key={capability}>
+                  <input
+                    checked={capabilities.includes(capability)}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...capabilities, capability]
+                        : capabilities.filter((candidate) => candidate !== capability);
+                      if (next.length > 0) onCapabilitiesChange(next);
+                    }}
+                    type="checkbox"
+                  />
+                  <span><strong>{label}</strong><small>{description}</small></span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          {adapterType === 'opencode_cli' ? <>
             <label>
-              Variant（可选）
-              <input onChange={(event) => onVariantChange(event.target.value)} placeholder="high / max" value={variant} />
+              模型（provider/model）
+              <input
+                list="opencode-models"
+                onChange={(event) => onModelChange(event.target.value)}
+                placeholder="例如 opencode/big-pickle"
+                required
+                value={model}
+              />
+              <datalist id="opencode-models">
+                {openCodeModels.map((candidate) => <option key={candidate} value={candidate} />)}
+              </datalist>
             </label>
+            <div className="policy-grid">
+              <label>
+                Variant（可选）
+                <input onChange={(event) => onVariantChange(event.target.value)} placeholder="high / max" value={variant} />
+              </label>
+              <label>
+                OpenCode 内部 Agent（可选）
+                <input onChange={(event) => onAgentNameChange(event.target.value)} placeholder="build" value={agentName} />
+              </label>
+            </div>
             <label>
-              OpenCode Agent（可选）
-              <input onChange={(event) => onAgentNameChange(event.target.value)} placeholder="build" value={agentName} />
+              密钥环境变量（可选）
+              <input
+                onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())}
+                placeholder="OPENAI_API_KEY"
+                value={credentialEnv}
+              />
             </label>
-          </div>
-          <label>
-            密钥环境变量（可选）
-            <input
-              onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())}
-              placeholder="OPENAI_API_KEY"
-              value={credentialEnv}
-            />
-          </label>
+          </> : null}
           <div className="config-note">
-            RelayHub 只保存环境变量名称，不保存密钥值。也可以先执行 <code>opencode providers login</code> 使用 OpenCode 自己的凭证。健康检测只确认 CLI 与模型目录，真实凭证会在任务执行时验证。
+            {adapterType === 'opencode_cli' ? <>
+              Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。这里只保存环境变量名称，不保存密钥值；也可以使用 <code>opencode providers login</code>。
+            </> : adapterType === 'codex_cli' ? <>
+              Agent 将使用本机 Codex CLI 的当前登录与默认模型配置，CLI 只是运行载体。
+            </> : <>
+              Mock 不调用外部模型，用于稳定演示完整编排链路。
+            </>}
           </div>
           {health ? (
             <div className={`health-result ${health.status}`}>
-              <strong>{health.status === 'healthy' ? 'CLI 与模型可见' : '配置需要处理'}</strong>
+              <strong>{health.status === 'healthy' ? '运行时可用' : '配置需要处理'}</strong>
               <span>{health.message}</span>
             </div>
           ) : null}
-          <button className="primary-button" disabled={saving || !model} type="submit">
-            {saving ? '保存并检测中…' : '保存 OpenCode Agent'}
+          <button
+            className="primary-button"
+            disabled={saving || name.trim().length < 2 || (adapterType === 'opencode_cli' && !model)}
+            type="submit"
+          >
+            {saving ? '保存并检测中…' : '保存 Agent'}
           </button>
         </form>
       </aside>

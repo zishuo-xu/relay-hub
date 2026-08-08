@@ -31,6 +31,16 @@ export const AgentProfileInputSchema = z
         message: 'OpenCode model must use provider/model format',
       });
     }
+    if (input.adapterType !== 'opencode_cli' && (input.model || input.variant || input.agentName || input.credentialEnv)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['adapterType'],
+        message: 'Provider-specific fields are only supported by the OpenCode CLI adapter',
+      });
+    }
+    if (new Set(input.capabilities).size !== input.capabilities.length) {
+      context.addIssue({ code: 'custom', path: ['capabilities'], message: 'Agent capabilities must be unique' });
+    }
   });
 
 export type AgentProfileInput = z.infer<typeof AgentProfileInputSchema>;
@@ -348,12 +358,31 @@ export interface AgentProfile {
   enabled: boolean;
 }
 
+export interface AgentProfileSnapshotSummary {
+  id: string;
+  name: string;
+  adapterType: AgentAdapterType;
+  provider?: string;
+  modelLabel?: string;
+  modelFamily?: string;
+  capabilities: string[];
+}
+
 export interface AgentHealth {
   status: 'healthy' | 'unhealthy';
   adapterType: AgentAdapterType;
   version?: string;
   model?: string;
   modelAvailable?: boolean;
+  message: string;
+}
+
+export interface AgentRuntimeDescriptor {
+  adapterType: AgentAdapterType;
+  label: string;
+  available: boolean;
+  version?: string;
+  models: string[];
   message: string;
 }
 
@@ -368,6 +397,7 @@ export interface Run {
   retryOfRunId?: string;
   workspaceRoot: string;
   bootstrapPolicySnapshot: BootstrapPolicy;
+  agentProfileSnapshot?: AgentProfileSnapshotSummary;
   worktreePath?: string;
   workingDirectory?: string;
   branchName?: string;

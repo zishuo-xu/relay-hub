@@ -347,6 +347,14 @@ textarea:focus-visible {
 .runtime-card small { color: var(--muted); font-size: 9px; }
 .config-note { padding: 9px 10px; color: var(--muted); border-radius: 8px; background: var(--surface-soft); font-size: 10px; line-height: 1.55; }
 .config-note code { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.capability-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.capability-fieldset legend { margin-bottom: 5px; color: var(--text-secondary); font-size: 10px; font-weight: 700; }
+.capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.capability-option { display: flex !important; padding: 8px 9px; align-items: center; flex-direction: row !important; gap: 8px !important; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); cursor: pointer; }
+.capability-option input { width: 14px; height: 14px; flex: none; accent-color: var(--accent); }
+.capability-option span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.capability-option strong { color: var(--text); font-size: 10px; }
+.capability-option small { color: var(--muted); font-size: 8px; font-weight: 500; }
 .health-result { display: flex; padding: 9px 10px; flex-direction: column; gap: 4px; border-radius: 8px; font-size: 10px; }
 .health-result.healthy { color: var(--accent); background: var(--accent-soft); }
 .health-result.unhealthy { color: var(--danger); background: var(--danger-soft); }

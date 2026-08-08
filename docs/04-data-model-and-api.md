@@ -132,6 +132,8 @@ erDiagram
 
 AgentProfile 属于 Workspace，可被多个新 Task 复用；修改配置不会改写已经完成 Run 的历史事件。当前数据表原本就有通用 JSONB `config`，因此接入 OpenCode 不需要新增 migration。
 
+AgentProfile 表达用户定义的 Agent 身份，不表达一次执行。名称和能力是通用字段，`adapter_type` 才选择 Mock、Codex CLI 或 OpenCode CLI；CLI 专属配置只进入经过白名单校验的 `config`。
+
 ### `tasks`
 
 除基本字段外保存：
@@ -162,6 +164,7 @@ AgentProfile 属于 Workspace，可被多个新 Task 复用；修改配置不会
 - `started_at`, `finished_at`
 - `workspace_root`: 创建 Run 时固化的执行 Workspace 快照
 - `bootstrap_policy_snapshot`: 创建 Run 时固化的准备策略，避免排队期间配置漂移
+- `agent_profile_snapshot`: 创建 Run 时固化的完整非敏感 AgentProfile；Worker 只执行该快照，不读取可变 Profile 当前值。公有 Task detail 仅返回名称、Adapter、模型标签和能力摘要，不返回运行配置 JSON
 - `worktree_path`, `working_directory`, `branch_name`: 隔离执行与人工检查入口
 
 重试创建新行，而不是把失败行改回 queued。
@@ -220,10 +223,11 @@ POST   /api/workspaces/:workspaceId/agents
 GET    /api/workspaces/:workspaceId/agents
 POST   /api/agents/:agentId/health-check
 PUT    /api/agents/:agentId
+GET    /api/agent-runtimes
 GET    /api/agent-runtimes/opencode
 ```
 
-创建和更新 AgentProfile 使用同一份完整配置 schema。`GET /api/agent-runtimes/opencode` 返回本机 CLI 版本与模型目录，供 Web 表单选择；`POST /api/agents/:agentId/health-check` 只做无计费的 CLI/目录检测，不验证 provider 凭证，也不启动 Run。
+创建和更新 AgentProfile 使用同一份完整配置 schema。`GET /api/agent-runtimes` 统一返回 Mock、Codex CLI 和 OpenCode CLI 的可用性、版本与可选模型目录；OpenCode 专属 endpoint 保留兼容。`POST /api/agents/:agentId/health-check` 只做无计费的 CLI/目录检测，不验证 provider 凭证，也不启动 Run。
 
 ### Task 与 Run
 

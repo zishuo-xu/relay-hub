@@ -26,6 +26,20 @@ describe('AgentProfile configuration contract', () => {
       model: 'north-mini-code-free',
     })).toThrow('provider/model');
   });
+
+  it('keeps CLI-specific fields out of generic Mock and Codex profiles', () => {
+    expect(AgentProfileInputSchema.parse({
+      name: 'Codex Builder',
+      adapterType: 'codex_cli',
+      capabilities: ['implement'],
+    })).toMatchObject({ adapterType: 'codex_cli' });
+    expect(() => AgentProfileInputSchema.parse({
+      name: 'Misconfigured Codex',
+      adapterType: 'codex_cli',
+      capabilities: ['implement'],
+      model: 'opencode/big-pickle',
+    })).toThrow('only supported by the OpenCode');
+  });
 });
 
 describe('Task review policy contract', () => {

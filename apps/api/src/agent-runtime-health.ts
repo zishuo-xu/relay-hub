@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import {
   type AgentHealth,
   type AgentProfile,
+  type AgentRuntimeDescriptor,
   OpenCodeRuntimeConfigSchema,
 } from '@relay-hub/contracts';
 
@@ -36,6 +37,55 @@ export async function listOpenCodeModels(): Promise<{ version: string; models: s
   ]);
   const models = catalog.split(/\r?\n/).map((model) => model.trim()).filter(Boolean);
   return { version, models };
+}
+
+export async function listAgentRuntimes(): Promise<AgentRuntimeDescriptor[]> {
+  const [codexResult, openCodeResult] = await Promise.allSettled([
+    run(process.env.RELAY_HUB_CODEX_BIN ?? 'codex', ['--version']),
+    listOpenCodeModels(),
+  ]);
+  return [
+    {
+      adapterType: 'mock',
+      label: 'Mock',
+      available: true,
+      version: 'built-in',
+      models: [],
+      message: 'RelayHub 内置的确定性演示运行时。',
+    },
+    codexResult.status === 'fulfilled'
+      ? {
+          adapterType: 'codex_cli',
+          label: 'Codex CLI',
+          available: true,
+          version: codexResult.value,
+          models: [],
+          message: '使用本机 Codex CLI 当前登录和默认模型配置。',
+        }
+      : {
+          adapterType: 'codex_cli',
+          label: 'Codex CLI',
+          available: false,
+          models: [],
+          message: codexResult.reason instanceof Error ? codexResult.reason.message : String(codexResult.reason),
+        },
+    openCodeResult.status === 'fulfilled'
+      ? {
+          adapterType: 'opencode_cli',
+          label: 'OpenCode CLI',
+          available: true,
+          version: openCodeResult.value.version,
+          models: openCodeResult.value.models,
+          message: '模型目录可见；provider 凭证将在真实任务中验证。',
+        }
+      : {
+          adapterType: 'opencode_cli',
+          label: 'OpenCode CLI',
+          available: false,
+          models: [],
+          message: openCodeResult.reason instanceof Error ? openCodeResult.reason.message : String(openCodeResult.reason),
+        },
+  ];
 }
 
 export async function checkAgentHealth(agent: AgentProfile): Promise<AgentHealth> {

@@ -107,6 +107,8 @@ RelayHub 不负责替模型推理，也不把多个模型融合成一个“大�
 
 Builder 和 Reviewer 是角色，不是模型名称。每个 AgentProfile 可以选择自己的 Adapter、provider 和 model。ReviewPolicy 默认要求不同 AgentProfile，并允许进一步配置“必须不同 provider/model family”。
 
+**Implemented（2026-08-08）：** AgentProfile 已明确为用户定义的 Agent 身份；Mock、Codex CLI、OpenCode CLI 是可选择的运行 Adapter。一个 Profile 可以同时声明 implement/review 能力，但同一 Task 的独立 Reviewer 仍必须使用不同 Profile。每个 Run 固化创建时 AgentProfile 快照，平台不会用后来修改的 Profile 重解释已排队或历史执行。
+
 ### Orchestrator（确定性平台模块）
 
 负责：
@@ -256,6 +258,7 @@ acceptanceCriteria
 | Review / Finding | PostgreSQL | 被授权 Reviewer Run 提交 |
 | Queue delivery | Redis/BullMQ | Queue/Worker；不是业务真相 |
 | provider sessionRef | PostgreSQL 中的运行引用 | 对应 Adapter/Worker 更新 |
+| Run AgentProfile snapshot | PostgreSQL Run 行 | 创建 Run 的事务一次写入，之后不可变 |
 | 代码产物 | Git commit/worktree | 写入型 Agent；平台保存引用 |
 | 实时 UI | WebSocket projection | 只展示，不拥有事实 |
 | 长期知识 | 后续 KnowledgeEntry | 用户确认或明确规则批准 |

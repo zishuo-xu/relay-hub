@@ -3,8 +3,11 @@
 import {
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  type AgentAdapterType,
+  type AgentCapability,
   type AgentHealth,
   type AgentProfile,
+  type AgentRuntimeDescriptor,
   type CompletionPolicy,
   type RealtimeEnvelope,
   type Task,
@@ -36,15 +39,15 @@ export default function HomePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [agentConfigOpen, setAgentConfigOpen] = useState(false);
-  const [agentConfigName, setAgentConfigName] = useState('OpenCode Builder');
-  const [agentConfigRole, setAgentConfigRole] = useState<'implement' | 'review'>('implement');
+  const [agentConfigName, setAgentConfigName] = useState('');
+  const [agentConfigCapabilities, setAgentConfigCapabilities] = useState<AgentCapability[]>(['implement']);
+  const [agentConfigAdapter, setAgentConfigAdapter] = useState<AgentAdapterType>('opencode_cli');
   const [agentConfigModel, setAgentConfigModel] = useState('');
   const [agentConfigVariant, setAgentConfigVariant] = useState('');
   const [agentConfigAgentName, setAgentConfigAgentName] = useState('');
   const [agentConfigCredentialEnv, setAgentConfigCredentialEnv] = useState('');
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
-  const [openCodeVersion, setOpenCodeVersion] = useState('');
-  const [openCodeModels, setOpenCodeModels] = useState<string[]>([]);
+  const [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeDescriptor[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
 
   const loadTasks = useCallback(async () => {
@@ -206,21 +209,15 @@ export default function HomePage() {
     setCreateOpen(false);
     setAgentConfigOpen(true);
     setAgentHealth(null);
-    const response = await fetch(`${apiUrl}/api/agent-runtimes/opencode`, { cache: 'no-store' });
-    const payload = (await response.json()) as {
-      available: boolean;
-      version?: string;
-      models?: string[];
-      message?: string;
-    };
-    if (!response.ok || !payload.available) throw new Error(payload.message ?? 'OpenCode CLI 不可用');
-    const models = payload.models ?? [];
-    setOpenCodeVersion(payload.version ?? 'unknown');
-    setOpenCodeModels(models);
-    setAgentConfigModel((current) => current || models[0] || '');
+    const response = await fetch(`${apiUrl}/api/agent-runtimes`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`无法读取 Agent CLI：${response.status}`);
+    const payload = (await response.json()) as { runtimes: AgentRuntimeDescriptor[] };
+    setAgentRuntimes(payload.runtimes);
+    const openCode = payload.runtimes.find((runtime) => runtime.adapterType === 'opencode_cli');
+    setAgentConfigModel((current) => current || openCode?.models[0] || '');
   }
 
-  async function createOpenCodeAgent(event: FormEvent<HTMLFormElement>) {
+  async function createAgentProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!workspace) throw new Error('Workspace 尚未加载完成');
     setAgentConfigSaving(true);
@@ -232,22 +229,28 @@ export default function HomePage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: agentConfigName,
-          adapterType: 'opencode_cli',
-          capabilities: [agentConfigRole],
-          model: agentConfigModel,
-          ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
-          ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
-          ...(agentConfigCredentialEnv.trim() ? { credentialEnv: agentConfigCredentialEnv.trim() } : {}),
+          adapterType: agentConfigAdapter,
+          capabilities: agentConfigCapabilities,
+          ...(agentConfigAdapter === 'opencode_cli'
+            ? {
+                model: agentConfigModel,
+                ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
+                ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
+                ...(agentConfigCredentialEnv.trim() ? { credentialEnv: agentConfigCredentialEnv.trim() } : {}),
+              }
+            : {}),
           enabled: true,
         }),
       });
-      if (!response.ok) throw new Error(`保存 OpenCode Agent 失败：${response.status} ${await response.text()}`);
+      if (!response.ok) throw new Error(`保存 Agent 失败：${response.status} ${await response.text()}`);
       const created = (await response.json()) as AgentProfile;
       await loadRuntimeConfiguration();
-      if (agentConfigRole === 'implement') setSelectedAgentId(created.id);
+      if (agentConfigCapabilities.includes('implement')) setSelectedAgentId(created.id);
       else setSelectedReviewerAgentId(created.id);
       const healthResponse = await fetch(`${apiUrl}/api/agents/${created.id}/health-check`, { method: 'POST' });
       if (healthResponse.ok) setAgentHealth((await healthResponse.json()) as AgentHealth);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setAgentConfigSaving(false);
     }
@@ -259,7 +262,9 @@ export default function HomePage() {
   );
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedReviewer = agents.find((agent) => agent.id === selectedReviewerAgentId) ?? null;
-  const currentAgent = agents.find((agent) => agent.id === currentRun?.agentId) ?? null;
+  const currentAgent = currentRun?.agentProfileSnapshot
+    ?? agents.find((agent) => agent.id === currentRun?.agentId)
+    ?? null;
   const canCancel = currentRun
     ? !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status)
     : false;
@@ -314,25 +319,33 @@ export default function HomePage() {
         workspaceRoot={workspaceRoot}
       />
       <AgentConfigDrawer
+        adapterType={agentConfigAdapter}
         agentName={agentConfigAgentName}
+        capabilities={agentConfigCapabilities}
         credentialEnv={agentConfigCredentialEnv}
         health={agentHealth}
         model={agentConfigModel}
-        models={openCodeModels}
+        runtimes={agentRuntimes}
         name={agentConfigName}
+        onAdapterChange={(value) => {
+          setAgentConfigAdapter(value);
+          setAgentHealth(null);
+          if (value === 'opencode_cli') {
+            const runtime = agentRuntimes.find((candidate) => candidate.adapterType === value);
+            setAgentConfigModel((current) => current || runtime?.models[0] || '');
+          }
+        }}
         onClose={() => setAgentConfigOpen(false)}
         onAgentNameChange={setAgentConfigAgentName}
+        onCapabilitiesChange={setAgentConfigCapabilities}
         onCredentialEnvChange={setAgentConfigCredentialEnv}
         onModelChange={setAgentConfigModel}
         onNameChange={setAgentConfigName}
-        onRoleChange={setAgentConfigRole}
-        onSubmit={createOpenCodeAgent}
+        onSubmit={createAgentProfile}
         onVariantChange={setAgentConfigVariant}
         open={agentConfigOpen}
-        role={agentConfigRole}
         saving={agentConfigSaving}
         variant={agentConfigVariant}
-        version={openCodeVersion}
       />
     </main>
   );

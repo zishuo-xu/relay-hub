@@ -45,6 +45,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成 `changes_requested` 自动返工、Review 多轮复审与轮次预算
 - [x] 完成多 Agent 交接与 Review 主流程
 - [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
+- [x] 完成通用 Agent 创建、CLI/能力动态配置与不可变 Run AgentProfile 快照
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定
@@ -125,7 +126,9 @@ pnpm dev
 
 - `Mock Builder`：不调用外部模型，用于稳定演示平台链路。
 - `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
-- 自定义 `OpenCode Builder/Reviewer`：点击页面右上方“Agent 配置”，填写角色和 OpenCode `provider/model` 后保存；Worker 在同一套 Run、Worktree、Handoff 和 Review 流程中调用 `opencode run --format json`。
+- 自定义 Agent：点击页面右上方“Agent 配置”，先填写自定义名称和 Builder/Reviewer 能力，再选择 Mock、Codex CLI 或 OpenCode CLI。CLI 只是运行载体；只有选择 OpenCode 时才填写 `provider/model` 等专属字段。
+
+AgentProfile 是可长期复用、可修改的当前配置。每个 Run 在创建时保存不可变 AgentProfile 快照，因此修改 Agent 名称、CLI 或模型不会改变已经排队和历史 Run；后续 Run 才使用新配置。
 
 Agent 健康检测只确认本机 CLI 可启动且所填模型出现在 `opencode models` 目录中，不会为了检测而发起计费模型请求；provider 凭证是否有效会在第一次真实任务中得到验证。
 

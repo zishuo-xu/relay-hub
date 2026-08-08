@@ -9,7 +9,6 @@ import {
   type TaskStatus,
 } from '@relay-hub/contracts';
 import {
-  agentProfiles,
   handoffs,
   type RelayDatabase,
   reviewFindings,
@@ -22,7 +21,6 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { issueRunToken, verifyRunToken } from '../run-token.js';
 import {
-  mapAgentProfile,
   mapEvent,
   mapHandoff,
   mapReview,
@@ -68,8 +66,6 @@ export async function claimRun(
     if (!taskRow) throw new Error(`Task not found for run: ${runId}`);
     const [workspaceRow] = await tx.select().from(workspaces).where(eq(workspaces.id, taskRow.workspaceId)).limit(1);
     if (!workspaceRow) throw new Error(`Workspace not found for run: ${runId}`);
-    const [agentRow] = await tx.select().from(agentProfiles).where(eq(agentProfiles.id, claimed.agentId)).limit(1);
-    if (!agentRow) throw new Error(`Agent profile not found for run: ${runId}`);
     const [handoffRow] = await tx.select().from(handoffs).where(eq(handoffs.targetRunId, claimed.id)).limit(1);
     const [reviewRow] = claimed.triggerType === 'retry' && claimed.parentRunId
       ? await tx.select().from(reviews).where(eq(reviews.runId, claimed.parentRunId)).limit(1)
@@ -95,7 +91,7 @@ export async function claimRun(
           task: mapTask(taskRow, claimed.agentId),
           run: mapRun(claimed),
           workspace: mapWorkspace(workspaceRow),
-          agent: mapAgentProfile(agentRow),
+          agent: claimed.agentProfileSnapshot,
           ...(handoffRow ? { handoff: mapHandoff(handoffRow) } : {}),
           ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
         } satisfies ClaimedRun,

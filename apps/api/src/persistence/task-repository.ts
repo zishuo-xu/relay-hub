@@ -20,7 +20,7 @@ import {
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
-import { mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
+import { mapAgentProfile, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
 
 export async function listTasks(db: RelayDatabase): Promise<Task[]> {
@@ -108,7 +108,7 @@ export async function createTask(
     }
 
     const [agent] = await tx
-      .select({ id: agentProfiles.id, enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
+      .select()
       .from(agentProfiles)
       .where(and(eq(agentProfiles.id, input.agentId), eq(agentProfiles.workspaceId, DEFAULT_WORKSPACE_ID)))
       .limit(1);
@@ -161,6 +161,7 @@ export async function createTask(
       triggerType: 'user',
       workspaceRoot: workspace.rootPath,
       bootstrapPolicySnapshot: workspace.bootstrapPolicy,
+      agentProfileSnapshot: mapAgentProfile(agent),
       createdAt: now,
     });
     await tx.update(tasks).set({ currentRunId: runId }).where(eq(tasks.id, taskId));

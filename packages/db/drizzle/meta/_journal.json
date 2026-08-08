@@ -64,6 +64,13 @@
       "when": 1786037648744,
       "tag": "0008_superb_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786193105264,
+      "tag": "0009_strange_leo",
+      "breakpoints": true
     }
   ]
 }

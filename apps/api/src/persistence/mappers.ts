@@ -97,6 +97,7 @@ export function mapReview(row: ReviewRow, findings: ReviewFinding[]): Review {
 }
 
 export function mapRun(row: RunRow): Run {
+  const snapshot = row.agentProfileSnapshot;
   return {
     id: row.id,
     taskId: row.taskId,
@@ -106,6 +107,15 @@ export function mapRun(row: RunRow): Run {
     triggerType: row.triggerType,
     workspaceRoot: row.workspaceRoot,
     bootstrapPolicySnapshot: row.bootstrapPolicySnapshot,
+    agentProfileSnapshot: {
+      id: snapshot.id,
+      name: snapshot.name,
+      adapterType: snapshot.adapterType,
+      capabilities: snapshot.capabilities,
+      ...(snapshot.provider ? { provider: snapshot.provider } : {}),
+      ...(snapshot.modelLabel ? { modelLabel: snapshot.modelLabel } : {}),
+      ...(snapshot.modelFamily ? { modelFamily: snapshot.modelFamily } : {}),
+    },
     version: row.version,
     createdAt: toIso(row.createdAt),
     ...(row.parentRunId ? { parentRunId: row.parentRunId } : {}),

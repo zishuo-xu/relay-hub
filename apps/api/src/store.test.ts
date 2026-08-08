@@ -61,6 +61,47 @@ suite('PostgresStore integration', () => {
     });
   });
 
+  it('claims each Run with the immutable AgentProfile snapshot captured at creation', async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const agent = await store.createAgentProfile('00000000-0000-4000-8000-000000000001', {
+      name: `Snapshot Builder ${suffix}`,
+      adapterType: 'opencode_cli',
+      capabilities: ['implement'],
+      model: 'opencode/big-pickle',
+      enabled: true,
+    });
+    if (!agent) throw new Error('Snapshot AgentProfile was not created');
+    const task = await store.createTask({
+      title: 'Freeze the Agent runtime configuration',
+      description: 'A queued Run must not observe later AgentProfile edits.',
+      agentId: agent.id,
+      acceptanceCriteria: ['Claim returns the original provider/model'],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    await store.updateAgentProfile(agent.id, {
+      name: agent.name,
+      adapterType: 'opencode_cli',
+      capabilities: ['implement'],
+      model: 'opencode/longcat-2.0-free',
+      enabled: true,
+    });
+
+    const queued = await store.getTaskDetail(task.value.detail.task.id);
+    expect(queued?.runs[0]?.agentProfileSnapshot).toMatchObject({
+      id: agent.id,
+      modelLabel: 'opencode/big-pickle',
+    });
+    expect(queued?.runs[0]?.agentProfileSnapshot).not.toHaveProperty('config');
+
+    const claimed = await store.claimRun(task.value.detail.task.currentRunId, 'snapshot-worker');
+    expect(claimed.value?.claimed.agent).toMatchObject({
+      id: agent.id,
+      adapterType: 'opencode_cli',
+      config: { model: 'opencode/big-pickle' },
+    });
+  });
+
   it('atomically creates, claims, deduplicates, and records a successful run outcome', async () => {
     const idempotencyKey = `test-${crypto.randomUUID()}`;
     const input = {
@@ -213,6 +254,7 @@ suite('PostgresStore integration', () => {
     expect(reviewing?.runs).toHaveLength(2);
     expect(reviewerRun).toMatchObject({
       agentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      agentProfileSnapshot: { id: DEFAULT_MOCK_REVIEWER_AGENT_ID, capabilities: ['review'] },
       status: 'queued',
       triggerType: 'review',
     });
@@ -264,6 +306,7 @@ suite('PostgresStore integration', () => {
     expect(repairQueued?.runs).toHaveLength(3);
     expect(repairRun).toMatchObject({
       agentId: DEFAULT_MOCK_AGENT_ID,
+      agentProfileSnapshot: { id: DEFAULT_MOCK_AGENT_ID, capabilities: ['implement'] },
       parentRunId: reviewerRun.id,
       retryOfRunId: builderRunId,
       status: 'queued',
@@ -314,6 +357,10 @@ suite('PostgresStore integration', () => {
     );
     expect(secondReviewing?.task.status).toBe('reviewing');
     expect(secondReviewing?.runs).toHaveLength(4);
+    expect(secondReviewerRun?.agentProfileSnapshot).toMatchObject({
+      id: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      capabilities: ['review'],
+    });
     if (!secondReviewerRun) throw new Error('Second Reviewer Run was not created');
     await store.claimRun(secondReviewerRun.id, 'second-reviewer');
     await store.recordAgentEvent(secondReviewerRun.id, 'second-reviewer-started', { type: 'run.started' });

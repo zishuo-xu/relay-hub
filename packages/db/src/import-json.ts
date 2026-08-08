@@ -1,9 +1,24 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_MOCK_AGENT_ID, DEFAULT_WORKSPACE_ID } from '@relay-hub/contracts';
+import { type AgentProfile, DEFAULT_MOCK_AGENT_ID, DEFAULT_WORKSPACE_ID } from '@relay-hub/contracts';
 import { eq } from 'drizzle-orm';
 import { createDatabase } from './index.js';
-import { idempotencyKeys, runEvents, runs, tasks } from './schema.js';
+import { agentProfiles, idempotencyKeys, runEvents, runs, tasks } from './schema.js';
+
+function snapshotAgent(row: typeof agentProfiles.$inferSelect): AgentProfile {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    adapterType: row.adapterType === 'codex_cli' || row.adapterType === 'opencode_cli' ? row.adapterType : 'mock',
+    capabilities: row.capabilities,
+    config: row.config,
+    enabled: row.enabled,
+    ...(row.provider ? { provider: row.provider } : {}),
+    ...(row.modelLabel ? { modelLabel: row.modelLabel } : {}),
+    ...(row.modelFamily ? { modelFamily: row.modelFamily } : {}),
+  };
+}
 
 interface LegacyState {
   tasks: Array<{
@@ -51,6 +66,13 @@ const database = createDatabase();
 
 try {
   await database.db.transaction(async (tx) => {
+    const [defaultAgent] = await tx
+      .select()
+      .from(agentProfiles)
+      .where(eq(agentProfiles.id, DEFAULT_MOCK_AGENT_ID))
+      .limit(1);
+    if (!defaultAgent) throw new Error('Default Mock AgentProfile must exist before importing legacy runs');
+    const defaultAgentSnapshot = snapshotAgent(defaultAgent);
     if (state.tasks.length > 0) {
       await tx
         .insert(tasks)
@@ -83,6 +105,7 @@ try {
             status: run.status,
             triggerType: 'user' as const,
             workspaceRoot: '',
+            agentProfileSnapshot: defaultAgentSnapshot,
             attempt: run.attempt,
             version: run.version,
             createdAt: new Date(run.createdAt),

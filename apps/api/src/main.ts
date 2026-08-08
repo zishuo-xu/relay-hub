@@ -11,7 +11,7 @@ import Fastify from 'fastify';
 import type { FastifyRequest } from 'fastify';
 import { Server as SocketServer } from 'socket.io';
 import { z } from 'zod';
-import { checkAgentHealth, listOpenCodeModels } from './agent-runtime-health.js';
+import { checkAgentHealth, listAgentRuntimes, listOpenCodeModels } from './agent-runtime-health.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { PostgresStore } from './store.js';
@@ -120,6 +120,8 @@ app.post('/api/agents/:agentId/health-check', async (request, reply) => {
   if (!agent) return reply.code(404).send({ error: 'agent_not_found' });
   return checkAgentHealth(agent);
 });
+
+app.get('/api/agent-runtimes', async () => ({ runtimes: await listAgentRuntimes() }));
 
 app.get('/api/agent-runtimes/opencode', async (_request, reply) => {
   try {

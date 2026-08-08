@@ -1,5 +1,26 @@
 # 07. 实现状态
 
+## 2026-08-08：通用 Agent 身份、CLI 选择与 Run 配置快照
+
+### 已实现
+
+- Web 从“配置 OpenCode”重构为“新建 Agent”：名称由用户定义，Builder/Reviewer 是可组合能力，运行 CLI 可选 Mock、Codex CLI 或 OpenCode CLI。
+- CLI 专属字段按 Adapter 动态显示；切换到 Codex 或 Mock 时不会提交 OpenCode model、variant、内部 Agent 或凭证环境变量字段。
+- 新增统一 `/api/agent-runtimes` 查询，返回三种 CLI 的本机可用性、版本、说明和可选模型目录；保存后仍按 Profile 执行健康检测。
+- AgentProfile 继续作为可复用、可修改的当前配置；Run 新增不可变 `agent_profile_snapshot`，初始 Builder、Reviewer、repair Builder 和后续 Reviewer 均在创建事务中固化当时 Profile。
+- Worker claim 只使用 Run 快照，不再读取 AgentProfile 当前值；历史 Timeline 也优先展示快照身份。
+- 公有 Task detail 只返回快照的身份摘要，不返回完整 `config`；完整运行配置只在服务端 claim 路径交给 Worker。
+- migration `0009_strange_leo.sql` 先新增可空 JSONB、从外键关联的 AgentProfile 无损回填、验证无空值后再设置 NOT NULL；不删除或覆盖任何 Task、Run、Event。
+- 架构与数据所有权决策固化在 `ADR-012-agent-identity-runtime-and-run-snapshot.md`。
+
+### 验证证据
+
+- 专用 migration 数据库 52/52 个历史 Run 完成快照回填，snapshot ID 与 `agent_id` 0 个不一致；正式数据库 23/23 完成回填，0 个不一致。
+- 隔离 PostgreSQL API 集成测试 13/13 通过；新增用例在 AgentProfile 从 `opencode/big-pickle` 修改为 `opencode/longcat-2.0-free` 后领取旧 Run，确认 Worker 仍得到旧模型快照。
+- Contracts 15/15 通过，覆盖通用 Codex Profile 和 CLI 专属字段边界。
+- 真实 API 检测到 Mock、Codex CLI `0.146.0-alpha.9.2`、OpenCode CLI `1.18.15`，历史 Task API 的所有 Run 均返回快照。
+- 真实浏览器在 `741 × 772` 验证 OpenCode → Codex 动态切换、OpenCode 字段隐藏、Builder/Reviewer 组合选择；页面和表单均无滚动，未提交测试 Agent。
+
 ## 2026-08-08：可配置 OpenCode Builder / Reviewer
 
 ### 已实现

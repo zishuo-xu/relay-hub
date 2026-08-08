@@ -13,6 +13,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import type {
+  AgentProfile,
   BootstrapPolicy,
   CompletionPolicy,
   HandoffArtifactRef,
@@ -150,6 +151,7 @@ export const runs = pgTable(
       .$type<BootstrapPolicy>()
       .default({ steps: [] })
       .notNull(),
+    agentProfileSnapshot: jsonb('agent_profile_snapshot').$type<AgentProfile>().notNull(),
     worktreePath: text('worktree_path'),
     workingDirectory: text('working_directory'),
     branchName: text('branch_name'),

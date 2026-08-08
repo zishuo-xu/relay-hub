@@ -21,7 +21,7 @@ import {
 } from '@relay-hub/db';
 import { and, eq } from 'drizzle-orm';
 import { planAfterReview, planAfterSuccessfulBuilderRun } from '../workflow-orchestrator.js';
-import { mapEvent } from './mappers.js';
+import { mapAgentProfile, mapEvent } from './mappers.js';
 import { getTaskDetail } from './task-repository.js';
 import type { MutationResult } from './types.js';
 
@@ -213,7 +213,7 @@ export async function recordAgentEvent(
               const builderAgentId = task.builderAgentId ?? builderRun?.agentId;
               if (!builderAgentId) throw new Error('Task has no Builder AgentProfile for repair');
               const [builderAgent] = await tx
-                .select({ enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
+                .select()
                 .from(agentProfiles)
                 .where(eq(agentProfiles.id, builderAgentId))
                 .limit(1);
@@ -232,6 +232,7 @@ export async function recordAgentEvent(
                 attempt: (builderRun?.attempt ?? review.round) + 1,
                 workspaceRoot: run.workspaceRoot,
                 bootstrapPolicySnapshot: { steps: [] },
+                agentProfileSnapshot: mapAgentProfile(builderAgent),
                 worktreePath: run.worktreePath,
                 workingDirectory: run.workingDirectory,
                 branchName: run.branchName,
@@ -267,7 +268,7 @@ export async function recordAgentEvent(
             if (pendingHandoff) {
               targetRunId = randomUUID();
               const [targetAgent] = await tx
-                .select({ enabled: agentProfiles.enabled, capabilities: agentProfiles.capabilities })
+                .select()
                 .from(agentProfiles)
                 .where(eq(agentProfiles.id, pendingHandoff.targetAgentId))
                 .limit(1);
@@ -283,6 +284,7 @@ export async function recordAgentEvent(
                 status: 'queued',
                 workspaceRoot: run.workspaceRoot,
                 bootstrapPolicySnapshot: { steps: [] },
+                agentProfileSnapshot: mapAgentProfile(targetAgent),
                 worktreePath: run.worktreePath,
                 workingDirectory: run.workingDirectory,
                 branchName: run.branchName,
