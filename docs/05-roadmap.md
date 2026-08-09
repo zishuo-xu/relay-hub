@@ -87,7 +87,9 @@
 3. [x] Reviewer 独立上下文、Run Token 和继承 Worktree 的只读执行边界；Codex Reviewer 可在只读代码前提下运行仅绑定回环地址的本地测试。
 4. [x] Review、Finding 与 `approved/changes_requested/blocked` 结构化裁决。
 5. [x] `changes_requested` 后的修复 Run、结构化 Finding 注入和 Review 轮次预算。
-6. [ ] Timeline 中展示完整协作图与审查详情。
+6. [ ] 引入简化 TeamAct 的封闭 `NextAction` 合约，把现有 Handoff、Review、返工、等待用户和完成映射为统一 Route 语义。
+7. [ ] 从现有 Task/Run/Handoff/Review/Event 推导当前责任视图，在 Timeline 中展示 State、Owner、Evidence、Verdict、Route 和审查详情。
+8. [ ] 在不引入通用 Workflow Engine 的前提下，为方案、UX、安全等 AgentProfile 专业方向提供动态 Handoff 路径。
 
 退出条件：标准演示场景端到端通过，且交接链可以由数据库查询重建。
 
@@ -135,7 +137,9 @@
 2. Workspace Bootstrap 与执行结果语义已完成。
 3. 单次 Run token 已完成，为后续 Handoff/Review 提交建立了最小可信执行身份。
 
-Phase 3.3 自动返工主链和 OpenCode 可配置 Adapter 已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，claim 时注入来源 Review/Findings，修复后再走 Handoff 并产生新的 Review round；达到可配置轮次预算则停止自动循环并转交用户。用户现在可以从 Web 新建 OpenCode Builder 或 Reviewer，并把它与 Codex/Mock Profile 组合使用。架构继续保持 provider/model-neutral。下一步是 Phase 3.4：在一屏 Timeline 中更直观地展示 Builder、Reviewer、返工和多轮 Review 的完整协作图。
+Phase 3.3 自动返工主链、OpenCode 可配置 Adapter、Agent 长期提示词和统一执行权限已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，修复后再走 Handoff 并产生新的 Review round；真实 OpenCode Builder → Codex Reviewer 已通过配置快照与权限验收。
+
+下一步是 Phase 3.4：按 ADR-017 引入简化 TeamAct。先用封闭 `NextAction` 统一现有继续、Handoff、Review、返工、等待用户和完成语义，再在一屏任务概览中展示当前责任、证据、裁决和下一动作。暂不建设任意 Workflow DAG；方案设计、UX、安全等通过 AgentProfile 专业方向和动态 Handoff 扩展。Phase 4 的 lease/reconciliation 完成后，才评估并行 fan-out 和外部信号等待。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

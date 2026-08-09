@@ -43,7 +43,7 @@ interface AgentAdapter {
 
 ### 4. Agent 间交接不是普通文本
 
-原项目用 A2A、mention 路由和球权概念表达“谁应当继续行动”。RelayHub 不实现完整球权体系，但会把交接建模为结构化 `handoff`：来源 Agent、目标 Agent、任务说明、上下文摘要和验收要求都可查询。
+原项目用 TeamAct、A2A、mention 路由和球权概念表达“谁应当继续行动”。RelayHub 不复制完整球权体系，而是提炼为 `State → Owner → Action → Evidence → Verdict → Route` 六步协作语义：Agent 通过封闭的 `NextAction` 提出继续、交接、审查、等待或完成意图，平台验证后再写入结构化 `handoff`、后续 Run 和审计事件。当前责任优先从既有 Task/Run/Handoff/Event 推导，不提前增加重复生命周期实体。
 
 ### 5. 记忆的真相源与索引分离
 
@@ -122,6 +122,20 @@ Agent A 提交结构化 Handoff
 ```
 
 结构化 Handoff 至少包含来源 Run、目标 Agent、任务摘要、产物引用和验收要求。自然语言中的 `@name` 可以作为界面语法，但不能成为唯一可靠的执行协议。
+
+## 简化 TeamAct 与动态责任流转
+
+状态：**Accepted，参见 ADR-017。**
+
+RelayHub 参考原项目的动态责任流转机制，但不建设通用 Workflow Engine，也不把每种专业角色写入平台状态机：
+
+- Task 始终能解释当前由用户、某个 Agent Run 还是平台等待条件负责；
+- Agent 负责判断下一步意图，Orchestrator 负责校验并执行状态与责任变化；
+- 方案设计、UX、安全和测试属于 AgentProfile 的提示词/专业方向，不产生新的平台权限身份；
+- SOP 或未来协作配方只提供建议路径与门禁，不能执行任意脚本或放宽权限；
+- 第一版保持单责任、串行 Handoff 和独立 Review，可靠性完成后才扩展并行 fan-out。
+
+该取舍保留了参考项目最有价值的责任、证据和路由契约，同时避免复制其面向更广场景形成的 Task、Thread、Ball、Invocation、Receipt、Waiting、Pack 等完整概念集合。
 
 ## 控制台 UX 参考原则
 

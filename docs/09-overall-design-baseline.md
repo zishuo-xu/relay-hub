@@ -242,6 +242,16 @@ acceptanceCriteria
 
 自然语言 `@reviewer` 可以作为 UI 便利语法，但必须先转换并确认成结构化 Handoff，不能直接成为状态迁移依据。
 
+### 简化 TeamAct 动态责任流转
+
+状态：**Accepted（2026-08-09），参见 ADR-017；尚未实现。**
+
+固定 Builder → Reviewer 主链验证完成后，RelayHub 的多 Agent 演进采用 `State → Owner → Action → Evidence → Verdict → Route` 作为统一外层语义。Agent 只提交封闭的 `NextAction` 意图；Orchestrator 校验当前责任、目标身份、权限、证据和循环预算后，才创建 Handoff/Run 并推进 Task。
+
+第一版 NextAction 限定为 `continue / handoff / request_review / wait_for_user / complete`。当前责任从既有 Task、Run、Handoff、Review 和 Event 推导，不新增独立 Ball 实体。SOP/协作配方只能给出建议路径和风险门禁，不成为任意脚本或通用 DAG 引擎；专业角色继续由 AgentProfile 的提示词、标签和权限表达。
+
+该机制允许任务按证据动态选择设计、实现、审查或用户决策，同时保持“模型提出意图、确定性平台改变状态”的边界。并行 fan-out、等待外部信号和集体裁决必须在 lease/reconciliation、并发预算和责任可观测性完成后再扩展。
+
 ---
 
 ## 5. 哪些数据是长期事实，谁有权修改？
@@ -447,6 +457,7 @@ flowchart TB
 - Token、成本、性能和诊断指标。
 - Worktree 保留策略。
 - Handoff artifact 类型。
+- NextAction 类型和责任查询投影；新增动作必须保持封闭 schema 和确定性守卫。
 - 搜索、索引和长期知识能力。
 - 单机到多机的部署策略。
 
