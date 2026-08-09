@@ -5,6 +5,7 @@ import {
 } from '@relay-hub/contracts';
 import { z } from 'zod';
 import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
+import { truncateText } from './bounded-text.js';
 import { superviseProcess } from './process-supervisor.js';
 
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
@@ -68,7 +69,7 @@ export function codexArgumentsForRun(claimed: ClaimedRun, workingDirectory: stri
 function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   if (!text) return '';
-  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+  return truncateText(text, limit);
 }
 
 function itemOf(event: Record<string, unknown>): Record<string, unknown> | null {

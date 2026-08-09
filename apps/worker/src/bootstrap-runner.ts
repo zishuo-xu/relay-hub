@@ -1,11 +1,12 @@
 import type { AgentEvent, BootstrapPolicy } from '@relay-hub/contracts';
+import { truncateText } from './bounded-text.js';
 import { superviseProcess } from './process-supervisor.js';
 
 const MAX_OUTPUT_SUMMARY = 2_000;
 
 function truncate(value: unknown, limit = MAX_OUTPUT_SUMMARY): string {
   const text = typeof value === 'string' ? value : String(value ?? '');
-  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+  return truncateText(text, limit);
 }
 
 function commandLabel(command: string, args: string[]): string {

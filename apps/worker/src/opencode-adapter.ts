@@ -8,6 +8,7 @@ import {
 } from '@relay-hub/contracts';
 import { z } from 'zod';
 import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
+import { truncateText } from './bounded-text.js';
 import { safeChildEnvironment, superviseProcess } from './process-supervisor.js';
 
 const OpenCodeEnvelopeSchema = z.object({
@@ -21,7 +22,7 @@ const MAX_EVENT_TEXT = 4_000;
 function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   if (!text) return '';
-  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+  return truncateText(text, limit);
 }
 
 export function openCodeRuntimePermissions(claimed: ClaimedRun): Record<string, unknown> {

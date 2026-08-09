@@ -1,5 +1,22 @@
 # 07. 实现状态
 
+## 2026-08-09：真实 Agent 配置闭环与证据长度边界
+
+### 已实现
+
+- 正式配置中的 OpenCode Builder 和 Codex Reviewer 已分别保存长期提示词与 Builder/Reviewer 权限模板；AgentProfile 继续作为未来 Run 的可编辑配置，Run 使用创建时的不可变快照。
+- 修复命令证据截断的边界错误：旧实现先截取上限长度再追加省略号，会让 2,000 字限制实际生成 2,001 字并使已完成的 Run 错误失败。
+- 新增统一的有界文本截断函数，Codex、OpenCode 和 Workspace Bootstrap 均保证省略号计入限制；不放宽合约字段长度，也不丢弃命令状态、退出码或证据记录。
+
+### 验证证据
+
+- 第一次真实任务 `a4313877-d14e-4d70-83fa-395d28d69b2a` 中，Reviewer 已提交 `approved`，但其长命令输出触发上述 2,001 字错误并让 Reviewer Run 失败，稳定复现了缺陷。
+- 修复后真实任务 `d635106d-633a-4942-bd32-f46442463029` 完成 OpenCode Builder Run `f9d9d396-ee43-4ae8-97f1-71f68f70a177` → Handoff → Codex Reviewer Run `11a2ca04-0b67-4c50-8274-7d2fb1ed8c12`；两个 Run 均为 `succeeded`，Review 为 `approved`、0 findings。
+- 任务使用 `require_user_confirmation`，Review 通过后保持 `waiting_for_user`，平台没有代替用户最终确认。
+- PostgreSQL 只读核对确认两个 Run 分别冻结了 OpenCode Builder 的 `workspace_write/outbound/internalSubagents=allow` 和 Codex Reviewer 的 `read_only/loopback/internalSubagents=deny`，长期提示词也与任务创建时的 Profile 一致。
+- 独立 worktree 自测 2/2 通过；HEAD 仍为基线提交 `a3425309d88a38fe1c3e241be500297c15f5139f`，三个实现文件保持未提交修改，证明 Builder 未自行 commit。Reviewer 只执行读取差异和测试，没有文件变更事件。
+- Worker 19/19 测试通过，其中新增边界用例断言包含省略号的结果仍严格为 2,000 字；默认 Workspace 根路径已恢复为 RelayHub 仓库。
+
 ## 2026-08-09：Agent 长期提示词与权限模板
 
 ### 已实现
@@ -13,7 +30,7 @@
 
 ### 验证证据
 
-- Contracts 23/23、Worker 17/17 测试通过，覆盖长期提示词、模板、不可执行组合拒绝、Codex/OpenCode 映射、Reviewer 与 Adapter 双重收紧和 Prompt 优先级。
+- Contracts 23/23、Worker 19/19 测试通过，覆盖长期提示词、模板、不可执行组合拒绝、Codex/OpenCode 映射、Reviewer 与 Adapter 双重收紧、Prompt 优先级和证据长度边界。
 - 全新隔离 PostgreSQL 中 API 19/19 测试通过，验证 Agent 修改后，Worker claim 仍获得 Run 创建时的旧模型、长期提示词和权限策略；测试数据库已在验收后单独清理，正式数据未改动。
 - 全仓 `pnpm check` 通过，包含所有 TypeScript 类型检查、单元测试和 Next.js 生产构建。
 - Codex 本机 permission profile 探针确认 `:workspace` + 回环网络配置可加载，并允许在指定工作区写入测试文件。
