@@ -22,6 +22,7 @@ import {
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
 import { mapAgentProfile, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
+import { projectTaskCoordination } from '../task-coordination.js';
 
 export async function listTasks(db: RelayDatabase): Promise<Task[]> {
   const rows = await db
@@ -57,7 +58,7 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     : [];
   const mappedFindings = findingRows.map(mapReviewFinding);
   const currentRun = runRows.find((run) => run.id === taskRow.currentRunId) ?? runRows[0];
-  return {
+  const detail = {
     task: mapTask(taskRow, currentRun?.agentId ?? ''),
     runs: runRows.map(mapRun),
     events: eventRows.map(mapEvent),
@@ -67,6 +68,7 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
       mappedFindings.filter((finding) => finding.reviewId === review.id),
     )),
   };
+  return { ...detail, coordination: projectTaskCoordination(detail) };
 }
 
 export async function getTaskEvents(

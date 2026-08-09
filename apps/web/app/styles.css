@@ -335,6 +335,13 @@ textarea:focus-visible {
 .workflow-steps strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-steps li > div span { color: var(--muted); font-size: 8px; text-transform: none; }
 
+.coordination-grid { display: grid; margin: 12px 0 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.coordination-grid > div { min-width: 0; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+.coordination-grid dt { color: var(--muted); font-size: 7px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
+.coordination-grid dd { overflow: hidden; margin: 4px 0 0; color: var(--text-secondary); font-size: 9px; font-weight: 680; line-height: 1.35; text-overflow: ellipsis; }
+.coordination-grid > div:nth-child(3) { grid-column: span 1; }
+.coordination-reason { margin: 9px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+
 .review-verdict { flex: none; padding: 5px 7px; color: var(--accent); border-radius: 999px; background: var(--accent-soft); font-size: 8px; text-transform: capitalize; }
 .review-verdict.changes_requested, .review-verdict.blocked { color: var(--danger); background: var(--danger-soft); }
 .result-card small { display: block; margin-top: 9px; color: var(--muted); font-size: 9px; }
@@ -541,6 +548,7 @@ textarea:focus-visible {
   .milestone-card, .worktree-card { grid-column: auto; }
   .workflow-steps li > div { display: none; }
   .workflow-steps li:not(:last-child)::after { right: 7px; left: 21px; }
+  .coordination-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-height: 650px) and (min-width: 721px) {

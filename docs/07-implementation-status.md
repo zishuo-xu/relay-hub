@@ -1,5 +1,24 @@
 # 07. 实现状态
 
+## 2026-08-10：统一任务责任与 Route 查询投影
+
+### 已实现
+
+- Task Detail 新增只读 `TaskCoordinationView`，统一返回 State、Owner、Evidence、Verdict、Route；投影器不写数据库，也不创建与 Task/Run 重复的生命周期实体。
+- 当前责任人严格分为 Agent、用户、RelayHub 平台或终态无责任人。queued/review dispatch、Builder/Reviewer/repair 执行、用户确认、取消、终态和 current Run 缺失均有确定规则。
+- Evidence 汇总最近 Builder Outcome 的命令结果和最新 Handoff 的 artifact/evidence refs；Verdict 区分未请求、待审查和三种结构化 Review 结论。
+- Route 复用封闭 NextAction 语义并补充 `terminal` 查询结果；Orchestrator 仍是唯一状态迁移者，投影不会代替它执行动作。
+- 单屏任务概览移除前端自行推断的固定三步流程，直接展示 State、Owner、Evidence、Verdict、Route 和责任原因；详细日志继续独立滚动。
+- Event 继续作为 append-only 审计历史，不参与当前责任判定，避免事件文本与 canonical entity 形成双重状态。
+- 全仓检查同时暴露并修复 ProcessSupervisor 的 stdin `EPIPE` 竞态：CLI 子进程提前关闭输入时不再产生未处理异常；其他 stdin 错误仍会失败，不会被静默吞掉。
+
+### 验证证据
+
+- `task-coordination.test.ts` 8/8 通过，覆盖平台待派发、Builder/Reviewer 责任、Handoff 证据、用户确认、终态无悬空责任和 current Run 缺失异常。
+- 全新隔离 PostgreSQL 完成全部 migration 后，API 27/27 通过；完整 Builder → Reviewer → repair → second Reviewer 链在 pending、dispatch、consumed、用户确认和终态逐点验证责任投影。测试数据库验收后已单独清理。
+- Worker 22/22 通过，新增提前关闭 stdin 的回归用例；全仓 `pnpm check` 通过，包含类型检查、单元测试和 Next.js production build。
+- 正式 API 对历史 approved Task 投影为 Owner=用户、Evidence=3/3 命令通过、Verdict=approved、Route=确认完成；`http://localhost:3010/` 已加载新 production bundle。614 × 772 视口下 document/body 与 viewport 等高、Workspace 无外层溢出，浏览器控制台无错误。
+
 ## 2026-08-09：NextAction 与无损 Handoff V2 第一切片
 
 ### 已实现

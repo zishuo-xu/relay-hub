@@ -459,9 +459,6 @@ export default function HomePage() {
   );
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedReviewer = agents.find((agent) => agent.id === selectedReviewerAgentId) ?? null;
-  const currentAgent = currentRun?.agentProfileSnapshot
-    ?? agents.find((agent) => agent.id === currentRun?.agentId)
-    ?? null;
   const canCancel = currentRun
     ? !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status)
     : false;
@@ -497,7 +494,6 @@ export default function HomePage() {
         canCancel={canCancel}
         canConfirm={canConfirm}
         confirming={confirming}
-        currentAgent={currentAgent}
         currentRun={currentRun}
         detail={detail}
         error={error}

@@ -5,10 +5,11 @@ import type {
   AgentCapability,
   AgentHealth,
   AgentProfile,
-  AgentProfileSnapshotSummary,
   AgentRuntimeDescriptor,
   AgentPermissionPreset,
   CompletionPolicy,
+  CoordinationReason,
+  CoordinationRouteAction,
   ExecutionPolicy,
   ProviderConnection,
   ProviderProtocol,
@@ -28,6 +29,31 @@ const statusLabels: Record<Task['status'], string> = {
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
+};
+
+const coordinationReasonLabels: Record<CoordinationReason, string> = {
+  task_draft: '任务仍由用户准备',
+  task_terminal: '任务已经进入终态',
+  current_run_missing: '当前 Run 缺失，需要平台或用户处理',
+  run_waiting_for_dispatch: 'Run 已创建，等待平台派发',
+  run_owned_by_agent: 'Agent 正在执行当前 Run',
+  review_waiting_for_dispatch: 'Reviewer Run 已创建，等待平台派发',
+  review_in_progress: 'Reviewer 正在独立检查并准备裁决',
+  repair_in_progress: 'Builder 正在根据 Finding 返工',
+  handoff_pending: 'Builder 已准备交接，等待完成后派发 Reviewer',
+  workflow_resolution_pending: 'Run 已结束，平台正在收敛下一状态',
+  user_confirmation_required: 'Review 已通过，等待用户最终确认',
+  user_attention_required: '平台需要用户处理阻塞或异常',
+  cancellation_in_progress: '平台正在取消并回收当前 Run',
+};
+
+const routeActionLabels: Record<CoordinationRouteAction, string> = {
+  continue: '继续执行',
+  handoff: '交接 Agent',
+  request_review: '进入审查',
+  wait_for_user: '等待用户',
+  complete: '确认完成',
+  terminal: '流程结束',
 };
 
 const eventLabels: Record<string, string> = {
@@ -368,7 +394,6 @@ type CurrentRun = TaskDetail['runs'][number] | null;
 interface TimelineWorkspaceProps {
   detail: TaskDetail | null;
   currentRun: CurrentRun;
-  currentAgent: AgentProfile | AgentProfileSnapshotSummary | null;
   canCancel: boolean;
   canConfirm: boolean;
   confirming: boolean;
@@ -382,7 +407,6 @@ interface TimelineWorkspaceProps {
 export function TimelineWorkspace({
   detail,
   currentRun,
-  currentAgent,
   canCancel,
   canConfirm,
   confirming,
@@ -395,18 +419,20 @@ export function TimelineWorkspace({
   const [workspaceView, setWorkspaceView] = useState<'overview' | 'activity'>('overview');
   const latestReview = detail?.reviews.at(-1);
   const latestHandoff = detail?.handoffs.at(-1);
+  const coordination = detail?.coordination;
   const milestoneEvents = detail?.events.filter((event) => ![
     'output.delta',
     'tool.called',
     'tool.completed',
     'run.claimed',
   ].includes(event.type)).slice(-4).reverse() ?? [];
-  const builderRuns = detail?.runs.filter((run) => run.triggerType === 'user' || run.triggerType === 'retry') ?? [];
-  const reviewerRuns = detail?.runs.filter((run) => run.triggerType === 'review') ?? [];
-  const builderDone = builderRuns.some((run) => run.status === 'succeeded');
-  const reviewDone = Boolean(latestReview) || reviewerRuns.some((run) => run.status === 'succeeded');
-  const taskDone = detail?.task.status === 'completed';
-  const completionLabel = detail?.task.completionPolicy === 'require_user_confirmation' ? '用户确认' : '自动完成';
+  const ownerLabel = coordination?.owner.kind === 'agent'
+    ? coordination.owner.label ?? coordination.owner.agentId ?? 'Agent'
+    : coordination?.owner.kind === 'user'
+      ? '用户'
+      : coordination?.owner.kind === 'platform'
+        ? 'RelayHub 平台'
+        : '无当前责任人';
   return (
     <section className="workspace">
       <header className="workspace-header">
@@ -428,7 +454,7 @@ export function TimelineWorkspace({
       {detail ? (
         <>
           <section className="run-overview" aria-label="当前执行信息">
-            <div><span>当前责任 Agent</span><strong>{currentAgent?.name ?? detail.task.agentId}</strong></div>
+            <div><span>当前责任</span><strong>{ownerLabel}</strong></div>
             <div><span>Run</span><code>{currentRun?.id.slice(0, 8) ?? '—'}</code></div>
             <div><span>版本</span><strong>v{detail.task.version}</strong></div>
             <div className="run-state"><span>状态</span><strong>{currentRun?.status ?? '等待中'}</strong></div>
@@ -479,19 +505,19 @@ export function TimelineWorkspace({
 
                 <article className="overview-card workflow-card">
                   <header>
-                    <div><span>协作流程</span><h2>当前走到哪一步</h2></div>
+                    <div><span>协作控制</span><h2>当前责任与下一步</h2></div>
                   </header>
-                  <ol className="workflow-steps">
-                    <li data-state={builderDone ? 'done' : 'current'}>
-                      <i>{builderDone ? '✓' : '1'}</i><div><strong>Builder</strong><span>{builderRuns.length} 个 Run</span></div>
-                    </li>
-                    <li data-state={reviewDone ? 'done' : builderDone ? 'current' : 'pending'}>
-                      <i>{reviewDone ? '✓' : '2'}</i><div><strong>Reviewer</strong><span>{reviewerRuns.length} 个 Run</span></div>
-                    </li>
-                    <li data-state={taskDone ? 'done' : reviewDone ? 'current' : 'pending'}>
-                      <i>{taskDone ? '✓' : '3'}</i><div><strong>{completionLabel}</strong><span>{statusLabels[detail.task.status]}</span></div>
-                    </li>
-                  </ol>
+                  <dl className="coordination-grid">
+                    <div><dt>State</dt><dd>{statusLabels[detail.coordination.state.taskStatus]} · {detail.coordination.state.runStatus ?? '无 Run'}</dd></div>
+                    <div><dt>Owner</dt><dd>{ownerLabel}</dd></div>
+                    <div>
+                      <dt>Evidence</dt>
+                      <dd>{detail.coordination.evidence.succeededCommandCount}/{detail.coordination.evidence.commandCount} 命令通过 · {detail.coordination.evidence.artifactCount + detail.coordination.evidence.evidenceRefCount} 引用</dd>
+                    </div>
+                    <div><dt>Verdict</dt><dd>{detail.coordination.verdict.status}{detail.coordination.verdict.round ? ` · #${detail.coordination.verdict.round}` : ''}</dd></div>
+                    <div><dt>Route</dt><dd>{routeActionLabels[detail.coordination.route.action]}</dd></div>
+                  </dl>
+                  <p className="coordination-reason">{coordinationReasonLabels[detail.coordination.route.reason]}</p>
                 </article>
 
                 <article className="overview-card result-card">

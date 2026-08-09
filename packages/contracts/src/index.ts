@@ -717,12 +717,69 @@ export interface RunEvent {
   dedupeKey: string;
 }
 
+export type CoordinationOwnerKind = 'agent' | 'user' | 'platform' | 'none';
+export type CoordinationVerdictStatus = 'not_requested' | 'pending' | ReviewVerdict;
+export type CoordinationRouteAction = NextAction['type'] | 'terminal';
+export type CoordinationReason =
+  | 'task_draft'
+  | 'task_terminal'
+  | 'current_run_missing'
+  | 'run_waiting_for_dispatch'
+  | 'run_owned_by_agent'
+  | 'review_waiting_for_dispatch'
+  | 'review_in_progress'
+  | 'repair_in_progress'
+  | 'handoff_pending'
+  | 'workflow_resolution_pending'
+  | 'user_confirmation_required'
+  | 'user_attention_required'
+  | 'cancellation_in_progress';
+
+export interface TaskCoordinationView {
+  state: {
+    taskStatus: TaskStatus;
+    runId?: string;
+    runStatus?: RunStatus;
+  };
+  owner: {
+    kind: CoordinationOwnerKind;
+    reason: CoordinationReason;
+    agentId?: string;
+    runId?: string;
+    label?: string;
+  };
+  evidence: {
+    commandCount: number;
+    succeededCommandCount: number;
+    failedCommandCount: number;
+    artifactCount: number;
+    evidenceRefCount: number;
+    handoffId?: string;
+    handoffStatus?: Handoff['status'];
+    handoffVersion?: number;
+  };
+  verdict: {
+    status: CoordinationVerdictStatus;
+    findingCount: number;
+    reviewId?: string;
+    round?: number;
+    summary?: string;
+  };
+  route: {
+    action: CoordinationRouteAction;
+    reason: CoordinationReason;
+    allowedActions: NextAction['type'][];
+    targetAgentId?: string;
+  };
+}
+
 export interface TaskDetail {
   task: Task;
   runs: Run[];
   events: RunEvent[];
   handoffs: Handoff[];
   reviews: Review[];
+  coordination: TaskCoordinationView;
 }
 
 export interface ClaimedRun {

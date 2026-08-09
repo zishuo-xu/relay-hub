@@ -64,6 +64,7 @@ export async function* superviseProcess(
   let timedOut = false;
   let cancelled = false;
   let stderr = '';
+  let stdinFailure: Error | undefined;
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk: string) => {
     stderr = `${stderr}${chunk}`.slice(-16_000);
@@ -94,12 +95,17 @@ export async function* superviseProcess(
   }, options.timeoutMs);
   timeout.unref();
 
+  child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED') return;
+    stdinFailure = error;
+  });
   child.stdin.end(options.stdin);
   const lines = createInterface({ input: child.stdout, crlfDelay: Number.POSITIVE_INFINITY });
 
   try {
     for await (const line of lines) yield { type: 'stdout.line', line };
     const outcome = await exitPromise;
+    if (stdinFailure) throw stdinFailure;
     yield { type: 'process.exit', ...outcome, timedOut, cancelled, stderr };
   } finally {
     clearTimeout(timeout);

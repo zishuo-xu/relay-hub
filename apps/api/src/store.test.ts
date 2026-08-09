@@ -350,6 +350,12 @@ suite('PostgresStore integration', () => {
         contextSummary: 'Builder changed the implementation and ran the relevant tests.',
       },
     ]);
+    expect(pending?.coordination).toMatchObject({
+      owner: { kind: 'agent', agentId: DEFAULT_MOCK_AGENT_ID, reason: 'handoff_pending' },
+      route: { action: 'request_review', targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID },
+      evidence: { artifactCount: 1, evidenceRefCount: 1, handoffVersion: 2 },
+      verdict: { status: 'pending' },
+    });
 
     await store.recordAgentEvent(builderRunId, 'handoff-builder-completed', {
       type: 'run.completed',
@@ -370,6 +376,10 @@ suite('PostgresStore integration', () => {
     expect(reviewing?.events.at(-1)).toMatchObject({
       type: 'task.review_requested',
       payload: { targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID, targetRunId: reviewerRun?.id },
+    });
+    expect(reviewing?.coordination).toMatchObject({
+      owner: { kind: 'platform', reason: 'review_waiting_for_dispatch', runId: reviewerRun?.id },
+      route: { action: 'request_review', targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID },
     });
 
     if (!reviewerRun) throw new Error('Reviewer Run was not created');
@@ -405,6 +415,12 @@ suite('PostgresStore integration', () => {
       type: 'handoff.consumed',
       source: 'worker',
       payload: { handoffId: claimedHandoff.id, contentDigest: claimedHandoff.contentDigest },
+    });
+    expect(consumed?.coordination).toMatchObject({
+      owner: { kind: 'agent', agentId: DEFAULT_MOCK_REVIEWER_AGENT_ID, reason: 'review_in_progress' },
+      evidence: { handoffStatus: 'accepted' },
+      verdict: { status: 'pending' },
+      route: { action: 'continue' },
     });
     await store.recordAgentEvent(reviewerRun.id, 'reviewer-started', { type: 'run.started' });
     await expect(
@@ -522,9 +538,18 @@ suite('PostgresStore integration', () => {
       type: 'task.review_approved',
       payload: { round: 2, reason: 'user_confirmation_required', verdict: 'approved' },
     });
+    expect(reviewed?.coordination).toMatchObject({
+      owner: { kind: 'user', reason: 'user_confirmation_required' },
+      verdict: { status: 'approved', round: 2 },
+      route: { action: 'complete', allowedActions: ['complete'] },
+    });
     const confirmed = await store.confirmTaskCompletion(created.value.detail.task.id);
     expect(confirmed.value.task.status).toBe('completed');
     expect(confirmed.value.events.at(-1)?.type).toBe('task.user_confirmed');
+    expect(confirmed.value.coordination).toMatchObject({
+      owner: { kind: 'none', reason: 'task_terminal' },
+      route: { action: 'terminal', allowedActions: [] },
+    });
   });
 
   it('returns control to the user when the Review round budget is exhausted', async () => {

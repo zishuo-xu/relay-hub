@@ -89,7 +89,7 @@
 5. [x] `changes_requested` 后的修复 Run、结构化 Finding 注入和 Review 轮次预算。
 6. [x] 引入简化 TeamAct 的封闭 `NextAction` 合约，并让 Builder 的 `request_review/wait_for_user` 与 Handoff V2 使用统一 Route 语义。
 7. [ ] 将 Review verdict、返工、用户确认和完成继续收敛到统一 Route 投影，同时保持 Orchestrator 为唯一状态迁移者。
-8. [ ] 从现有 Task/Run/Handoff/Review/Event 完整推导 State、Owner、Evidence、Verdict、Route；当前页面已先展示责任 Agent、Handoff 状态和下一动作。
+8. [x] 从现有 Task/Run/Handoff/Review/RunOutcome 推导只读 `TaskCoordinationView`，在 Task Detail 和单屏概览统一展示 State、Owner、Evidence、Verdict、Route；Event 保持审计职责，不作为当前状态真相。
 9. [ ] 在不引入通用 Workflow Engine 的前提下，为方案、UX、安全等 AgentProfile 专业方向提供动态 Handoff 路径。
 
 退出条件：标准演示场景端到端通过，且交接链可以由数据库查询重建。
@@ -140,7 +140,7 @@
 
 Phase 3.3 自动返工主链、OpenCode 可配置 Adapter、Agent 长期提示词和统一执行权限已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，修复后再走 Handoff 并产生新的 Review round；真实 OpenCode Builder → Codex Reviewer 已通过配置快照与权限验收。
 
-Phase 3.4 的第一切片已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验和 `handoff.consumed` 已接入现有 Builder → Reviewer 主链。下一步先完成统一 Route/责任查询投影，让 Review、返工、等待用户和完成在页面与 API 中使用同一组 State/Owner/Evidence/Verdict/Route 语义；之后才开放方案、UX、安全等专业 Agent 的动态 Handoff。暂不建设任意 Workflow DAG；Phase 4 的 lease/reconciliation 完成后，才评估并行 fan-out 和外部信号等待。
+Phase 3.4 的前两个切片已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验、`handoff.consumed` 和统一责任查询投影已接入现有 Builder → Reviewer 主链。下一步先用真实 OpenCode Builder → Codex Reviewer 验收 Handoff V2 与责任投影，再开放方案、UX、安全等专业 Agent 的顺序型动态 Handoff。暂不建设任意 Workflow DAG；Phase 4 的 lease/reconciliation 完成后，才评估并行 fan-out 和外部信号等待。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

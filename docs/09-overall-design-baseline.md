@@ -154,6 +154,8 @@ Verdict    证据是否满足验收与审查标准？
 Route      完成、返工、等待，还是交给下一个 Agent？
 ```
 
+**Implemented（2026-08-10）：** API 已通过只读 `TaskCoordinationView` 从 Task、current Run、Handoff、Review 和 RunOutcome 统一投影以上五类可查询事实。Event 只保留审计用途；投影不写状态、不替代 Orchestrator，也不新增 Ball/Custody 表。单屏任务概览直接消费该投影，避免前端重复解释工作流。
+
 ### 标准 Builder → Reviewer 流程
 
 ```mermaid

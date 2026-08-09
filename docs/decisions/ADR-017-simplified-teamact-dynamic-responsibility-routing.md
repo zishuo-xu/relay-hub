@@ -54,6 +54,8 @@ RelayHub 已完成固定的 Builder → Reviewer → 用户确认/返工主链�
 - Handoff V2 持久化 objective、context summary、artifact/evidence refs、验收标准、decisions、open questions、risks 和 NextAction；平台从 Task canonical truth 写入验收标准，不信任 Agent 改写。
 - 每个 V2 交接包在写入时生成 SHA-256 内容摘要；Reviewer claim 在事务内复算摘要，目标 Worker 加载后回报 `handoff.consumed`，Handoff 从 `dispatched` 变为 `accepted`。
 - Reviewer Prompt 从持久化交接包组装上下文；页面展示当前责任 Agent、Handoff 版本/状态/下一动作和接收事件。
+- `TaskCoordinationView` 已作为只读查询投影加入 Task Detail：它只从 Task、current Run、Handoff、Review 和 RunOutcome 推导 State、Owner、Evidence、Verdict、Route，不读取 Event 猜测当前状态，也不写入新的生命周期事实。
+- 非终态 Task 必须得到 Agent、用户或平台责任人；终态 Task 明确返回无责任人和 `terminal` Route。缺失 current Run 等异常会投影为平台责任和等待用户，而不是静默悬空。
 - 尚未把 Reviewer verdict、repair、用户确认全部改造成统一 NextAction 输入，也尚未开放通用动态目标 Handoff；这些仍由现有确定性 Orchestrator 路径执行。
 
 ## 明确不做
