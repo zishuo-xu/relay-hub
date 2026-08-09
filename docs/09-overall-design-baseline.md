@@ -409,7 +409,7 @@ flowchart TB
 4. Queue 投递不能直接决定 Task 或 Run 的业务终态。
 5. Handoff 必须先持久化，再唤醒目标 Agent。
 6. 自由文本不能直接改变责任人、状态或权限。
-7. Agent 回调身份由服务端 token 解析，不能信任请求自报的 agentId/taskId。**Implemented：** control/event 已绑定单次 Run token；claim 的 Worker 身份认证待 lease 阶段补齐。
+7. Agent 回调身份由服务端 token 解析，不能信任请求自报的 agentId/taskId；CLI 内部子 Agent 也不能凭 provider 身份成为平台 Agent。**Implemented：** control/event 已绑定单次 Run token；claim 的 Worker 身份认证待 lease 阶段补齐。
 8. 写入型并行 Run 必须隔离 worktree；Reviewer 默认只读。
 9. 关键状态变化必须留下 append-only Event 和因果引用。
 10. 模型输出不是完成证明；完成由合法终态事件和必要证据共同决定。
@@ -426,6 +426,8 @@ flowchart TB
 - Run 必须保存 Workspace 策略快照，保证历史执行能够解释和复现。
 
 **Implemented（2026-08-08）：** AgentProfile 已支持 `mock`、`codex_cli` 和 `opencode_cli`。OpenCode 配置保存精确 `provider/model` 及可选 variant、agent 名称和凭证环境变量引用；不保存密钥值。Builder/Reviewer 复用同一 Run、Worktree、Handoff、Review 和事件协议，角色权限由 Adapter 在每次执行时注入。健康检测只确认 CLI/模型目录，不把外部鉴权或模型调用混入配置写入事务。
+
+**Accepted（2026-08-09，尚未实现）：** 平台 Agent 是拥有 AgentProfile、Run、Token 和责任状态的顶层主体；CLI 内部子 Agent 只是父 Run 的实现细节。RelayHub 只决定是否允许主 Agent 使用该 CLI 能力，并强制整个执行树不能超出父 Run 权限，不管理内部拆分数量和深度。内部子 Agent 不能拥有独立 Handoff/Review authority；需要独立责任边界时必须创建新的平台 Run。
 
 ---
 

@@ -199,6 +199,8 @@ OpenCode Adapter 仍服从统一 Worktree 和角色边界：Builder 可以在当
 
 Codex Reviewer 使用 RelayHub 注入的命名 permission profile，将文件权限与网络权限拆开：Builder Worktree 继承 `:read-only`，仅允许 `localhost` / `127.0.0.1` 的 sandboxed network 和本地监听，用于独立复跑需要临时服务的测试。外部网络和非回环监听不开放；Builder 与 repair Run 仍使用 `workspace-write`。该边界由 Adapter 启动参数强制，不依赖 Prompt 或用户级 Codex 配置。
 
+**Accepted（2026-08-09，尚未实现）：** RelayHub 只编排平台级 Agent；CLI 内部子 Agent 的任务拆分、数量和协作方式由主 Agent 自己控制。内部子 Agent 不是 `AgentProfile` 或独立 `Run`，没有自己的 Run Token、Handoff 或 Review authority，只能在父 Run 的权限和生命周期内工作。第一版平台配置只需要 `internalSubagents = deny | allow`；需要独立责任、权限或长期状态的子任务必须由 RelayHub 创建新的平台 Run。
+
 ReviewPolicy 可以配置：
 
 - Reviewer 必须与 Builder 使用不同 AgentProfile；
