@@ -21,8 +21,9 @@ import {
   type TaskDetail,
   type Workspace,
 } from '@relay-hub/contracts';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { createAgentEditorDraft, isLatestAgentEditorRequest } from './agent-editor-state';
 import {
   AgentConfigDrawer,
   AppRail,
@@ -67,6 +68,7 @@ export default function HomePage() {
   );
   const [agentConfigPermissionPreset, setAgentConfigPermissionPreset] = useState<AgentPermissionPreset | 'custom'>('builder_standard');
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
+  const [agentConfigLoading, setAgentConfigLoading] = useState(false);
   const [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeDescriptor[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
@@ -87,6 +89,7 @@ export default function HomePage() {
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
   const [connectionEnabled, setConnectionEnabled] = useState(true);
   const [connectionLiveConsent, setConnectionLiveConsent] = useState(false);
+  const agentEditorRequestId = useRef(0);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -248,60 +251,61 @@ export default function HomePage() {
   }
 
   async function openAgentConfiguration(agent?: AgentProfile) {
+    const requestId = agentEditorRequestId.current + 1;
+    agentEditorRequestId.current = requestId;
     setCreateOpen(false);
     setAgentConfigOpen(true);
+    setAgentConfigLoading(true);
     setAgentHealth(null);
     setConnectionOpen(false);
-    const response = await fetch(`${apiUrl}/api/agent-runtimes`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`无法读取 Agent CLI：${response.status}`);
-    const payload = (await response.json()) as { runtimes: AgentRuntimeDescriptor[] };
-    setAgentRuntimes(payload.runtimes);
-    if (agent) {
-      const config = agent.config;
-      setEditingAgentId(agent.id);
-      setAgentConfigName(agent.name);
-      setAgentConfigCapabilities(agent.capabilities.filter(
-        (capability): capability is AgentCapability => capability === 'implement' || capability === 'review',
-      ));
-      setAgentConfigAdapter(agent.adapterType);
-      setAgentConfigConnectionId(agent.providerConnectionId ?? '');
-      setAgentConfigModel(typeof config.model === 'string' ? config.model : '');
-      setAgentConfigVariant(typeof config.variant === 'string' ? config.variant : '');
-      setAgentConfigAgentName(typeof config.agentName === 'string' ? config.agentName : '');
-      setAgentConfigInstructions(agent.instructions ?? '');
-      const policy = agent.executionPolicy ?? defaultExecutionPolicy(agent.adapterType, agent.capabilities);
-      setAgentConfigExecutionPolicy(policy);
-      setAgentConfigPermissionPreset(identifyExecutionPolicyPreset(agent.adapterType, policy));
-      setAgentConfigEnabled(agent.enabled);
-      return;
+    const initialDraft = createAgentEditorDraft(agent, connections, agentRuntimes);
+    setEditingAgentId(initialDraft.editingAgentId);
+    setAgentConfigName(initialDraft.name);
+    setAgentConfigCapabilities(initialDraft.capabilities);
+    setAgentConfigAdapter(initialDraft.adapterType);
+    setAgentConfigConnectionId(initialDraft.providerConnectionId);
+    setAgentConfigModel(initialDraft.model);
+    setAgentConfigVariant(initialDraft.variant);
+    setAgentConfigAgentName(initialDraft.agentName);
+    setAgentConfigInstructions(initialDraft.instructions);
+    setAgentConfigExecutionPolicy(initialDraft.executionPolicy);
+    setAgentConfigPermissionPreset(initialDraft.permissionPreset);
+    setAgentConfigEnabled(initialDraft.enabled);
+
+    try {
+      const response = await fetch(`${apiUrl}/api/agent-runtimes`, { cache: 'no-store' });
+      if (!isLatestAgentEditorRequest(requestId, agentEditorRequestId.current)) return;
+      if (!response.ok) throw new Error(`无法读取 Agent CLI：${response.status}`);
+      const payload = (await response.json()) as { runtimes: AgentRuntimeDescriptor[] };
+      setAgentRuntimes(payload.runtimes);
+      if (!agent) {
+        const refreshedDraft = createAgentEditorDraft(undefined, connections, payload.runtimes);
+        setAgentConfigModel((current) => current || refreshedDraft.model);
+      }
+    } catch (reason) {
+      if (!isLatestAgentEditorRequest(requestId, agentEditorRequestId.current)) return;
+      throw reason;
+    } finally {
+      if (isLatestAgentEditorRequest(requestId, agentEditorRequestId.current)) setAgentConfigLoading(false);
     }
-    const openCode = payload.runtimes.find((runtime) => runtime.adapterType === 'opencode_cli');
-    const defaultConnection = connections.find((connection) => connection.adapterType === 'opencode_cli' && connection.enabled);
-    setEditingAgentId(null);
-    setAgentConfigName('');
-    setAgentConfigCapabilities(['implement']);
-    setAgentConfigAdapter('opencode_cli');
-    setAgentConfigConnectionId(defaultConnection?.id ?? '');
-    setAgentConfigModel(defaultConnection?.kind === 'custom_api' ? defaultConnection.models[0] ?? '' : openCode?.models[0] ?? '');
-    setAgentConfigVariant('');
-    setAgentConfigAgentName('');
-    setAgentConfigInstructions('');
-    const policy = defaultExecutionPolicy('opencode_cli', ['implement']);
-    setAgentConfigExecutionPolicy(policy);
-    setAgentConfigPermissionPreset('builder_standard');
-    setAgentConfigEnabled(true);
+  }
+
+  function closeAgentConfiguration() {
+    agentEditorRequestId.current += 1;
+    setAgentConfigLoading(false);
+    setAgentConfigOpen(false);
   }
 
   function openSettings(view: 'connections' | 'agents' = 'connections') {
     setCreateOpen(false);
-    setAgentConfigOpen(false);
+    closeAgentConfiguration();
     setConnectionOpen(false);
     setSettingsView(view);
     setSettingsOpen(true);
   }
 
   function openProviderConnectionConfiguration(connection?: ProviderConnection) {
-    setAgentConfigOpen(false);
+    closeAgentConfiguration();
     setConnectionHealth(null);
     setConnectionLiveConsent(false);
     if (connection) {
@@ -501,7 +505,7 @@ export default function HomePage() {
         onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onConfigureAgents={() => openSettings('agents')}
         onNewTask={() => {
-          setAgentConfigOpen(false);
+          closeAgentConfiguration();
           setCreateOpen(true);
         }}
         />
@@ -543,6 +547,7 @@ export default function HomePage() {
         enabled={agentConfigEnabled}
         connections={connections}
         health={agentHealth}
+        loading={agentConfigLoading}
         model={agentConfigModel}
         runtimes={agentRuntimes}
         name={agentConfigName}
@@ -559,7 +564,7 @@ export default function HomePage() {
             setAgentConfigExecutionPolicy(executionPolicyPreset(value, agentConfigPermissionPreset));
           }
         }}
-        onClose={() => setAgentConfigOpen(false)}
+        onClose={closeAgentConfiguration}
         onAgentNameChange={setAgentConfigAgentName}
         onInstructionsChange={setAgentConfigInstructions}
         onExecutionPolicyChange={(policy) => {

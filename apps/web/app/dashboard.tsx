@@ -17,7 +17,14 @@ import type {
   Task,
   TaskDetail,
 } from '@relay-hub/contracts';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
+import {
+  isFocusTask,
+  resolveTaskFilter,
+  selectedTaskIdForFocusFilter,
+  type TaskFilter,
+  visibleTasksForFilter,
+} from './task-filter';
 
 const statusLabels: Record<Task['status'], string> = {
   draft: '草稿',
@@ -215,20 +222,20 @@ interface TaskSidebarProps {
 }
 
 export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebarProps) {
-  const [taskFilter, setTaskFilter] = useState<'focus' | 'all'>('focus');
-  const focusStatuses: Task['status'][] = [
-    'draft',
-    'queued',
-    'running',
-    'reviewing',
-    'changes_requested',
-    'waiting_for_user',
-    'failed',
-  ];
-  const focusCount = tasks.filter((task) => focusStatuses.includes(task.status)).length;
-  const visibleTasks = taskFilter === 'all'
-    ? tasks
-    : tasks.filter((task) => focusStatuses.includes(task.status) || task.id === selectedTaskId);
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('focus');
+  const effectiveTaskFilter = resolveTaskFilter(taskFilter, tasks, selectedTaskId);
+  const focusCount = tasks.filter(isFocusTask).length;
+  const visibleTasks = visibleTasksForFilter(tasks, effectiveTaskFilter);
+
+  useEffect(() => {
+    if (effectiveTaskFilter !== taskFilter) setTaskFilter(effectiveTaskFilter);
+  }, [effectiveTaskFilter, taskFilter]);
+
+  const showFocusTasks = () => {
+    const nextTaskId = selectedTaskIdForFocusFilter(tasks, selectedTaskId);
+    if (nextTaskId && nextTaskId !== selectedTaskId) onSelectTask(nextTaskId);
+    setTaskFilter('focus');
+  };
 
   return (
     <aside className="task-sidebar">
@@ -244,16 +251,16 @@ export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebar
       </div>
       <div className="task-filters" aria-label="任务筛选">
         <button
-          aria-pressed={taskFilter === 'focus'}
-          className={taskFilter === 'focus' ? 'active' : ''}
-          onClick={() => setTaskFilter('focus')}
+          aria-pressed={effectiveTaskFilter === 'focus'}
+          className={effectiveTaskFilter === 'focus' ? 'active' : ''}
+          onClick={showFocusTasks}
           type="button"
         >
           待处理 <span>{focusCount}</span>
         </button>
         <button
-          aria-pressed={taskFilter === 'all'}
-          className={taskFilter === 'all' ? 'active' : ''}
+          aria-pressed={effectiveTaskFilter === 'all'}
+          className={effectiveTaskFilter === 'all' ? 'active' : ''}
           onClick={() => setTaskFilter('all')}
           type="button"
         >
@@ -880,6 +887,7 @@ interface AgentConfigDrawerProps {
   connections: ProviderConnection[];
   runtimes: AgentRuntimeDescriptor[];
   saving: boolean;
+  loading: boolean;
   health: AgentHealth | null;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -913,6 +921,7 @@ export function AgentConfigDrawer({
   connections,
   runtimes,
   saving,
+  loading,
   health,
   onClose,
   onSubmit,
@@ -953,7 +962,7 @@ export function AgentConfigDrawer({
             <span className="agent-mark">{runtimeMark}</span>
             <div>
               <strong>{runtimeLabel}{selectedRuntime?.version ? ` · ${selectedRuntime.version}` : ''}</strong>
-              <small>{selectedRuntime?.message ?? '正在检测本机 CLI…'}</small>
+              <small>{loading ? '正在读取本机 CLI 与模型目录…' : selectedRuntime?.message ?? '尚未检测本机 CLI'}</small>
             </div>
           </div>
           <label>
@@ -1110,10 +1119,10 @@ export function AgentConfigDrawer({
           ) : null}
           <button
             className="primary-button"
-            disabled={saving || name.trim().length < 2 || (adapterType !== 'mock' && !providerConnectionId) || (adapterType === 'opencode_cli' && !model)}
+            disabled={loading || saving || name.trim().length < 2 || (adapterType !== 'mock' && !providerConnectionId) || (adapterType === 'opencode_cli' && !model)}
             type="submit"
           >
-            {saving ? '保存并检测中…' : editing ? '保存修改' : '保存 Agent'}
+            {loading ? '正在载入配置…' : saving ? '保存并检测中…' : editing ? '保存修改' : '保存 Agent'}
           </button>
         </form>
       </aside>
