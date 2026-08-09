@@ -114,12 +114,15 @@ export const AgentProfileInputSchema = z
         message: 'OpenCode model must use provider/model format',
       });
     }
-    if (input.adapterType !== 'opencode_cli' && (input.model || input.variant || input.agentName || input.credentialEnv)) {
+    if (input.adapterType !== 'opencode_cli' && (input.variant || input.agentName || input.credentialEnv)) {
       context.addIssue({
         code: 'custom',
         path: ['adapterType'],
-        message: 'Provider-specific fields are only supported by the OpenCode CLI adapter',
+        message: 'Variant, internal Agent, and legacy credential fields are only supported by OpenCode CLI',
       });
+    }
+    if (input.adapterType === 'mock' && input.model) {
+      context.addIssue({ code: 'custom', path: ['model'], message: 'Mock Agents do not use a model' });
     }
     if (input.adapterType === 'mock' && input.providerConnectionId) {
       context.addIssue({ code: 'custom', path: ['providerConnectionId'], message: 'Mock Agents do not use a provider connection' });

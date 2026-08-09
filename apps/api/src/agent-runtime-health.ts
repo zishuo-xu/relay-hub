@@ -144,7 +144,16 @@ export async function checkAgentHealth(agent: AgentProfile): Promise<AgentHealth
     }
     if (agent.adapterType === 'codex_cli') {
       const version = await run(process.env.RELAY_HUB_CODEX_BIN ?? 'codex', ['--version']);
-      return { status: 'healthy', adapterType: 'codex_cli', version, message: 'Codex CLI is available.' };
+      const model = typeof agent.config.model === 'string' ? agent.config.model : undefined;
+      return {
+        status: 'healthy',
+        adapterType: 'codex_cli',
+        version,
+        ...(model ? { model } : {}),
+        message: model
+          ? `Codex CLI is available; ${model} will be validated by the next real Run.`
+          : 'Codex CLI is available and will use its default model.',
+      };
     }
 
     const config = OpenCodeRuntimeConfigSchema.parse(agent.config);

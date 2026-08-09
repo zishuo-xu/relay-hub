@@ -1,5 +1,20 @@
 # 07. 实现状态
 
+## 2026-08-09：现有 Agent 编辑与模型切换
+
+### 已实现
+
+- Agent 配置列表中的现有 Profile 可点击编辑，不再只有新建入口。
+- 编辑抽屉预填名称、能力、CLI、ProviderConnection、模型、OpenCode 专属参数和启停状态；保存复用既有完整更新 API。
+- OpenCode Agent 可切换官方/自定义连接及其模型；Codex Agent 可指定 `--model`，留空时跟随 CLI 默认模型。
+- 停用替代删除：Profile 不再用于新任务，但历史 Task、Run 和快照保持可读。
+- AgentProfile 更新仍只影响未来 Run；已创建 Run 继续执行自己的不可变快照。
+
+### 验证证据
+
+- Contracts 18/18、Worker 14/14 测试通过；独立 PostgreSQL API 集成测试 15/15 通过，覆盖 Codex 模型创建、更新和停用。
+- 真实 `http://localhost:3010/` 验收通过：5 个现有 Agent 均为可点击编辑项；OpenCode 正确预填连接和模型；Codex 可填写可选模型并切换启停状态；未提交验收修改，浏览器控制台无错误。
+
 ## 2026-08-09：Workspace 模型连接与 Agent 复用
 
 ### 已实现

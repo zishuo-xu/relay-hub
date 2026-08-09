@@ -27,7 +27,7 @@ describe('AgentProfile configuration contract', () => {
     })).toThrow('provider/model');
   });
 
-  it('keeps CLI-specific fields out of generic Mock and Codex profiles', () => {
+  it('allows a Codex model but keeps OpenCode-only fields out of Codex profiles', () => {
     expect(AgentProfileInputSchema.parse({
       name: 'Codex Builder',
       adapterType: 'codex_cli',
@@ -37,8 +37,9 @@ describe('AgentProfile configuration contract', () => {
       name: 'Misconfigured Codex',
       adapterType: 'codex_cli',
       capabilities: ['implement'],
-      model: 'opencode/big-pickle',
-    })).toThrow('only supported by the OpenCode');
+      model: 'gpt-5.6-codex',
+      variant: 'max',
+    })).toThrow('only supported by OpenCode');
   });
 });
 

@@ -2,7 +2,7 @@ import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
 import { parseReviewDraft } from './agent-prompt.js';
-import { codexSandboxForRun, runCodexAgent } from './codex-adapter.js';
+import { codexArgumentsForRun, codexSandboxForRun, runCodexAgent } from './codex-adapter.js';
 
 const claimed: ClaimedRun = {
   workspace: {
@@ -53,6 +53,16 @@ const claimed: ClaimedRun = {
 };
 
 describe('runCodexAgent', () => {
+  it('pins the configured model while preserving the Run sandbox policy', () => {
+    const configured = { ...claimed, agent: { ...claimed.agent, config: { model: 'gpt-5.6-codex' } } };
+    expect(codexArgumentsForRun(configured, '/tmp/relayhub-run')).toEqual(expect.arrayContaining([
+      '--model',
+      'gpt-5.6-codex',
+      '--sandbox',
+      'workspace-write',
+    ]));
+  });
+
   it('maps public Codex JSONL events and excludes reasoning text', async () => {
     const fixture = [
       { type: 'thread.started', thread_id: 'thread-123' },

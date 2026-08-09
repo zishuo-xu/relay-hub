@@ -287,6 +287,7 @@ interface SettingsWorkspaceProps {
   agents: AgentProfile[];
   onNewConnection: () => void;
   onNewAgent: () => void;
+  onEditAgent: (agent: AgentProfile) => void;
 }
 
 export function SettingsWorkspace({
@@ -295,6 +296,7 @@ export function SettingsWorkspace({
   agents,
   onNewConnection,
   onNewAgent,
+  onEditAgent,
 }: SettingsWorkspaceProps) {
   const official = connections.filter((connection) => connection.kind === 'official_cli');
   const custom = connections.filter((connection) => connection.kind === 'custom_api');
@@ -342,11 +344,11 @@ export function SettingsWorkspace({
         </header>
         <div className="settings-content agent-settings-list">
           {agents.map((agent) => (
-            <article className="agent-settings-row" key={agent.id}>
+            <button className="agent-settings-row" key={agent.id} onClick={() => onEditAgent(agent)} type="button">
               <span className="connection-mark">{agent.adapterType === 'codex_cli' ? 'C' : agent.adapterType === 'opencode_cli' ? 'O' : 'M'}</span>
               <div><strong>{agent.name}</strong><small>{agent.capabilities.join(' + ')} · {agent.modelLabel ?? agent.adapterType}</small></div>
-              <div><span>{connectionName(agent)}</span><small>{agent.enabled ? '可用于新任务' : '已停用'}</small></div>
-            </article>
+              <div><span>{connectionName(agent)}</span><small>{agent.enabled ? '点击编辑' : '已停用 · 点击编辑'}</small></div>
+            </button>
           ))}
         </div>
       </>}
@@ -780,6 +782,8 @@ export function ProviderConnectionDrawer({
 
 interface AgentConfigDrawerProps {
   open: boolean;
+  editing: boolean;
+  enabled: boolean;
   name: string;
   capabilities: AgentCapability[];
   adapterType: AgentAdapterType;
@@ -802,10 +806,13 @@ interface AgentConfigDrawerProps {
   onVariantChange: (value: string) => void;
   onCredentialEnvChange: (value: string) => void;
   onProviderConnectionChange: (value: string) => void;
+  onEnabledChange: (value: boolean) => void;
 }
 
 export function AgentConfigDrawer({
   open,
+  editing,
+  enabled,
   name,
   capabilities,
   adapterType,
@@ -828,6 +835,7 @@ export function AgentConfigDrawer({
   onVariantChange,
   onCredentialEnvChange,
   onProviderConnectionChange,
+  onEnabledChange,
 }: AgentConfigDrawerProps) {
   const selectedRuntime = runtimes.find((runtime) => runtime.adapterType === adapterType);
   const runtimeMark = adapterType === 'codex_cli' ? 'C' : adapterType === 'opencode_cli' ? 'O' : 'M';
@@ -845,7 +853,7 @@ export function AgentConfigDrawer({
         <header className="drawer-header">
           <div>
             <p>Agent profile</p>
-            <h2>新建 Agent</h2>
+            <h2>{editing ? '编辑 Agent' : '新建 Agent'}</h2>
           </div>
           <button aria-label="关闭" className="drawer-close" onClick={onClose} type="button">×</button>
         </header>
@@ -899,6 +907,13 @@ export function AgentConfigDrawer({
               ))}
             </div>
           </fieldset>
+          <label>
+            Agent 状态
+            <select onChange={(event) => onEnabledChange(event.target.value === 'enabled')} value={enabled ? 'enabled' : 'disabled'}>
+              <option value="enabled">启用 · 可用于新任务</option>
+              <option value="disabled">停用 · 保留历史记录</option>
+            </select>
+          </label>
           {adapterType === 'opencode_cli' ? <>
             <label>
               模型（provider/model）
@@ -924,12 +939,19 @@ export function AgentConfigDrawer({
               </label>
             </div>
             {!selectedConnection ? <label>旧配置密钥环境变量（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="OPENAI_API_KEY" value={credentialEnv} /></label> : null}
-          </> : null}
+          </> : adapterType === 'codex_cli' ? <label>
+            Codex 模型（可选）
+            <input
+              onChange={(event) => onModelChange(event.target.value)}
+              placeholder="留空则跟随 Codex CLI 默认模型"
+              value={model}
+            />
+          </label> : null}
           <div className="config-note">
             {adapterType === 'opencode_cli' ? <>
               Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。URI 与凭证引用来自“模型与连接”，Agent 这里只选择连接和模型。
             </> : adapterType === 'codex_cli' ? <>
-              Agent 将使用本机 Codex CLI 的当前登录与默认模型配置，CLI 只是运行载体。
+              Agent 使用本机 Codex CLI 官方认证。填写模型时固定使用该模型；留空则跟随 CLI 默认模型。
             </> : <>
               Mock 不调用外部模型，用于稳定演示完整编排链路。
             </>}
@@ -945,7 +967,7 @@ export function AgentConfigDrawer({
             disabled={saving || name.trim().length < 2 || (adapterType !== 'mock' && !providerConnectionId) || (adapterType === 'opencode_cli' && !model)}
             type="submit"
           >
-            {saving ? '保存并检测中…' : '保存 Agent'}
+            {saving ? '保存并检测中…' : editing ? '保存修改' : '保存 Agent'}
           </button>
         </form>
       </aside>

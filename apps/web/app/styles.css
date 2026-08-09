@@ -156,6 +156,8 @@ textarea:focus-visible {
 .connection-section > header strong { font-size: 12px; }
 .connection-section > header span { color: var(--muted); font-size: 9px; }
 .connection-row, .agent-settings-row { display: grid; min-height: 70px; padding: 11px 2px; align-items: center; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid var(--border); }
+.agent-settings-row { width: 100%; color: inherit; text-align: left; border-top: 0; border-right: 0; border-left: 0; background: transparent; cursor: pointer; }
+.agent-settings-row:hover { background: var(--surface-soft); }
 .connection-mark { display: grid; width: 34px; height: 34px; place-items: center; color: white; border-radius: 9px; background: var(--accent); font-size: 11px; font-weight: 850; }
 .connection-row > div:nth-child(2), .agent-settings-row > div:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .connection-row strong, .agent-settings-row strong { font-size: 11px; }

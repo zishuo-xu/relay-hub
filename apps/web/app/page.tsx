@@ -60,6 +60,8 @@ export default function HomePage() {
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeDescriptor[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [agentConfigEnabled, setAgentConfigEnabled] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsView, setSettingsView] = useState<'connections' | 'agents'>('connections');
   const [connections, setConnections] = useState<ProviderConnection[]>([]);
@@ -102,7 +104,7 @@ export default function HomePage() {
     if (!agentResponse.ok) throw new Error('无法读取 AgentProfile');
     const agentPayload = (await agentResponse.json()) as { agents: AgentProfile[] };
     const enabledAgents = agentPayload.agents.filter((agent) => agent.enabled);
-    setAgents(enabledAgents);
+    setAgents(agentPayload.agents);
     setSelectedAgentId((current) =>
       enabledAgents.some((agent) => agent.id === current && agent.capabilities.includes('implement'))
         ? current
@@ -232,7 +234,7 @@ export default function HomePage() {
     }
   }
 
-  async function openAgentConfiguration() {
+  async function openAgentConfiguration(agent?: AgentProfile) {
     setCreateOpen(false);
     setAgentConfigOpen(true);
     setAgentHealth(null);
@@ -241,9 +243,34 @@ export default function HomePage() {
     if (!response.ok) throw new Error(`无法读取 Agent CLI：${response.status}`);
     const payload = (await response.json()) as { runtimes: AgentRuntimeDescriptor[] };
     setAgentRuntimes(payload.runtimes);
+    if (agent) {
+      const config = agent.config;
+      setEditingAgentId(agent.id);
+      setAgentConfigName(agent.name);
+      setAgentConfigCapabilities(agent.capabilities.filter(
+        (capability): capability is AgentCapability => capability === 'implement' || capability === 'review',
+      ));
+      setAgentConfigAdapter(agent.adapterType);
+      setAgentConfigConnectionId(agent.providerConnectionId ?? '');
+      setAgentConfigModel(typeof config.model === 'string' ? config.model : '');
+      setAgentConfigVariant(typeof config.variant === 'string' ? config.variant : '');
+      setAgentConfigAgentName(typeof config.agentName === 'string' ? config.agentName : '');
+      setAgentConfigCredentialEnv(typeof config.credentialEnv === 'string' ? config.credentialEnv : '');
+      setAgentConfigEnabled(agent.enabled);
+      return;
+    }
     const openCode = payload.runtimes.find((runtime) => runtime.adapterType === 'opencode_cli');
-    setAgentConfigModel((current) => current || openCode?.models[0] || '');
-    setAgentConfigConnectionId((current) => current || connections.find((connection) => connection.adapterType === 'opencode_cli' && connection.enabled)?.id || '');
+    const defaultConnection = connections.find((connection) => connection.adapterType === 'opencode_cli' && connection.enabled);
+    setEditingAgentId(null);
+    setAgentConfigName('');
+    setAgentConfigCapabilities(['implement']);
+    setAgentConfigAdapter('opencode_cli');
+    setAgentConfigConnectionId(defaultConnection?.id ?? '');
+    setAgentConfigModel(defaultConnection?.kind === 'custom_api' ? defaultConnection.models[0] ?? '' : openCode?.models[0] ?? '');
+    setAgentConfigVariant('');
+    setAgentConfigAgentName('');
+    setAgentConfigCredentialEnv('');
+    setAgentConfigEnabled(true);
   }
 
   function openSettings(view: 'connections' | 'agents' = 'connections') {
@@ -289,38 +316,44 @@ export default function HomePage() {
     }
   }
 
-  async function createAgentProfile(event: FormEvent<HTMLFormElement>) {
+  async function saveAgentProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!workspace) throw new Error('Workspace 尚未加载完成');
     setAgentConfigSaving(true);
     setAgentHealth(null);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/api/workspaces/${workspace.id}/agents`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: agentConfigName,
-          adapterType: agentConfigAdapter,
-          capabilities: agentConfigCapabilities,
-          ...(agentConfigAdapter !== 'mock' ? { providerConnectionId: agentConfigConnectionId } : {}),
-          ...(agentConfigAdapter === 'opencode_cli'
-            ? {
-                model: agentConfigModel,
-                ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
-                ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
-                ...(agentConfigCredentialEnv.trim() ? { credentialEnv: agentConfigCredentialEnv.trim() } : {}),
-              }
-            : {}),
-          enabled: true,
-        }),
-      });
+      const response = await fetch(
+        editingAgentId ? `${apiUrl}/api/agents/${editingAgentId}` : `${apiUrl}/api/workspaces/${workspace.id}/agents`,
+        {
+          method: editingAgentId ? 'PUT' : 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: agentConfigName,
+            adapterType: agentConfigAdapter,
+            capabilities: agentConfigCapabilities,
+            ...(agentConfigAdapter !== 'mock' ? { providerConnectionId: agentConfigConnectionId } : {}),
+            ...(agentConfigAdapter === 'opencode_cli'
+              ? {
+                  model: agentConfigModel,
+                  ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
+                  ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
+                  ...(agentConfigCredentialEnv.trim() ? { credentialEnv: agentConfigCredentialEnv.trim() } : {}),
+                }
+              : agentConfigAdapter === 'codex_cli' && agentConfigModel.trim()
+                ? { model: agentConfigModel.trim() }
+                : {}),
+            enabled: agentConfigEnabled,
+          }),
+        },
+      );
       if (!response.ok) throw new Error(`保存 Agent 失败：${response.status} ${await response.text()}`);
-      const created = (await response.json()) as AgentProfile;
+      const saved = (await response.json()) as AgentProfile;
+      setEditingAgentId(saved.id);
       await loadRuntimeConfiguration();
-      if (agentConfigCapabilities.includes('implement')) setSelectedAgentId(created.id);
-      else setSelectedReviewerAgentId(created.id);
-      const healthResponse = await fetch(`${apiUrl}/api/agents/${created.id}/health-check`, { method: 'POST' });
+      if (saved.enabled && agentConfigCapabilities.includes('implement')) setSelectedAgentId(saved.id);
+      else if (saved.enabled && agentConfigCapabilities.includes('review')) setSelectedReviewerAgentId(saved.id);
+      const healthResponse = await fetch(`${apiUrl}/api/agents/${saved.id}/health-check`, { method: 'POST' });
       if (healthResponse.ok) setAgentHealth((await healthResponse.json()) as AgentHealth);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -361,6 +394,7 @@ export default function HomePage() {
           agents={agents}
           connections={connections}
           onNewAgent={() => void openAgentConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onEditAgent={(agent) => void openAgentConfiguration(agent).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onNewConnection={() => {
             setAgentConfigOpen(false);
             setConnectionHealth(null);
@@ -389,7 +423,7 @@ export default function HomePage() {
         />
       </>}
       <CreateTaskDrawer
-        agents={agents.filter((agent) => agent.capabilities.includes('implement'))}
+        agents={agents.filter((agent) => agent.enabled && agent.capabilities.includes('implement'))}
         criterion={criterion}
         completionPolicy={completionPolicy}
         maxReviewRounds={maxReviewRounds}
@@ -407,7 +441,7 @@ export default function HomePage() {
         open={createOpen}
         selectedAgent={selectedAgent}
         selectedAgentId={selectedAgentId}
-        reviewerAgents={agents.filter((agent) => agent.capabilities.includes('review'))}
+        reviewerAgents={agents.filter((agent) => agent.enabled && agent.capabilities.includes('review'))}
         selectedReviewer={selectedReviewer}
         selectedReviewerAgentId={selectedReviewerAgentId}
         submitting={submitting}
@@ -419,6 +453,8 @@ export default function HomePage() {
         agentName={agentConfigAgentName}
         capabilities={agentConfigCapabilities}
         credentialEnv={agentConfigCredentialEnv}
+        editing={editingAgentId !== null}
+        enabled={agentConfigEnabled}
         connections={connections}
         health={agentHealth}
         model={agentConfigModel}
@@ -438,6 +474,7 @@ export default function HomePage() {
         onAgentNameChange={setAgentConfigAgentName}
         onCapabilitiesChange={setAgentConfigCapabilities}
         onCredentialEnvChange={setAgentConfigCredentialEnv}
+        onEnabledChange={setAgentConfigEnabled}
         onProviderConnectionChange={(value) => {
           setAgentConfigConnectionId(value);
           const connection = connections.find((candidate) => candidate.id === value);
@@ -448,7 +485,7 @@ export default function HomePage() {
         }}
         onModelChange={setAgentConfigModel}
         onNameChange={setAgentConfigName}
-        onSubmit={createAgentProfile}
+        onSubmit={saveAgentProfile}
         onVariantChange={setAgentConfigVariant}
         open={agentConfigOpen}
         saving={agentConfigSaving}

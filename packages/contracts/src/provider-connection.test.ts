@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AgentProfileInputSchema,
   openCodeProviderConfig,
   openCodeProviderKey,
   ProviderConnectionInputSchema,
@@ -41,5 +42,16 @@ describe('ProviderConnection contract', () => {
       enabled: true,
     });
     expect(result.success).toBe(false);
+  });
+
+  it('allows a Codex Agent to pin an optional official model', () => {
+    expect(AgentProfileInputSchema.parse({
+      name: 'Codex Reviewer',
+      adapterType: 'codex_cli',
+      providerConnectionId: '00000000-0000-4000-8000-000000000005',
+      capabilities: ['review'],
+      model: 'gpt-5.6-codex',
+      enabled: true,
+    })).toMatchObject({ adapterType: 'codex_cli', model: 'gpt-5.6-codex' });
   });
 });

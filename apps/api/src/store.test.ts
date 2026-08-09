@@ -1,5 +1,6 @@
 import {
   DEFAULT_CODEX_AGENT_ID,
+  DEFAULT_CODEX_CONNECTION_ID,
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
 } from '@relay-hub/contracts';
@@ -58,6 +59,39 @@ suite('PostgresStore integration', () => {
       enabled: false,
       capabilities: ['implement', 'review'],
       config: { model: 'opencode/longcat-2.0-free' },
+    });
+  });
+
+  it('pins and updates an optional Codex model without changing the Agent identity', async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const created = await store.createAgentProfile('00000000-0000-4000-8000-000000000001', {
+      name: `Codex Configurable ${suffix}`,
+      adapterType: 'codex_cli',
+      providerConnectionId: DEFAULT_CODEX_CONNECTION_ID,
+      capabilities: ['implement'],
+      model: 'gpt-5.6-codex',
+      enabled: true,
+    });
+    expect(created).toMatchObject({
+      adapterType: 'codex_cli',
+      providerConnectionId: DEFAULT_CODEX_CONNECTION_ID,
+      modelLabel: 'gpt-5.6-codex',
+      config: { model: 'gpt-5.6-codex' },
+    });
+    if (!created) throw new Error('Codex AgentProfile was not created');
+    const updated = await store.updateAgentProfile(created.id, {
+      name: created.name,
+      adapterType: 'codex_cli',
+      providerConnectionId: DEFAULT_CODEX_CONNECTION_ID,
+      capabilities: ['implement', 'review'],
+      model: 'gpt-5.6-codex-mini',
+      enabled: false,
+    });
+    expect(updated).toMatchObject({
+      id: created.id,
+      enabled: false,
+      modelLabel: 'gpt-5.6-codex-mini',
+      config: { model: 'gpt-5.6-codex-mini' },
     });
   });
 

@@ -8,10 +8,29 @@ import { buildAgentPrompt, parseReviewDraft } from './agent-prompt.js';
 import { superviseProcess } from './process-supervisor.js';
 
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
+const CodexRuntimeConfigSchema = z.object({ model: z.string().trim().min(1).max(240).optional() });
 const MAX_EVENT_TEXT = 4_000;
 
 export function codexSandboxForRun(claimed: ClaimedRun): 'read-only' | 'workspace-write' {
   return claimed.run.triggerType === 'review' ? 'read-only' : 'workspace-write';
+}
+
+export function codexArgumentsForRun(claimed: ClaimedRun, workingDirectory: string): string[] {
+  const config = CodexRuntimeConfigSchema.parse(claimed.agent.config);
+  return [
+    'exec',
+    '--json',
+    '--sandbox',
+    codexSandboxForRun(claimed),
+    '--ignore-user-config',
+    '--ignore-rules',
+    '-c',
+    'approval_policy="never"',
+    ...(config.model ? ['--model', config.model] : []),
+    '-C',
+    workingDirectory,
+    '-',
+  ];
 }
 
 function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
@@ -33,19 +52,7 @@ export async function* runCodexAgent(
   const codexBinary = options.processOverride?.command ?? process.env.RELAY_HUB_CODEX_BIN ?? 'codex';
   const timeoutMs = Number(process.env.RELAY_HUB_AGENT_TIMEOUT_MS ?? 15 * 60 * 1_000);
   const isReviewer = codexSandboxForRun(claimed) === 'read-only';
-  const args = options.processOverride?.args ?? [
-    'exec',
-    '--json',
-    '--sandbox',
-    codexSandboxForRun(claimed),
-    '--ignore-user-config',
-    '--ignore-rules',
-    '-c',
-    'approval_policy="never"',
-    '-C',
-    workingDirectory,
-    '-',
-  ];
+  const args = options.processOverride?.args ?? codexArgumentsForRun(claimed, workingDirectory);
 
   let finalMessage = '';
   let terminalEventSent = false;

@@ -136,6 +136,8 @@ AgentProfile 属于 Workspace，可被多个新 Task 复用；修改配置不会
 
 AgentProfile 表达用户定义的 Agent 身份，不表达一次执行。名称和能力是通用字段，`adapter_type` 才选择 Mock、Codex CLI 或 OpenCode CLI；CLI 专属配置只进入经过白名单校验的 `config`。
 
+Codex AgentProfile 可在 `config.model` 中固定模型；Worker 启动时传给 `codex exec --model`。留空则继续使用 Codex CLI 默认模型。Web 对所有 AgentProfile 使用同一编辑入口，允许修改名称、能力、运行 CLI、ProviderConnection、模型和启停状态；更新只影响之后创建的 Run。
+
 ### `provider_connections`
 
 | 字段 | 含义 |
