@@ -1,5 +1,19 @@
 # 07. 实现状态
 
+## 2026-08-09：真实 OpenCode Builder → Codex Reviewer 验收
+
+### 已验证
+
+- 在独立临时 Git 仓库创建真实任务 `a03567e3-adf8-49cc-9c5d-a8ad5ee9f564`，Builder 使用 OpenCode Go / DeepSeek Flash，Reviewer 使用 Codex CLI，完成策略为 `require_user_confirmation`。
+- Builder Run `f53ec2e1-3a5b-4fdd-851d-a80a61da9bb0` 在独立 worktree 中只修改 `src/server.js`，实现 `GET /health`；Builder 的 `npm test` 2/2 通过，独立 HTTP 验证返回 200、`application/json` 和精确 JSON 响应。
+- Builder 生成结构化 Handoff，包含 Reviewer 目标、worktree artifact、摘要和四项验收标准；平台随后创建独立 Reviewer Run `26fe36e4-c4b0-4849-a9cf-1daa11256e9f`。
+- Codex Reviewer 保持只读，提交 `approved` 且无 findings；平台没有自动完成任务，而是正确进入 `waiting_for_user`，等待用户最终确认。
+- 默认 Workspace 路径已恢复为 RelayHub 仓库；RelayHub 主工作区和临时示例仓库主分支均保持干净，Builder 改动只存在于 Run worktree。
+
+### 已知限制
+
+- Reviewer 只读沙箱禁止监听 `127.0.0.1`，因此其 `npm test` 因 `listen EPERM` 无法复跑；Reviewer 基于 Builder 命令证据和静态实现检查批准。需要后续把“只读代码权限”和“允许本地测试进程”解耦。
+
 ## 2026-08-09：模型连接管理闭环
 
 ### 已实现
