@@ -3,6 +3,7 @@ import {
   AgentProfileInputSchema,
   openCodeProviderConfig,
   openCodeProviderKey,
+  ProviderConnectionHealthCheckInputSchema,
   ProviderConnectionInputSchema,
 } from './index.js';
 
@@ -53,5 +54,13 @@ describe('ProviderConnection contract', () => {
       model: 'gpt-5.6-codex',
       enabled: true,
     })).toMatchObject({ adapterType: 'codex_cli', model: 'gpt-5.6-codex' });
+  });
+
+  it('defaults to a no-cost configuration check and accepts an explicit live check model', () => {
+    expect(ProviderConnectionHealthCheckInputSchema.parse({})).toEqual({ mode: 'configuration' });
+    expect(ProviderConnectionHealthCheckInputSchema.parse({ mode: 'live', model: 'coding-model' })).toEqual({
+      mode: 'live',
+      model: 'coding-model',
+    });
   });
 });

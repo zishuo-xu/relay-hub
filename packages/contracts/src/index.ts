@@ -60,6 +60,13 @@ export const ProviderConnectionInputSchema = z
 
 export type ProviderConnectionInput = z.infer<typeof ProviderConnectionInputSchema>;
 
+export const ProviderConnectionHealthCheckInputSchema = z.object({
+  mode: z.enum(['configuration', 'live']).default('configuration'),
+  model: z.string().trim().min(1).max(240).optional(),
+}).strict();
+
+export type ProviderConnectionHealthCheckInput = z.infer<typeof ProviderConnectionHealthCheckInputSchema>;
+
 export const ProviderConnectionSnapshotSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -472,6 +479,9 @@ export interface AgentHealth {
   version?: string;
   model?: string;
   modelAvailable?: boolean;
+  checkMode?: 'configuration' | 'live';
+  credentialAvailable?: boolean;
+  requestAttempted?: boolean;
   message: string;
 }
 

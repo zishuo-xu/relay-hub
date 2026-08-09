@@ -16,7 +16,8 @@ Accepted / Implemented（2026-08-09）
 4. 自定义 OpenAI Chat Completions 使用 OpenCode 的 `@ai-sdk/openai-compatible` provider；OpenAI Responses 使用 `@ai-sdk/openai`。Worker 在每个 Run 启动时通过 `OPENCODE_CONFIG_CONTENT` 注入临时配置。
 5. AgentProfile 的非敏感连接快照进入不可变 Run AgentProfile snapshot。连接之后修改，不改变已经创建的 Run。
 6. 已持久化的旧 AgentProfile 和 Run 快照可继续按原配置执行；新的 Agent 创建和编辑必须引用 ProviderConnection，Agent 输入不再接受凭证字段。
-7. 健康检测只验证 CLI 能读取注入后的模型目录，不发送计费模型请求，也不声称 API Key 或余额有效。
+7. 默认健康检测只验证 CLI、Worker 凭证环境变量和注入后的模型目录，不发送计费请求。自定义连接另提供显式 `live` 检测；用户必须在 Web 确认可能产生费用后，平台才在临时空目录中向选定模型发送固定无敏感测试文本，随后清理该临时目录。
+8. ProviderConnection 的 `kind` 与 `adapterType` 创建后不可修改。连接被启用 Agent 使用时不能停用，也不能移除这些 Agent 正在使用的模型；应先迁移或停用 Agent。
 
 ## 结果
 
@@ -25,3 +26,4 @@ Accepted / Implemented（2026-08-09）
 - 凭证环境变量名称只在 ProviderConnection 中维护；Agent 页面只选择连接、模型和 CLI 运行参数。
 - CLI、连接和模型的兼容性由服务端校验。
 - 平台仍只控制 Agent；实际模型调用和工具执行发生在所选 Agent CLI 中。
+- 连接编辑只影响未来创建的 Run；历史 Run 继续使用自己的不可变连接快照。

@@ -72,7 +72,11 @@ export default function HomePage() {
   const [connectionCredentialEnv, setConnectionCredentialEnv] = useState('');
   const [connectionModels, setConnectionModels] = useState('');
   const [connectionSaving, setConnectionSaving] = useState(false);
+  const [connectionChecking, setConnectionChecking] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState<AgentHealth | null>(null);
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
+  const [connectionEnabled, setConnectionEnabled] = useState(true);
+  const [connectionLiveConsent, setConnectionLiveConsent] = useState(false);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -278,7 +282,60 @@ export default function HomePage() {
     setSettingsOpen(true);
   }
 
-  async function createProviderConnection(event: FormEvent<HTMLFormElement>) {
+  function openProviderConnectionConfiguration(connection?: ProviderConnection) {
+    setAgentConfigOpen(false);
+    setConnectionHealth(null);
+    setConnectionLiveConsent(false);
+    if (connection) {
+      setEditingConnectionId(connection.id);
+      setConnectionName(connection.name);
+      setConnectionProtocol(connection.protocol === 'cli_managed' ? 'openai_chat_completions' : connection.protocol);
+      setConnectionBaseUrl(connection.baseUrl ?? '');
+      setConnectionCredentialEnv(connection.credentialEnv ?? '');
+      setConnectionModels(connection.models.join('\n'));
+      setConnectionEnabled(connection.enabled);
+    } else {
+      setEditingConnectionId(null);
+      setConnectionName('');
+      setConnectionProtocol('openai_chat_completions');
+      setConnectionBaseUrl('');
+      setConnectionCredentialEnv('');
+      setConnectionModels('');
+      setConnectionEnabled(true);
+    }
+    setConnectionOpen(true);
+  }
+
+  async function checkProviderConnection(mode: 'configuration' | 'live', connectionId = editingConnectionId) {
+    if (!connectionId) return;
+    setConnectionChecking(true);
+    setConnectionHealth(null);
+    setError(null);
+    try {
+      const firstModel = connectionModels.split(/\r?\n|,/).map((model) => model.trim()).find(Boolean);
+      const response = await fetch(`${apiUrl}/api/provider-connections/${connectionId}/health-check`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode, ...(mode === 'live' && firstModel ? { model: firstModel } : {}) }),
+      });
+      if (!response.ok) throw new Error(`检测连接失败：${response.status} ${await response.text()}`);
+      setConnectionHealth((await response.json()) as AgentHealth);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      const connection = connections.find((candidate) => candidate.id === connectionId);
+      setConnectionHealth({
+        status: 'unhealthy',
+        adapterType: connection?.adapterType ?? 'opencode_cli',
+        checkMode: mode,
+        requestAttempted: mode === 'live',
+        message,
+      });
+    } finally {
+      setConnectionChecking(false);
+    }
+  }
+
+  async function saveProviderConnection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!workspace) throw new Error('Workspace 尚未加载完成');
     setConnectionSaving(true);
@@ -286,28 +343,46 @@ export default function HomePage() {
     setError(null);
     try {
       const models = connectionModels.split(/\r?\n|,/).map((model) => model.trim()).filter(Boolean);
-      const response = await fetch(`${apiUrl}/api/workspaces/${workspace.id}/provider-connections`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: connectionName,
-          kind: 'custom_api',
-          adapterType: 'opencode_cli',
-          protocol: connectionProtocol,
-          baseUrl: connectionBaseUrl,
-          ...(connectionCredentialEnv.trim() ? { credentialEnv: connectionCredentialEnv.trim() } : {}),
-          models,
-          enabled: true,
-        }),
-      });
+      const existing = connections.find((connection) => connection.id === editingConnectionId);
+      const response = await fetch(
+        editingConnectionId
+          ? `${apiUrl}/api/provider-connections/${editingConnectionId}`
+          : `${apiUrl}/api/workspaces/${workspace.id}/provider-connections`,
+        {
+          method: editingConnectionId ? 'PUT' : 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: connectionName,
+            kind: existing?.kind ?? 'custom_api',
+            adapterType: existing?.adapterType ?? 'opencode_cli',
+            protocol: existing?.kind === 'official_cli' ? 'cli_managed' : connectionProtocol,
+            ...(existing?.kind !== 'official_cli'
+              ? {
+                  baseUrl: connectionBaseUrl,
+                  ...(connectionCredentialEnv.trim() ? { credentialEnv: connectionCredentialEnv.trim() } : {}),
+                  models,
+                }
+              : { models: [] }),
+            enabled: connectionEnabled,
+          }),
+        },
+      );
       if (!response.ok) throw new Error(`保存连接失败：${response.status} ${await response.text()}`);
-      const created = (await response.json()) as ProviderConnection;
+      const saved = (await response.json()) as ProviderConnection;
+      setEditingConnectionId(saved.id);
       await loadRuntimeConfiguration();
-      setAgentConfigConnectionId(created.id);
-      const healthResponse = await fetch(`${apiUrl}/api/provider-connections/${created.id}/health-check`, { method: 'POST' });
-      if (healthResponse.ok) setConnectionHealth((await healthResponse.json()) as AgentHealth);
+      setAgentConfigConnectionId(saved.id);
+      await checkProviderConnection('configuration', saved.id);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      const message = reason instanceof Error ? reason.message : String(reason);
+      const existing = connections.find((connection) => connection.id === editingConnectionId);
+      setConnectionHealth({
+        status: 'unhealthy',
+        adapterType: existing?.adapterType ?? 'opencode_cli',
+        checkMode: 'configuration',
+        requestAttempted: false,
+        message,
+      });
     } finally {
       setConnectionSaving(false);
     }
@@ -391,11 +466,8 @@ export default function HomePage() {
           connections={connections}
           onNewAgent={() => void openAgentConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onEditAgent={(agent) => void openAgentConfiguration(agent).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
-          onNewConnection={() => {
-            setAgentConfigOpen(false);
-            setConnectionHealth(null);
-            setConnectionOpen(true);
-          }}
+          onEditConnection={openProviderConnectionConfiguration}
+          onNewConnection={() => openProviderConnectionConfiguration()}
           view={settingsView}
         />
       </> : <>
@@ -487,21 +559,36 @@ export default function HomePage() {
         providerConnectionId={agentConfigConnectionId}
       />
       <ProviderConnectionDrawer
+        activeAgentCount={agents.filter((agent) => agent.enabled && agent.providerConnectionId === editingConnectionId).length}
         baseUrl={connectionBaseUrl}
+        checking={connectionChecking}
         credentialEnv={connectionCredentialEnv}
+        editing={editingConnectionId !== null}
+        enabled={connectionEnabled}
         health={connectionHealth}
+        kind={connections.find((connection) => connection.id === editingConnectionId)?.kind ?? 'custom_api'}
+        adapterType={connections.find((connection) => connection.id === editingConnectionId)?.adapterType ?? 'opencode_cli'}
+        liveConsent={connectionLiveConsent}
         models={connectionModels}
         name={connectionName}
         onBaseUrlChange={setConnectionBaseUrl}
+        onCheck={() => void checkProviderConnection('configuration')}
+        onCheckLive={() => void checkProviderConnection('live')}
         onClose={() => setConnectionOpen(false)}
         onCredentialEnvChange={setConnectionCredentialEnv}
+        onEnabledChange={setConnectionEnabled}
+        onLiveConsentChange={setConnectionLiveConsent}
         onModelsChange={setConnectionModels}
         onNameChange={setConnectionName}
         onProtocolChange={setConnectionProtocol}
-        onSubmit={createProviderConnection}
+        onSubmit={saveProviderConnection}
         open={connectionOpen}
         protocol={connectionProtocol}
         saving={connectionSaving}
+        usedModels={[...new Set(agents
+          .filter((agent) => agent.enabled && agent.providerConnectionId === editingConnectionId)
+          .map((agent) => agent.config.model)
+          .filter((model): model is string => typeof model === 'string'))]}
       />
     </main>
   );

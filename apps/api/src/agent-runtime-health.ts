@@ -1,9 +1,13 @@
 import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
   type AgentHealth,
   type AgentProfile,
   type AgentRuntimeDescriptor,
+  type ProviderConnectionHealthCheckInput,
   type ProviderConnectionSnapshot,
   OpenCodeRuntimeConfigSchema,
   openCodeProviderConfig,
@@ -23,20 +27,37 @@ function diagnosticEnvironment(): NodeJS.ProcessEnv {
   };
 }
 
-async function run(command: string, args: string[], environment = diagnosticEnvironment()): Promise<string> {
+async function run(
+  command: string,
+  args: string[],
+  environment = diagnosticEnvironment(),
+  timeout = 10_000,
+  cwd?: string,
+): Promise<string> {
   const result = await execFileAsync(command, args, {
     env: environment,
-    timeout: 10_000,
+    timeout,
+    ...(cwd ? { cwd } : {}),
     maxBuffer: 2 * 1024 * 1024,
   });
   return result.stdout.trim();
 }
 
-export async function checkProviderConnectionHealth(connection: ProviderConnectionSnapshot): Promise<AgentHealth> {
+export async function checkProviderConnectionHealth(
+  connection: ProviderConnectionSnapshot,
+  input: ProviderConnectionHealthCheckInput = { mode: 'configuration' },
+): Promise<AgentHealth> {
   try {
     if (connection.adapterType === 'codex_cli') {
       const version = await run(process.env.RELAY_HUB_CODEX_BIN ?? 'codex', ['--version']);
-      return { status: 'healthy', adapterType: 'codex_cli', version, message: 'Codex CLI is available; login is managed by Codex.' };
+      return {
+        status: 'healthy',
+        adapterType: 'codex_cli',
+        version,
+        checkMode: 'configuration',
+        requestAttempted: false,
+        message: 'Codex CLI is available; login is managed by Codex. No model request was sent.',
+      };
     }
     if (connection.kind === 'official_cli') {
       const runtime = await listOpenCodeModels();
@@ -44,10 +65,23 @@ export async function checkProviderConnectionHealth(connection: ProviderConnecti
         status: 'healthy',
         adapterType: 'opencode_cli',
         version: runtime.version,
-        message: `${runtime.models.length} OpenCode models are visible; credentials are managed by OpenCode.`,
+        checkMode: 'configuration',
+        requestAttempted: false,
+        message: `${runtime.models.length} OpenCode models are visible; credentials are managed by OpenCode. No model request was sent.`,
       };
     }
     const credentialEnv = connection.credentialEnv;
+    const credentialAvailable = !credentialEnv || Boolean(process.env[credentialEnv]);
+    if (!credentialAvailable) {
+      return {
+        status: 'unhealthy',
+        adapterType: 'opencode_cli',
+        checkMode: input.mode,
+        credentialAvailable: false,
+        requestAttempted: false,
+        message: `Worker environment is missing ${credentialEnv}.`,
+      };
+    }
     const environment = {
       ...diagnosticEnvironment(),
       ...(credentialEnv && process.env[credentialEnv] ? { [credentialEnv]: process.env[credentialEnv] } : {}),
@@ -61,18 +95,84 @@ export async function checkProviderConnectionHealth(connection: ProviderConnecti
     const available = new Set(catalog.split(/\r?\n/).map((model) => model.trim()).filter(Boolean));
     const prefix = `${openCodeProviderKey(connection.id)}/`;
     const visibleModels = connection.models.filter((model) => available.has(`${prefix}${model}`));
+    if (visibleModels.length !== connection.models.length) {
+      return {
+        status: 'unhealthy',
+        adapterType: 'opencode_cli',
+        version,
+        checkMode: input.mode,
+        credentialAvailable,
+        requestAttempted: false,
+        message: `Only ${visibleModels.length}/${connection.models.length} custom models are visible in OpenCode.`,
+      };
+    }
+    if (input.mode === 'live') {
+      const model = input.model ?? connection.models[0];
+      if (!model) {
+        return {
+          status: 'unhealthy',
+          adapterType: 'opencode_cli',
+          version,
+          checkMode: 'live',
+          credentialAvailable,
+          requestAttempted: false,
+          message: 'No model is configured for a live request.',
+        };
+      }
+      const liveDirectory = await mkdtemp(join(tmpdir(), 'relayhub-connection-check-'));
+      let liveOutput: string;
+      try {
+        liveOutput = await run(binary, [
+          'run',
+          '--pure',
+          '--format',
+          'json',
+          '--model',
+          `${prefix}${model}`,
+          '--dir',
+          liveDirectory,
+          'Reply exactly RELAYHUB_OK. Do not use tools.',
+        ], {
+          ...environment,
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({
+            ...openCodeProviderConfig(connection),
+            share: 'disabled',
+            permission: { '*': 'deny' },
+          }),
+        }, 60_000, liveDirectory);
+      } finally {
+        await rm(liveDirectory, { recursive: true, force: true });
+      }
+      if (!liveOutput.includes('RELAYHUB_OK')) {
+        throw new Error(`Live request to ${model} did not return the expected verification text.`);
+      }
+      return {
+        status: 'healthy',
+        adapterType: 'opencode_cli',
+        version,
+        model,
+        modelAvailable: true,
+        checkMode: 'live',
+        credentialAvailable,
+        requestAttempted: true,
+        message: `Live request to ${model} completed successfully. This check may have incurred provider usage.`,
+      };
+    }
     return {
-      status: visibleModels.length === connection.models.length ? 'healthy' : 'unhealthy',
+      status: 'healthy',
       adapterType: 'opencode_cli',
       version,
-      message: visibleModels.length === connection.models.length
-        ? `${visibleModels.length} custom models are available to OpenCode; no paid model request was sent.`
-        : `Only ${visibleModels.length}/${connection.models.length} custom models are visible in OpenCode.`,
+      checkMode: 'configuration',
+      credentialAvailable,
+      requestAttempted: false,
+      message: `${visibleModels.length} custom models are available to OpenCode; no paid model request was sent.`,
     };
   } catch (error) {
     return {
       status: 'unhealthy',
       adapterType: connection.adapterType,
+      checkMode: input.mode,
+      requestAttempted: input.mode === 'live',
       message: error instanceof Error ? error.message : String(error),
     };
   }

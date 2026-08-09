@@ -156,8 +156,8 @@ textarea:focus-visible {
 .connection-section > header strong { font-size: 12px; }
 .connection-section > header span { color: var(--muted); font-size: 9px; }
 .connection-row, .agent-settings-row { display: grid; min-height: 70px; padding: 11px 2px; align-items: center; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid var(--border); }
-.agent-settings-row { width: 100%; color: inherit; text-align: left; border-top: 0; border-right: 0; border-left: 0; background: transparent; cursor: pointer; }
-.agent-settings-row:hover { background: var(--surface-soft); }
+.connection-row, .agent-settings-row { width: 100%; color: inherit; text-align: left; border-top: 0; border-right: 0; border-left: 0; background: transparent; cursor: pointer; }
+.connection-row:hover, .agent-settings-row:hover { background: var(--surface-soft); }
 .connection-mark { display: grid; width: 34px; height: 34px; place-items: center; color: white; border-radius: 9px; background: var(--accent); font-size: 11px; font-weight: 850; }
 .connection-row > div:nth-child(2), .agent-settings-row > div:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .connection-row strong, .agent-settings-row strong { font-size: 11px; }
@@ -465,6 +465,12 @@ textarea:focus-visible {
 .health-result.healthy { color: var(--accent); background: var(--accent-soft); }
 .health-result.unhealthy { color: var(--danger); background: var(--danger-soft); }
 .health-result span { color: var(--text-secondary); line-height: 1.45; }
+.connection-check-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.connection-check-actions .secondary-button { min-height: 36px; }
+.connection-check-actions .secondary-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.live-check-consent { display: flex !important; padding: 8px 9px; align-items: flex-start; flex-direction: row !important; gap: 8px !important; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+.live-check-consent input { width: 14px; height: 14px; flex: none; accent-color: var(--accent); }
+.live-check-consent span { color: var(--muted); font-size: 9px; font-weight: 500; line-height: 1.45; }
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 52px 214px minmax(0, 1fr); }

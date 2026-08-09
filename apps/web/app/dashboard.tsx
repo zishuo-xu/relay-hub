@@ -286,6 +286,7 @@ interface SettingsWorkspaceProps {
   connections: ProviderConnection[];
   agents: AgentProfile[];
   onNewConnection: () => void;
+  onEditConnection: (connection: ProviderConnection) => void;
   onNewAgent: () => void;
   onEditAgent: (agent: AgentProfile) => void;
 }
@@ -295,6 +296,7 @@ export function SettingsWorkspace({
   connections,
   agents,
   onNewConnection,
+  onEditConnection,
   onNewAgent,
   onEditAgent,
 }: SettingsWorkspaceProps) {
@@ -303,7 +305,7 @@ export function SettingsWorkspace({
   const connectionName = (agent: AgentProfile) =>
     connections.find((connection) => connection.id === agent.providerConnectionId)?.name ?? '兼容旧配置';
   const renderConnection = (connection: ProviderConnection) => (
-    <article className="connection-row" key={connection.id}>
+    <button className="connection-row" key={connection.id} onClick={() => onEditConnection(connection)} type="button">
       <span className="connection-mark">{connection.adapterType === 'codex_cli' ? 'C' : connection.name.slice(0, 1).toUpperCase()}</span>
       <div>
         <strong>{connection.name}</strong>
@@ -315,9 +317,9 @@ export function SettingsWorkspace({
       </div>
       <div className="connection-meta">
         <span><i />{connection.enabled ? '已配置' : '已停用'}</span>
-        <small>{connection.kind === 'official_cli' ? '模型由 CLI 提供' : `${connection.models.length} 个模型`}</small>
+        <small>{connection.kind === 'official_cli' ? '模型由 CLI 提供 · 点击管理' : `${connection.models.length} 个模型 · 点击管理`}</small>
       </div>
-    </article>
+    </button>
   );
   return (
     <section className="settings-workspace">
@@ -722,47 +724,81 @@ export function CreateTaskDrawer({
 
 interface ProviderConnectionDrawerProps {
   open: boolean;
+  editing: boolean;
+  enabled: boolean;
+  kind: ProviderConnection['kind'];
+  adapterType: ProviderConnection['adapterType'];
   name: string;
   protocol: ProviderProtocol;
   baseUrl: string;
   credentialEnv: string;
   models: string;
   saving: boolean;
+  checking: boolean;
+  activeAgentCount: number;
+  usedModels: string[];
+  liveConsent: boolean;
   health: AgentHealth | null;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCheck: () => void;
+  onCheckLive: () => void;
   onNameChange: (value: string) => void;
   onProtocolChange: (value: ProviderProtocol) => void;
   onBaseUrlChange: (value: string) => void;
   onCredentialEnvChange: (value: string) => void;
   onModelsChange: (value: string) => void;
+  onEnabledChange: (value: boolean) => void;
+  onLiveConsentChange: (value: boolean) => void;
 }
 
 export function ProviderConnectionDrawer({
   open,
+  editing,
+  enabled,
+  kind,
+  adapterType,
   name,
   protocol,
   baseUrl,
   credentialEnv,
   models,
   saving,
+  checking,
+  activeAgentCount,
+  usedModels,
+  liveConsent,
   health,
   onClose,
   onSubmit,
+  onCheck,
+  onCheckLive,
   onNameChange,
   onProtocolChange,
   onBaseUrlChange,
   onCredentialEnvChange,
   onModelsChange,
+  onEnabledChange,
+  onLiveConsentChange,
 }: ProviderConnectionDrawerProps) {
+  const configuredModels = models.split(/\r?\n|,/).map((model) => model.trim()).filter(Boolean);
+  const isCustom = kind === 'custom_api';
+  const removedUsedModels = isCustom ? usedModels.filter((model) => !configuredModels.includes(model)) : [];
   return <>
     {open ? <button aria-label="关闭连接配置" className="drawer-backdrop" onClick={onClose} type="button" /> : null}
     <aside aria-hidden={!open} className={`create-drawer ${open ? 'open' : ''}`}>
-      <header className="drawer-header"><div><p>Custom provider</p><h2>新增自定义连接</h2></div><button aria-label="关闭" className="drawer-close" onClick={onClose} type="button">×</button></header>
+      <header className="drawer-header"><div><p>Provider connection</p><h2>{editing ? '管理模型连接' : '新增自定义连接'}</h2></div><button aria-label="关闭" className="drawer-close" onClick={onClose} type="button">×</button></header>
       <form onSubmit={onSubmit}>
-        <div className="runtime-card"><span className="agent-mark">O</span><div><strong>OpenCode CLI</strong><small>RelayHub 会在每次 Run 中注入临时 provider 配置</small></div></div>
+        <div className="runtime-card"><span className="agent-mark">{adapterType === 'codex_cli' ? 'C' : 'O'}</span><div><strong>{adapterType === 'codex_cli' ? 'Codex CLI' : 'OpenCode CLI'}</strong><small>{isCustom ? 'RelayHub 会在每次 Run 中注入临时 provider 配置' : '登录与凭证由官方 CLI 管理'}</small></div></div>
         <label>连接名称<input minLength={2} onChange={(event) => onNameChange(event.target.value)} placeholder="例如 公司 DeepSeek" required value={name} /></label>
         <label>
+          连接状态
+          <select onChange={(event) => onEnabledChange(event.target.value === 'enabled')} value={enabled ? 'enabled' : 'disabled'}>
+            <option value="enabled">启用 · Agent 可以选择</option>
+            <option disabled={activeAgentCount > 0} value="disabled">停用 · 保留历史快照</option>
+          </select>
+        </label>
+        {isCustom ? <><label>
           API 协议
           <select onChange={(event) => onProtocolChange(event.target.value as ProviderProtocol)} value={protocol}>
             <option value="openai_chat_completions">OpenAI Chat Completions</option>
@@ -772,9 +808,21 @@ export function ProviderConnectionDrawer({
         <label>Base URI<input onChange={(event) => onBaseUrlChange(event.target.value)} placeholder="https://api.example.com/v1" required type="url" value={baseUrl} /></label>
         <label>凭证环境变量名称（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="DEEPSEEK_API_KEY" value={credentialEnv} /></label>
         <label>模型 ID（每行一个）<textarea onChange={(event) => onModelsChange(event.target.value)} placeholder={'deepseek-chat\ndeepseek-reasoner'} required rows={5} value={models} /></label>
-        <div className="config-note">连接统一管理 URI、协议、模型目录和凭证引用。这里只保存环境变量名称，不保存 API Key；执行时由 Worker 从自己的环境读取密钥。</div>
+        </> : null}
+        <div className="config-note">
+          {isCustom
+            ? '连接统一管理 URI、协议、模型目录和凭证引用。这里只保存环境变量名称，不保存 API Key；执行时由 Worker 从自己的环境读取密钥。'
+            : '官方连接只管理 CLI 认证入口和启停状态；模型及登录状态由对应 CLI 提供。'}
+          {activeAgentCount > 0 ? ` 当前有 ${activeAgentCount} 个启用 Agent 使用此连接，停用前需要先迁移或停用它们。` : ''}
+        </div>
+        {removedUsedModels.length > 0 ? <div className="health-result unhealthy"><strong>不能移除正在使用的模型</strong><span>{removedUsedModels.join('、')}</span></div> : null}
         {health ? <div className={`health-result ${health.status}`}><strong>{health.status === 'healthy' ? '连接配置可用' : '连接需要处理'}</strong><span>{health.message}</span></div> : null}
-        <button className="primary-button" disabled={saving || name.trim().length < 2 || !baseUrl || !models.trim()} type="submit">{saving ? '保存并检测中…' : '保存连接'}</button>
+        {editing ? <div className="connection-check-actions">
+          <button className="secondary-button" disabled={checking || saving} onClick={onCheck} type="button">{checking ? '检测中…' : '检测配置'}</button>
+          {isCustom ? <button className="secondary-button" disabled={!liveConsent || checking || saving} onClick={onCheckLive} type="button">真实调用测试</button> : null}
+        </div> : null}
+        {editing && isCustom ? <label className="live-check-consent"><input checked={liveConsent} onChange={(event) => onLiveConsentChange(event.target.checked)} type="checkbox" /><span>我知道真实调用测试会向第一个模型发送固定测试文本，并可能产生费用。</span></label> : null}
+        <button className="primary-button" disabled={saving || checking || name.trim().length < 2 || (isCustom && (!baseUrl || !models.trim())) || removedUsedModels.length > 0} type="submit">{saving ? '保存并检测中…' : editing ? '保存修改' : '保存连接'}</button>
       </form>
     </aside>
   </>;

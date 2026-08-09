@@ -4,6 +4,7 @@ import {
   AgentProfileInputSchema,
   BootstrapPolicySchema,
   CreateTaskInputSchema,
+  ProviderConnectionHealthCheckInputSchema,
   ProviderConnectionInputSchema,
   type RunEvent,
 } from '@relay-hub/contracts';
@@ -13,6 +14,7 @@ import type { FastifyRequest } from 'fastify';
 import { Server as SocketServer } from 'socket.io';
 import { z } from 'zod';
 import { checkAgentHealth, checkProviderConnectionHealth, listAgentRuntimes, listOpenCodeModels } from './agent-runtime-health.js';
+import { validateProviderConnectionUpdate } from './provider-connection-policy.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { PostgresStore } from './store.js';
@@ -115,6 +117,11 @@ app.post('/api/workspaces/:workspaceId/provider-connections', async (request, re
 app.put('/api/provider-connections/:connectionId', async (request, reply) => {
   const { connectionId } = z.object({ connectionId: z.string().uuid() }).parse(request.params);
   const input = ProviderConnectionInputSchema.parse(request.body);
+  const existing = await store.getProviderConnection(connectionId);
+  if (!existing) return reply.code(404).send({ error: 'provider_connection_not_found' });
+  const agents = await store.listAgentProfiles(existing.workspaceId);
+  const violation = validateProviderConnectionUpdate(existing, input, agents);
+  if (violation) return reply.code(violation.statusCode).send(violation);
   const connection = await store.updateProviderConnection(connectionId, input);
   if (!connection) return reply.code(404).send({ error: 'provider_connection_not_found' });
   return connection;
@@ -122,9 +129,19 @@ app.put('/api/provider-connections/:connectionId', async (request, reply) => {
 
 app.post('/api/provider-connections/:connectionId/health-check', async (request, reply) => {
   const { connectionId } = z.object({ connectionId: z.string().uuid() }).parse(request.params);
+  const input = ProviderConnectionHealthCheckInputSchema.parse(request.body ?? {});
   const connection = await store.getProviderConnection(connectionId);
   if (!connection) return reply.code(404).send({ error: 'provider_connection_not_found' });
-  return checkProviderConnectionHealth(connection);
+  if (input.mode === 'live' && connection.kind !== 'custom_api') {
+    return reply.code(400).send({
+      error: 'live_check_requires_custom_connection',
+      message: 'Official CLI connections are verified through their Agent runtime.',
+    });
+  }
+  if (input.model && !connection.models.includes(input.model)) {
+    return reply.code(400).send({ error: 'model_not_configured', message: 'The selected model is not configured on this connection.' });
+  }
+  return checkProviderConnectionHealth(connection, input);
 });
 
 app.post('/api/workspaces/:workspaceId/agents', async (request, reply) => {
