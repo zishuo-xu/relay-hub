@@ -20,6 +20,8 @@ import type {
   RunOutcome,
   RunStatus,
   TaskStatus,
+  ProviderConnectionKind,
+  ProviderProtocol,
 } from '@relay-hub/contracts';
 
 const TASK_STATUS_VALUES = [
@@ -84,6 +86,26 @@ export const workspaces = pgTable('workspaces', {
   ...timestamps,
 });
 
+export const providerConnections = pgTable(
+  'provider_connections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    name: text('name').notNull(),
+    kind: text('kind').$type<ProviderConnectionKind>().notNull(),
+    adapterType: text('adapter_type').notNull(),
+    protocol: text('protocol').$type<ProviderProtocol>().notNull(),
+    baseUrl: text('base_url'),
+    credentialEnv: text('credential_env'),
+    models: jsonb('models').$type<string[]>().default([]).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex('provider_connections_workspace_name_uidx').on(table.workspaceId, table.name)],
+);
+
 export const agentProfiles = pgTable(
   'agent_profiles',
   {
@@ -91,6 +113,7 @@ export const agentProfiles = pgTable(
     workspaceId: uuid('workspace_id')
       .notNull()
       .references(() => workspaces.id),
+    providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id),
     name: text('name').notNull(),
     adapterType: text('adapter_type').notNull(),
     provider: text('provider'),

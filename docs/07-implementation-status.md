@@ -1,5 +1,23 @@
 # 07. 实现状态
 
+## 2026-08-09：Workspace 模型连接与 Agent 复用
+
+### 已实现
+
+- 新增 Workspace 级 `ProviderConnection` 表、合约和 API，支持 CLI 官方认证与 OpenAI Chat Completions / Responses 自定义 API。
+- 自定义连接集中保存 Base URI、凭证环境变量名称和模型目录；不保存 API Key。
+- AgentProfile 新增可空连接引用。新 Agent 从兼容连接中选择模型；旧 Agent 和历史 Run 保持兼容。
+- Run 的不可变 AgentProfile snapshot 包含非敏感连接快照。Worker 使用该快照生成单次 `OPENCODE_CONFIG_CONTENT`，连接后续修改不会改变已创建 Run。
+- Web 新增“模型与连接 / Agent 配置”Workspace 设置页和自定义连接抽屉。
+
+### 验证证据
+
+- TypeScript 类型检查和全仓单元测试通过。
+- migration `0010_wealthy_pet_avengers.sql` 已在现有本地数据库无损执行；新增 `provider_connections` 和可空外键，原有 Task、Run、Event 保留。
+- 独立 PostgreSQL 测试库 API 集成测试 14/14 通过，覆盖“连接复用 → Agent 引用 → Run 快照 → Worker claim”。
+- 本机 OpenCode CLI `1.18.15` 已验证可读取 RelayHub 生成的临时 custom provider/model 目录，无需改写项目或用户级 OpenCode 配置。
+- 真实 `http://localhost:3010/` 验收通过：设置页展示官方/自定义连接分区；自定义连接表单验证通过；OpenCode/Codex 切换时只展示兼容连接；浏览器控制台无错误。验收表单未提交到正式配置。
+
 ## 2026-08-09：任务概览与运行日志分层
 
 ### 已实现

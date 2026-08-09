@@ -91,10 +91,15 @@ textarea:focus-visible {
   width: 38px;
   height: 38px;
   place-items: center;
-  color: #eaf3ef;
+  color: #aebdb7;
+  border: 0;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.09);
+  background: transparent;
+  cursor: pointer;
 }
+
+.rail-item + .rail-item { margin-top: 7px; }
+.rail-item.active { color: #eaf3ef; background: rgba(255, 255, 255, 0.09); }
 
 .rail-item::before {
   content: "";
@@ -103,8 +108,9 @@ textarea:focus-visible {
   width: 3px;
   height: 20px;
   border-radius: 0 4px 4px 0;
-  background: #8be2bd;
+  background: transparent;
 }
+.rail-item.active::before { background: #8be2bd; }
 
 .rail-item svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .rail-spacer { flex: 1; }
@@ -119,6 +125,50 @@ textarea:focus-visible {
   border-right: 1px solid var(--border);
   background: var(--sidebar-bg);
 }
+
+.settings-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding-bottom: 16px;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--sidebar-bg);
+}
+.settings-label { margin: 22px 18px 8px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.settings-sidebar > button { display: flex; min-height: 48px; margin: 2px 10px; padding: 8px 10px; align-items: center; gap: 10px; text-align: left; border: 0; border-radius: 9px; background: transparent; cursor: pointer; }
+.settings-sidebar > button.active { background: var(--accent-soft); }
+.settings-sidebar > button > span { display: grid; width: 28px; height: 28px; place-items: center; color: var(--accent); border-radius: 7px; background: var(--surface); font-size: 13px; font-weight: 800; }
+.settings-sidebar > button div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.settings-sidebar > button strong { color: var(--text-secondary); font-size: 11px; }
+.settings-sidebar > button small { color: var(--muted); font-size: 8px; }
+.settings-principle { margin: auto 14px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255, 255, 255, 0.55); }
+.settings-principle strong { font-size: 10px; }
+.settings-principle p { margin: 6px 0 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.settings-workspace { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--workspace-bg); }
+.settings-header { display: flex; min-height: 104px; padding: 20px 28px; flex: none; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.settings-header p { margin: 0 0 6px; color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.settings-header h1 { margin: 0; font-size: 20px; letter-spacing: -0.025em; }
+.settings-header span { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; }
+.settings-content { width: min(920px, 100%); min-height: 0; padding: 22px 28px 32px; overflow-y: auto; }
+.connection-section + .connection-section { margin-top: 26px; }
+.connection-section > header { display: flex; padding-bottom: 8px; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }
+.connection-section > header strong { font-size: 12px; }
+.connection-section > header span { color: var(--muted); font-size: 9px; }
+.connection-row, .agent-settings-row { display: grid; min-height: 70px; padding: 11px 2px; align-items: center; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid var(--border); }
+.connection-mark { display: grid; width: 34px; height: 34px; place-items: center; color: white; border-radius: 9px; background: var(--accent); font-size: 11px; font-weight: 850; }
+.connection-row > div:nth-child(2), .agent-settings-row > div:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.connection-row strong, .agent-settings-row strong { font-size: 11px; }
+.connection-row small, .agent-settings-row small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.connection-meta, .agent-settings-row > div:last-child { display: flex; align-items: flex-end; flex-direction: column; gap: 5px; color: var(--muted); font-size: 9px; }
+.connection-meta > span { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); }
+.connection-meta i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.settings-empty { margin: 0; padding: 18px 2px; color: var(--muted); border-bottom: 1px solid var(--border); font-size: 10px; }
+.settings-callout { display: flex; margin-top: 24px; padding: 13px 14px; align-items: baseline; gap: 10px; border-radius: 10px; background: var(--accent-soft); }
+.settings-callout strong { flex: none; color: var(--accent-strong); font-size: 10px; }
+.settings-callout span { color: var(--text-secondary); font-size: 9px; line-height: 1.55; }
+.agent-settings-list { padding-top: 10px; }
+.agent-settings-row > div:last-child > span { color: var(--text-secondary); }
 
 .product-header {
   display: flex;

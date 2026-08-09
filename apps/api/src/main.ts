@@ -4,6 +4,7 @@ import {
   AgentProfileInputSchema,
   BootstrapPolicySchema,
   CreateTaskInputSchema,
+  ProviderConnectionInputSchema,
   type RunEvent,
 } from '@relay-hub/contracts';
 import { createDatabase } from '@relay-hub/db';
@@ -11,7 +12,7 @@ import Fastify from 'fastify';
 import type { FastifyRequest } from 'fastify';
 import { Server as SocketServer } from 'socket.io';
 import { z } from 'zod';
-import { checkAgentHealth, listAgentRuntimes, listOpenCodeModels } from './agent-runtime-health.js';
+import { checkAgentHealth, checkProviderConnectionHealth, listAgentRuntimes, listOpenCodeModels } from './agent-runtime-health.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { PostgresStore } from './store.js';
@@ -98,10 +99,46 @@ app.get('/api/workspaces/:workspaceId/agents', async (request) => {
   return { agents: await store.listAgentProfiles(workspaceId) };
 });
 
+app.get('/api/workspaces/:workspaceId/provider-connections', async (request) => {
+  const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
+  return { connections: await store.listProviderConnections(workspaceId) };
+});
+
+app.post('/api/workspaces/:workspaceId/provider-connections', async (request, reply) => {
+  const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
+  const input = ProviderConnectionInputSchema.parse(request.body);
+  const connection = await store.createProviderConnection(workspaceId, input);
+  if (!connection) return reply.code(404).send({ error: 'workspace_not_found' });
+  return reply.code(201).send(connection);
+});
+
+app.put('/api/provider-connections/:connectionId', async (request, reply) => {
+  const { connectionId } = z.object({ connectionId: z.string().uuid() }).parse(request.params);
+  const input = ProviderConnectionInputSchema.parse(request.body);
+  const connection = await store.updateProviderConnection(connectionId, input);
+  if (!connection) return reply.code(404).send({ error: 'provider_connection_not_found' });
+  return connection;
+});
+
+app.post('/api/provider-connections/:connectionId/health-check', async (request, reply) => {
+  const { connectionId } = z.object({ connectionId: z.string().uuid() }).parse(request.params);
+  const connection = await store.getProviderConnection(connectionId);
+  if (!connection) return reply.code(404).send({ error: 'provider_connection_not_found' });
+  return checkProviderConnectionHealth(connection);
+});
+
 app.post('/api/workspaces/:workspaceId/agents', async (request, reply) => {
   const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
   const input = AgentProfileInputSchema.parse(request.body);
-  const agent = await store.createAgentProfile(workspaceId, input);
+  let agent;
+  try {
+    agent = await store.createAgentProfile(workspaceId, input);
+  } catch (error) {
+    return reply.code(400).send({
+      error: 'invalid_agent_configuration',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   if (!agent) return reply.code(404).send({ error: 'workspace_not_found' });
   return reply.code(201).send(agent);
 });
@@ -109,7 +146,15 @@ app.post('/api/workspaces/:workspaceId/agents', async (request, reply) => {
 app.put('/api/agents/:agentId', async (request, reply) => {
   const { agentId } = z.object({ agentId: z.string().uuid() }).parse(request.params);
   const input = AgentProfileInputSchema.parse(request.body);
-  const agent = await store.updateAgentProfile(agentId, input);
+  let agent;
+  try {
+    agent = await store.updateAgentProfile(agentId, input);
+  } catch (error) {
+    return reply.code(400).send({
+      error: 'invalid_agent_configuration',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   if (!agent) return reply.code(404).send({ error: 'agent_not_found' });
   return agent;
 });

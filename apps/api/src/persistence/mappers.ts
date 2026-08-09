@@ -8,10 +8,12 @@ import type {
   RunEvent,
   Task,
   Workspace,
+  ProviderConnection,
 } from '@relay-hub/contracts';
 import {
   agentProfiles,
   handoffs,
+  providerConnections,
   reviewFindings,
   reviews,
   runEvents,
@@ -25,6 +27,7 @@ type RunRow = typeof runs.$inferSelect;
 type RunEventRow = typeof runEvents.$inferSelect;
 type WorkspaceRow = typeof workspaces.$inferSelect;
 type AgentProfileRow = typeof agentProfiles.$inferSelect;
+type ProviderConnectionRow = typeof providerConnections.$inferSelect;
 type HandoffRow = typeof handoffs.$inferSelect;
 type ReviewRow = typeof reviews.$inferSelect;
 type ReviewFindingRow = typeof reviewFindings.$inferSelect;
@@ -155,12 +158,33 @@ export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
     workspaceId: row.workspaceId,
     name: row.name,
     adapterType,
+    ...(row.providerConnectionId ? { providerConnectionId: row.providerConnectionId } : {}),
     capabilities: row.capabilities,
     config: row.config,
     enabled: row.enabled,
     ...(row.provider ? { provider: row.provider } : {}),
     ...(row.modelLabel ? { modelLabel: row.modelLabel } : {}),
     ...(row.modelFamily ? { modelFamily: row.modelFamily } : {}),
+  };
+}
+
+export function mapProviderConnection(row: ProviderConnectionRow): ProviderConnection {
+  if (row.adapterType !== 'codex_cli' && row.adapterType !== 'opencode_cli') {
+    throw new Error(`Unsupported provider connection adapter: ${row.adapterType}`);
+  }
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    kind: row.kind,
+    adapterType: row.adapterType,
+    protocol: row.protocol,
+    models: row.models,
+    enabled: row.enabled,
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+    ...(row.baseUrl ? { baseUrl: row.baseUrl } : {}),
+    ...(row.credentialEnv ? { credentialEnv: row.credentialEnv } : {}),
   };
 }
 

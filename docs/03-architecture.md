@@ -191,6 +191,8 @@ AgentProfile 可以修改并被未来 Run 复用，但每个 Run 在创建事务
 
 OpenCode AgentProfile 使用精确的 `provider/model` 作为运行时模型标识，并可保存 variant、OpenCode agent 名称和凭证环境变量名称。API Key 值不进入 PostgreSQL、Run snapshot、Prompt 或 Timeline；用户可使用 `opencode providers login` 管理 OpenCode 自己的凭证。健康检测只验证 CLI 可启动且模型出现在本机 `opencode models` 目录，不发送计费请求，因此真实凭证只会在任务执行时验证。
 
+**Implemented（2026-08-09）：** ProviderConnection 已从 AgentProfile 中独立出来并归 Workspace 所有。官方连接复用 CLI 登录；自定义连接集中保存 OpenAI Chat Completions / Responses 协议、Base URI、凭证环境变量名称和模型目录。Agent 只引用连接并选择模型。Worker 将连接快照转换为单次 OpenCode 内联配置，因此所有智能执行仍发生在 Agent CLI，RelayHub 只承担控制面职责。旧的直接 `provider/model` Agent 配置保持兼容。
+
 OpenCode Adapter 仍服从统一 Worktree 和角色边界：Builder 可以在当前 Worktree 内编辑和执行命令；Reviewer 通过每次 Run 注入的高优先级配置禁用 `edit`、`bash`、`external_directory`、`question` 和子 Agent `task` 权限。两者都使用 `--pure`、JSON 事件流和显式工作目录，不共享 Session 或隐藏推理。
 
 ReviewPolicy 可以配置：

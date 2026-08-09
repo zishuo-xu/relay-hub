@@ -4,7 +4,10 @@ import {
   type AgentHealth,
   type AgentProfile,
   type AgentRuntimeDescriptor,
+  type ProviderConnectionSnapshot,
   OpenCodeRuntimeConfigSchema,
+  openCodeProviderConfig,
+  openCodeProviderKey,
 } from '@relay-hub/contracts';
 
 const execFileAsync = promisify(execFile);
@@ -20,13 +23,59 @@ function diagnosticEnvironment(): NodeJS.ProcessEnv {
   };
 }
 
-async function run(command: string, args: string[]): Promise<string> {
+async function run(command: string, args: string[], environment = diagnosticEnvironment()): Promise<string> {
   const result = await execFileAsync(command, args, {
-    env: diagnosticEnvironment(),
+    env: environment,
     timeout: 10_000,
     maxBuffer: 2 * 1024 * 1024,
   });
   return result.stdout.trim();
+}
+
+export async function checkProviderConnectionHealth(connection: ProviderConnectionSnapshot): Promise<AgentHealth> {
+  try {
+    if (connection.adapterType === 'codex_cli') {
+      const version = await run(process.env.RELAY_HUB_CODEX_BIN ?? 'codex', ['--version']);
+      return { status: 'healthy', adapterType: 'codex_cli', version, message: 'Codex CLI is available; login is managed by Codex.' };
+    }
+    if (connection.kind === 'official_cli') {
+      const runtime = await listOpenCodeModels();
+      return {
+        status: 'healthy',
+        adapterType: 'opencode_cli',
+        version: runtime.version,
+        message: `${runtime.models.length} OpenCode models are visible; credentials are managed by OpenCode.`,
+      };
+    }
+    const credentialEnv = connection.credentialEnv;
+    const environment = {
+      ...diagnosticEnvironment(),
+      ...(credentialEnv && process.env[credentialEnv] ? { [credentialEnv]: process.env[credentialEnv] } : {}),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(openCodeProviderConfig(connection)),
+    };
+    const binary = process.env.RELAY_HUB_OPENCODE_BIN ?? 'opencode';
+    const [version, catalog] = await Promise.all([
+      run(binary, ['--version'], environment),
+      run(binary, ['models'], environment),
+    ]);
+    const available = new Set(catalog.split(/\r?\n/).map((model) => model.trim()).filter(Boolean));
+    const prefix = `${openCodeProviderKey(connection.id)}/`;
+    const visibleModels = connection.models.filter((model) => available.has(`${prefix}${model}`));
+    return {
+      status: visibleModels.length === connection.models.length ? 'healthy' : 'unhealthy',
+      adapterType: 'opencode_cli',
+      version,
+      message: visibleModels.length === connection.models.length
+        ? `${visibleModels.length} custom models are available to OpenCode; no paid model request was sent.`
+        : `Only ${visibleModels.length}/${connection.models.length} custom models are visible in OpenCode.`,
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      adapterType: connection.adapterType,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function listOpenCodeModels(): Promise<{ version: string; models: string[] }> {
@@ -99,6 +148,10 @@ export async function checkAgentHealth(agent: AgentProfile): Promise<AgentHealth
     }
 
     const config = OpenCodeRuntimeConfigSchema.parse(agent.config);
+    if (config.providerConnection?.kind === 'custom_api') {
+      const health = await checkProviderConnectionHealth(config.providerConnection);
+      return { ...health, model: config.model, modelAvailable: health.status === 'healthy' };
+    }
     const runtime = await listOpenCodeModels();
     const modelAvailable = runtime.models.includes(config.model);
     return {

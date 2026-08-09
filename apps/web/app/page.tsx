@@ -9,6 +9,8 @@ import {
   type AgentProfile,
   type AgentRuntimeDescriptor,
   type CompletionPolicy,
+  type ProviderConnection,
+  type ProviderProtocol,
   type RealtimeEnvelope,
   type Task,
   type TaskDetail,
@@ -16,7 +18,16 @@ import {
 } from '@relay-hub/contracts';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
-import { AgentConfigDrawer, AppRail, CreateTaskDrawer, TaskSidebar, TimelineWorkspace } from './dashboard';
+import {
+  AgentConfigDrawer,
+  AppRail,
+  CreateTaskDrawer,
+  ProviderConnectionDrawer,
+  SettingsSidebar,
+  SettingsWorkspace,
+  TaskSidebar,
+  TimelineWorkspace,
+} from './dashboard';
 
 const apiUrl = process.env.NEXT_PUBLIC_RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
 
@@ -49,6 +60,18 @@ export default function HomePage() {
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeDescriptor[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<'connections' | 'agents'>('connections');
+  const [connections, setConnections] = useState<ProviderConnection[]>([]);
+  const [agentConfigConnectionId, setAgentConfigConnectionId] = useState('');
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [connectionName, setConnectionName] = useState('');
+  const [connectionProtocol, setConnectionProtocol] = useState<ProviderProtocol>('openai_chat_completions');
+  const [connectionBaseUrl, setConnectionBaseUrl] = useState('');
+  const [connectionCredentialEnv, setConnectionCredentialEnv] = useState('');
+  const [connectionModels, setConnectionModels] = useState('');
+  const [connectionSaving, setConnectionSaving] = useState(false);
+  const [connectionHealth, setConnectionHealth] = useState<AgentHealth | null>(null);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
@@ -90,6 +113,10 @@ export default function HomePage() {
         ? current
         : enabledAgents.find((agent) => agent.capabilities.includes('review'))?.id ?? '',
     );
+    const connectionResponse = await fetch(`${apiUrl}/api/workspaces/${currentWorkspace.id}/provider-connections`, { cache: 'no-store' });
+    if (!connectionResponse.ok) throw new Error('无法读取模型连接');
+    const connectionPayload = (await connectionResponse.json()) as { connections: ProviderConnection[] };
+    setConnections(connectionPayload.connections);
   }, []);
 
   useEffect(() => {
@@ -209,12 +236,57 @@ export default function HomePage() {
     setCreateOpen(false);
     setAgentConfigOpen(true);
     setAgentHealth(null);
+    setConnectionOpen(false);
     const response = await fetch(`${apiUrl}/api/agent-runtimes`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`无法读取 Agent CLI：${response.status}`);
     const payload = (await response.json()) as { runtimes: AgentRuntimeDescriptor[] };
     setAgentRuntimes(payload.runtimes);
     const openCode = payload.runtimes.find((runtime) => runtime.adapterType === 'opencode_cli');
     setAgentConfigModel((current) => current || openCode?.models[0] || '');
+    setAgentConfigConnectionId((current) => current || connections.find((connection) => connection.adapterType === 'opencode_cli' && connection.enabled)?.id || '');
+  }
+
+  function openSettings(view: 'connections' | 'agents' = 'connections') {
+    setCreateOpen(false);
+    setAgentConfigOpen(false);
+    setConnectionOpen(false);
+    setSettingsView(view);
+    setSettingsOpen(true);
+  }
+
+  async function createProviderConnection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspace) throw new Error('Workspace 尚未加载完成');
+    setConnectionSaving(true);
+    setConnectionHealth(null);
+    setError(null);
+    try {
+      const models = connectionModels.split(/\r?\n|,/).map((model) => model.trim()).filter(Boolean);
+      const response = await fetch(`${apiUrl}/api/workspaces/${workspace.id}/provider-connections`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: connectionName,
+          kind: 'custom_api',
+          adapterType: 'opencode_cli',
+          protocol: connectionProtocol,
+          baseUrl: connectionBaseUrl,
+          ...(connectionCredentialEnv.trim() ? { credentialEnv: connectionCredentialEnv.trim() } : {}),
+          models,
+          enabled: true,
+        }),
+      });
+      if (!response.ok) throw new Error(`保存连接失败：${response.status} ${await response.text()}`);
+      const created = (await response.json()) as ProviderConnection;
+      await loadRuntimeConfiguration();
+      setAgentConfigConnectionId(created.id);
+      const healthResponse = await fetch(`${apiUrl}/api/provider-connections/${created.id}/health-check`, { method: 'POST' });
+      if (healthResponse.ok) setConnectionHealth((await healthResponse.json()) as AgentHealth);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setConnectionSaving(false);
+    }
   }
 
   async function createAgentProfile(event: FormEvent<HTMLFormElement>) {
@@ -231,6 +303,7 @@ export default function HomePage() {
           name: agentConfigName,
           adapterType: agentConfigAdapter,
           capabilities: agentConfigCapabilities,
+          ...(agentConfigAdapter !== 'mock' ? { providerConnectionId: agentConfigConnectionId } : {}),
           ...(agentConfigAdapter === 'opencode_cli'
             ? {
                 model: agentConfigModel,
@@ -277,9 +350,27 @@ export default function HomePage() {
 
   return (
     <main className="app-shell">
-      <AppRail />
-      <TaskSidebar tasks={tasks} selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId} />
-      <TimelineWorkspace
+      <AppRail
+        active={settingsOpen ? 'settings' : 'tasks'}
+        onSettings={() => openSettings('connections')}
+        onTasks={() => setSettingsOpen(false)}
+      />
+      {settingsOpen ? <>
+        <SettingsSidebar onViewChange={setSettingsView} view={settingsView} />
+        <SettingsWorkspace
+          agents={agents}
+          connections={connections}
+          onNewAgent={() => void openAgentConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onNewConnection={() => {
+            setAgentConfigOpen(false);
+            setConnectionHealth(null);
+            setConnectionOpen(true);
+          }}
+          view={settingsView}
+        />
+      </> : <>
+        <TaskSidebar tasks={tasks} selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId} />
+        <TimelineWorkspace
         key={selectedTaskId ?? 'empty'}
         canCancel={canCancel}
         canConfirm={canConfirm}
@@ -290,12 +381,13 @@ export default function HomePage() {
         error={error}
         onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
         onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
-        onConfigureAgents={() => void openAgentConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+        onConfigureAgents={() => openSettings('agents')}
         onNewTask={() => {
           setAgentConfigOpen(false);
           setCreateOpen(true);
         }}
-      />
+        />
+      </>}
       <CreateTaskDrawer
         agents={agents.filter((agent) => agent.capabilities.includes('implement'))}
         criterion={criterion}
@@ -327,6 +419,7 @@ export default function HomePage() {
         agentName={agentConfigAgentName}
         capabilities={agentConfigCapabilities}
         credentialEnv={agentConfigCredentialEnv}
+        connections={connections}
         health={agentHealth}
         model={agentConfigModel}
         runtimes={agentRuntimes}
@@ -334,15 +427,25 @@ export default function HomePage() {
         onAdapterChange={(value) => {
           setAgentConfigAdapter(value);
           setAgentHealth(null);
+          const connection = connections.find((candidate) => candidate.adapterType === value && candidate.enabled);
+          setAgentConfigConnectionId(connection?.id ?? '');
           if (value === 'opencode_cli') {
             const runtime = agentRuntimes.find((candidate) => candidate.adapterType === value);
-            setAgentConfigModel((current) => current || runtime?.models[0] || '');
-          }
+            setAgentConfigModel(connection?.kind === 'custom_api' ? connection.models[0] ?? '' : runtime?.models[0] ?? '');
+          } else setAgentConfigModel('');
         }}
         onClose={() => setAgentConfigOpen(false)}
         onAgentNameChange={setAgentConfigAgentName}
         onCapabilitiesChange={setAgentConfigCapabilities}
         onCredentialEnvChange={setAgentConfigCredentialEnv}
+        onProviderConnectionChange={(value) => {
+          setAgentConfigConnectionId(value);
+          const connection = connections.find((candidate) => candidate.id === value);
+          if (agentConfigAdapter === 'opencode_cli') {
+            const runtime = agentRuntimes.find((candidate) => candidate.adapterType === 'opencode_cli');
+            setAgentConfigModel(connection?.kind === 'custom_api' ? connection.models[0] ?? '' : runtime?.models[0] ?? '');
+          }
+        }}
         onModelChange={setAgentConfigModel}
         onNameChange={setAgentConfigName}
         onSubmit={createAgentProfile}
@@ -350,6 +453,24 @@ export default function HomePage() {
         open={agentConfigOpen}
         saving={agentConfigSaving}
         variant={agentConfigVariant}
+        providerConnectionId={agentConfigConnectionId}
+      />
+      <ProviderConnectionDrawer
+        baseUrl={connectionBaseUrl}
+        credentialEnv={connectionCredentialEnv}
+        health={connectionHealth}
+        models={connectionModels}
+        name={connectionName}
+        onBaseUrlChange={setConnectionBaseUrl}
+        onClose={() => setConnectionOpen(false)}
+        onCredentialEnvChange={setConnectionCredentialEnv}
+        onModelsChange={setConnectionModels}
+        onNameChange={setConnectionName}
+        onProtocolChange={setConnectionProtocol}
+        onSubmit={createProviderConnection}
+        open={connectionOpen}
+        protocol={connectionProtocol}
+        saving={connectionSaving}
       />
     </main>
   );

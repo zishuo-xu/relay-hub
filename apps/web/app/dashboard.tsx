@@ -8,6 +8,8 @@ import type {
   AgentProfileSnapshotSummary,
   AgentRuntimeDescriptor,
   CompletionPolicy,
+  ProviderConnection,
+  ProviderProtocol,
   RunEvent,
   Task,
   TaskDetail,
@@ -146,18 +148,29 @@ function eventTone(event: RunEvent): string {
   return 'system';
 }
 
-export function AppRail() {
+interface AppRailProps {
+  active: 'tasks' | 'settings';
+  onTasks: () => void;
+  onSettings: () => void;
+}
+
+export function AppRail({ active, onTasks, onSettings }: AppRailProps) {
   return (
     <nav aria-label="主导航" className="app-rail">
       <div aria-label="RelayHub" className="rail-brand">R</div>
-      <div aria-current="page" className="rail-item" title="任务控制台">
+      <button aria-current={active === 'tasks' ? 'page' : undefined} className={`rail-item ${active === 'tasks' ? 'active' : ''}`} onClick={onTasks} title="任务控制台" type="button">
         <svg aria-hidden="true" viewBox="0 0 24 24">
           <path d="M5 5.5h14M5 12h14M5 18.5h9" />
           <circle cx="3" cy="5.5" r="1" />
           <circle cx="3" cy="12" r="1" />
           <circle cx="3" cy="18.5" r="1" />
         </svg>
-      </div>
+      </button>
+      <button aria-current={active === 'settings' ? 'page' : undefined} className={`rail-item ${active === 'settings' ? 'active' : ''}`} onClick={onSettings} title="Workspace 配置" type="button">
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+        </svg>
+      </button>
       <div className="rail-spacer" />
       <div className="rail-runtime" title="本地运行时在线"><span /></div>
     </nav>
@@ -244,6 +257,100 @@ export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebar
         <span>Phase 3</span>
       </footer>
     </aside>
+  );
+}
+
+interface SettingsSidebarProps {
+  view: 'connections' | 'agents';
+  onViewChange: (view: 'connections' | 'agents') => void;
+}
+
+export function SettingsSidebar({ view, onViewChange }: SettingsSidebarProps) {
+  return (
+    <aside className="settings-sidebar">
+      <header className="product-header"><strong>RelayHub</strong><span>Workspace settings</span></header>
+      <p className="settings-label">配置</p>
+      <button className={view === 'connections' ? 'active' : ''} onClick={() => onViewChange('connections')} type="button">
+        <span>↗</span><div><strong>模型与连接</strong><small>认证、URI 与模型目录</small></div>
+      </button>
+      <button className={view === 'agents' ? 'active' : ''} onClick={() => onViewChange('agents')} type="button">
+        <span>◎</span><div><strong>Agent 配置</strong><small>身份、能力与运行模型</small></div>
+      </button>
+      <div className="settings-principle"><strong>配置分层</strong><p>连接保存模型入口，Agent 只选择如何使用；历史 Run 保存不可变快照。</p></div>
+    </aside>
+  );
+}
+
+interface SettingsWorkspaceProps {
+  view: 'connections' | 'agents';
+  connections: ProviderConnection[];
+  agents: AgentProfile[];
+  onNewConnection: () => void;
+  onNewAgent: () => void;
+}
+
+export function SettingsWorkspace({
+  view,
+  connections,
+  agents,
+  onNewConnection,
+  onNewAgent,
+}: SettingsWorkspaceProps) {
+  const official = connections.filter((connection) => connection.kind === 'official_cli');
+  const custom = connections.filter((connection) => connection.kind === 'custom_api');
+  const connectionName = (agent: AgentProfile) =>
+    connections.find((connection) => connection.id === agent.providerConnectionId)?.name ?? '兼容旧配置';
+  const renderConnection = (connection: ProviderConnection) => (
+    <article className="connection-row" key={connection.id}>
+      <span className="connection-mark">{connection.adapterType === 'codex_cli' ? 'C' : connection.name.slice(0, 1).toUpperCase()}</span>
+      <div>
+        <strong>{connection.name}</strong>
+        <small>
+          {connection.adapterType === 'codex_cli' ? 'Codex CLI' : 'OpenCode CLI'} · {
+            connection.kind === 'official_cli' ? 'CLI 管理认证' : connection.baseUrl
+          }
+        </small>
+      </div>
+      <div className="connection-meta">
+        <span><i />{connection.enabled ? '已配置' : '已停用'}</span>
+        <small>{connection.kind === 'official_cli' ? '模型由 CLI 提供' : `${connection.models.length} 个模型`}</small>
+      </div>
+    </article>
+  );
+  return (
+    <section className="settings-workspace">
+      {view === 'connections' ? <>
+        <header className="settings-header">
+          <div><p>Provider connections</p><h1>模型与连接</h1><span>连接只配置一次，Workspace 中的所有 Agent 都可以复用。</span></div>
+          <button className="new-task-button" onClick={onNewConnection} type="button">新增连接</button>
+        </header>
+        <div className="settings-content">
+          <section className="connection-section">
+            <header><strong>官方认证</strong><span>由 CLI 管理登录状态</span></header>
+            <div>{official.map(renderConnection)}</div>
+          </section>
+          <section className="connection-section">
+            <header><strong>自定义 API</strong><span>URI 与凭证引用集中管理</span></header>
+            <div>{custom.length > 0 ? custom.map(renderConnection) : <p className="settings-empty">还没有自定义连接。新增后，所有 OpenCode Agent 都可以选择它。</p>}</div>
+          </section>
+          <div className="settings-callout"><strong>为什么集中配置？</strong><span>更换 URI 或新增模型时只改一个地方；每个 Run 仍保留启动时的连接快照，保证可追溯。</span></div>
+        </div>
+      </> : <>
+        <header className="settings-header">
+          <div><p>Agent profiles</p><h1>Agent 配置</h1><span>Agent 是协作者身份；CLI、连接和模型是它的运行方式。</span></div>
+          <button className="new-task-button" onClick={onNewAgent} type="button">新建 Agent</button>
+        </header>
+        <div className="settings-content agent-settings-list">
+          {agents.map((agent) => (
+            <article className="agent-settings-row" key={agent.id}>
+              <span className="connection-mark">{agent.adapterType === 'codex_cli' ? 'C' : agent.adapterType === 'opencode_cli' ? 'O' : 'M'}</span>
+              <div><strong>{agent.name}</strong><small>{agent.capabilities.join(' + ')} · {agent.modelLabel ?? agent.adapterType}</small></div>
+              <div><span>{connectionName(agent)}</span><small>{agent.enabled ? '可用于新任务' : '已停用'}</small></div>
+            </article>
+          ))}
+        </div>
+      </>}
+    </section>
   );
 }
 
@@ -611,6 +718,66 @@ export function CreateTaskDrawer({
   );
 }
 
+interface ProviderConnectionDrawerProps {
+  open: boolean;
+  name: string;
+  protocol: ProviderProtocol;
+  baseUrl: string;
+  credentialEnv: string;
+  models: string;
+  saving: boolean;
+  health: AgentHealth | null;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onNameChange: (value: string) => void;
+  onProtocolChange: (value: ProviderProtocol) => void;
+  onBaseUrlChange: (value: string) => void;
+  onCredentialEnvChange: (value: string) => void;
+  onModelsChange: (value: string) => void;
+}
+
+export function ProviderConnectionDrawer({
+  open,
+  name,
+  protocol,
+  baseUrl,
+  credentialEnv,
+  models,
+  saving,
+  health,
+  onClose,
+  onSubmit,
+  onNameChange,
+  onProtocolChange,
+  onBaseUrlChange,
+  onCredentialEnvChange,
+  onModelsChange,
+}: ProviderConnectionDrawerProps) {
+  return <>
+    {open ? <button aria-label="关闭连接配置" className="drawer-backdrop" onClick={onClose} type="button" /> : null}
+    <aside aria-hidden={!open} className={`create-drawer ${open ? 'open' : ''}`}>
+      <header className="drawer-header"><div><p>Custom provider</p><h2>新增自定义连接</h2></div><button aria-label="关闭" className="drawer-close" onClick={onClose} type="button">×</button></header>
+      <form onSubmit={onSubmit}>
+        <div className="runtime-card"><span className="agent-mark">O</span><div><strong>OpenCode CLI</strong><small>RelayHub 会在每次 Run 中注入临时 provider 配置</small></div></div>
+        <label>连接名称<input minLength={2} onChange={(event) => onNameChange(event.target.value)} placeholder="例如 公司 DeepSeek" required value={name} /></label>
+        <label>
+          API 协议
+          <select onChange={(event) => onProtocolChange(event.target.value as ProviderProtocol)} value={protocol}>
+            <option value="openai_chat_completions">OpenAI Chat Completions</option>
+            <option value="openai_responses">OpenAI Responses</option>
+          </select>
+        </label>
+        <label>Base URI<input onChange={(event) => onBaseUrlChange(event.target.value)} placeholder="https://api.example.com/v1" required type="url" value={baseUrl} /></label>
+        <label>密钥环境变量（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="DEEPSEEK_API_KEY" value={credentialEnv} /></label>
+        <label>模型 ID（每行一个）<textarea onChange={(event) => onModelsChange(event.target.value)} placeholder={'deepseek-chat\ndeepseek-reasoner'} required rows={5} value={models} /></label>
+        <div className="config-note">这里只保存 URI、协议、模型目录和环境变量名称，不保存 API Key。执行时由 Worker 从自己的环境读取密钥。</div>
+        {health ? <div className={`health-result ${health.status}`}><strong>{health.status === 'healthy' ? '连接配置可用' : '连接需要处理'}</strong><span>{health.message}</span></div> : null}
+        <button className="primary-button" disabled={saving || name.trim().length < 2 || !baseUrl || !models.trim()} type="submit">{saving ? '保存并检测中…' : '保存连接'}</button>
+      </form>
+    </aside>
+  </>;
+}
+
 interface AgentConfigDrawerProps {
   open: boolean;
   name: string;
@@ -620,6 +787,8 @@ interface AgentConfigDrawerProps {
   variant: string;
   agentName: string;
   credentialEnv: string;
+  providerConnectionId: string;
+  connections: ProviderConnection[];
   runtimes: AgentRuntimeDescriptor[];
   saving: boolean;
   health: AgentHealth | null;
@@ -632,6 +801,7 @@ interface AgentConfigDrawerProps {
   onModelChange: (value: string) => void;
   onVariantChange: (value: string) => void;
   onCredentialEnvChange: (value: string) => void;
+  onProviderConnectionChange: (value: string) => void;
 }
 
 export function AgentConfigDrawer({
@@ -643,6 +813,8 @@ export function AgentConfigDrawer({
   variant,
   agentName,
   credentialEnv,
+  providerConnectionId,
+  connections,
   runtimes,
   saving,
   health,
@@ -655,6 +827,7 @@ export function AgentConfigDrawer({
   onModelChange,
   onVariantChange,
   onCredentialEnvChange,
+  onProviderConnectionChange,
 }: AgentConfigDrawerProps) {
   const selectedRuntime = runtimes.find((runtime) => runtime.adapterType === adapterType);
   const runtimeMark = adapterType === 'codex_cli' ? 'C' : adapterType === 'opencode_cli' ? 'O' : 'M';
@@ -662,6 +835,9 @@ export function AgentConfigDrawer({
     adapterType === 'codex_cli' ? 'Codex CLI' : adapterType === 'opencode_cli' ? 'OpenCode CLI' : 'Mock'
   );
   const openCodeModels = runtimes.find((runtime) => runtime.adapterType === 'opencode_cli')?.models ?? [];
+  const compatibleConnections = connections.filter((connection) => connection.adapterType === adapterType && connection.enabled);
+  const selectedConnection = compatibleConnections.find((connection) => connection.id === providerConnectionId);
+  const selectableModels = selectedConnection?.kind === 'custom_api' ? selectedConnection.models : openCodeModels;
   return (
     <>
       {open ? <button aria-label="关闭 Agent 配置" className="drawer-backdrop" onClick={onClose} type="button" /> : null}
@@ -693,6 +869,13 @@ export function AgentConfigDrawer({
               <option value="opencode_cli">OpenCode CLI</option>
             </select>
           </label>
+          {adapterType !== 'mock' ? <label>
+            模型连接
+            <select onChange={(event) => onProviderConnectionChange(event.target.value)} required value={providerConnectionId}>
+              <option value="">请选择连接</option>
+              {compatibleConnections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+            </select>
+          </label> : null}
           <fieldset className="capability-fieldset">
             <legend>能力（至少选择一项）</legend>
             <div className="capability-grid">
@@ -722,12 +905,12 @@ export function AgentConfigDrawer({
               <input
                 list="opencode-models"
                 onChange={(event) => onModelChange(event.target.value)}
-                placeholder="例如 opencode/big-pickle"
+                placeholder={selectedConnection?.kind === 'custom_api' ? '选择此连接已配置的模型' : '例如 opencode/big-pickle'}
                 required
                 value={model}
               />
               <datalist id="opencode-models">
-                {openCodeModels.map((candidate) => <option key={candidate} value={candidate} />)}
+                {selectableModels.map((candidate) => <option key={candidate} value={candidate} />)}
               </datalist>
             </label>
             <div className="policy-grid">
@@ -740,18 +923,11 @@ export function AgentConfigDrawer({
                 <input onChange={(event) => onAgentNameChange(event.target.value)} placeholder="build" value={agentName} />
               </label>
             </div>
-            <label>
-              密钥环境变量（可选）
-              <input
-                onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())}
-                placeholder="OPENAI_API_KEY"
-                value={credentialEnv}
-              />
-            </label>
+            {!selectedConnection ? <label>旧配置密钥环境变量（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="OPENAI_API_KEY" value={credentialEnv} /></label> : null}
           </> : null}
           <div className="config-note">
             {adapterType === 'opencode_cli' ? <>
-              Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。这里只保存环境变量名称，不保存密钥值；也可以使用 <code>opencode providers login</code>。
+              Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。URI 与凭证引用来自“模型与连接”，Agent 这里只选择连接和模型。
             </> : adapterType === 'codex_cli' ? <>
               Agent 将使用本机 Codex CLI 的当前登录与默认模型配置，CLI 只是运行载体。
             </> : <>
@@ -766,7 +942,7 @@ export function AgentConfigDrawer({
           ) : null}
           <button
             className="primary-button"
-            disabled={saving || name.trim().length < 2 || (adapterType === 'opencode_cli' && !model)}
+            disabled={saving || name.trim().length < 2 || (adapterType !== 'mock' && !providerConnectionId) || (adapterType === 'opencode_cli' && !model)}
             type="submit"
           >
             {saving ? '保存并检测中…' : '保存 Agent'}

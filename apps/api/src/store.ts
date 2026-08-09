@@ -3,6 +3,8 @@ import type {
   AgentProfileInput,
   AgentProfile,
   BootstrapPolicy,
+  ProviderConnection,
+  ProviderConnectionInput,
   ClaimedExecution,
   CreateTaskInput,
   RunEvent,
@@ -29,10 +31,14 @@ import type { MutationResult } from './persistence/types.js';
 import {
   createAgentProfile as createAgentProfileInDb,
   getAgentProfile as getAgentProfileFromDb,
+  getProviderConnection as getProviderConnectionFromDb,
   listAgentProfiles as listAgentProfilesFromDb,
+  listProviderConnections as listProviderConnectionsFromDb,
   listWorkspaces as listWorkspacesFromDb,
   updateWorkspace as updateWorkspaceInDb,
   updateAgentProfile as updateAgentProfileInDb,
+  createProviderConnection as createProviderConnectionInDb,
+  updateProviderConnection as updateProviderConnectionInDb,
 } from './persistence/workspace-repository.js';
 import { recordAgentEvent as recordAgentEventInDb } from './persistence/workflow-repository.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
@@ -72,6 +78,28 @@ export class PostgresStore {
 
   getAgentProfile(agentId: string): Promise<AgentProfile | null> {
     return getAgentProfileFromDb(this.db, agentId);
+  }
+
+  listProviderConnections(workspaceId: string): Promise<ProviderConnection[]> {
+    return listProviderConnectionsFromDb(this.db, workspaceId);
+  }
+
+  getProviderConnection(connectionId: string): Promise<ProviderConnection | null> {
+    return getProviderConnectionFromDb(this.db, connectionId);
+  }
+
+  createProviderConnection(
+    workspaceId: string,
+    input: ProviderConnectionInput,
+  ): Promise<ProviderConnection | null> {
+    return createProviderConnectionInDb(this.db, workspaceId, input);
+  }
+
+  updateProviderConnection(
+    connectionId: string,
+    input: ProviderConnectionInput,
+  ): Promise<ProviderConnection | null> {
+    return updateProviderConnectionInDb(this.db, connectionId, input);
   }
 
   getTaskDetail(taskId: string): Promise<TaskDetail | null> {

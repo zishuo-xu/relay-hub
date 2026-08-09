@@ -71,6 +71,13 @@
       "when": 1786193105264,
       "tag": "0009_strange_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786248664848,
+      "tag": "0010_wealthy_pet_avengers",
+      "breakpoints": true
     }
   ]
 }

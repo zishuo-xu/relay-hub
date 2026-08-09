@@ -61,6 +61,55 @@ suite('PostgresStore integration', () => {
     });
   });
 
+  it('reuses a custom ProviderConnection and freezes it into the Run snapshot', async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const connection = await store.createProviderConnection('00000000-0000-4000-8000-000000000001', {
+      name: `Custom API ${suffix}`,
+      kind: 'custom_api',
+      adapterType: 'opencode_cli',
+      protocol: 'openai_responses',
+      baseUrl: 'https://api.example.com/v1',
+      credentialEnv: 'TEAM_API_KEY',
+      models: ['coding-model'],
+      enabled: true,
+    });
+    if (!connection) throw new Error('ProviderConnection was not created');
+    const agent = await store.createAgentProfile('00000000-0000-4000-8000-000000000001', {
+      name: `Connected Builder ${suffix}`,
+      adapterType: 'opencode_cli',
+      capabilities: ['implement'],
+      providerConnectionId: connection.id,
+      model: 'coding-model',
+      enabled: true,
+    });
+    expect(agent).toMatchObject({
+      providerConnectionId: connection.id,
+      config: {
+        model: 'coding-model',
+        providerConnection: {
+          id: connection.id,
+          protocol: 'openai_responses',
+          baseUrl: 'https://api.example.com/v1',
+          credentialEnv: 'TEAM_API_KEY',
+        },
+      },
+    });
+    if (!agent) throw new Error('Connected Agent was not created');
+    const task = await store.createTask({
+      title: 'Run a custom provider model',
+      description: 'The connection must be reusable and immutable per Run.',
+      agentId: agent.id,
+      acceptanceCriteria: [],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    const claimed = await store.claimRun(task.value.detail.task.currentRunId, 'provider-snapshot-worker');
+    expect(claimed.value?.claimed.agent.config).toMatchObject({
+      model: 'coding-model',
+      providerConnection: { id: connection.id, baseUrl: 'https://api.example.com/v1' },
+    });
+  });
+
   it('claims each Run with the immutable AgentProfile snapshot captured at creation', async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const agent = await store.createAgentProfile('00000000-0000-4000-8000-000000000001', {

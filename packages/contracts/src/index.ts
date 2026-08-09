@@ -4,6 +4,8 @@ export const DEFAULT_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 export const DEFAULT_MOCK_AGENT_ID = '00000000-0000-4000-8000-000000000002';
 export const DEFAULT_CODEX_AGENT_ID = '00000000-0000-4000-8000-000000000003';
 export const DEFAULT_MOCK_REVIEWER_AGENT_ID = '00000000-0000-4000-8000-000000000004';
+export const DEFAULT_CODEX_CONNECTION_ID = '00000000-0000-4000-8000-000000000005';
+export const DEFAULT_OPENCODE_CONNECTION_ID = '00000000-0000-4000-8000-000000000006';
 export const RUN_QUEUE_NAME = 'relay-hub-runs';
 
 export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli', 'opencode_cli'] as const;
@@ -12,11 +14,92 @@ export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 export const AGENT_CAPABILITIES = ['implement', 'review'] as const;
 export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
 
+export const PROVIDER_CONNECTION_KINDS = ['official_cli', 'custom_api'] as const;
+export type ProviderConnectionKind = (typeof PROVIDER_CONNECTION_KINDS)[number];
+
+export const PROVIDER_PROTOCOLS = ['cli_managed', 'openai_chat_completions', 'openai_responses'] as const;
+export type ProviderProtocol = (typeof PROVIDER_PROTOCOLS)[number];
+
+export const ProviderConnectionInputSchema = z
+  .object({
+    name: z.string().trim().min(2).max(80),
+    kind: z.enum(PROVIDER_CONNECTION_KINDS),
+    adapterType: z.enum(['codex_cli', 'opencode_cli']),
+    protocol: z.enum(PROVIDER_PROTOCOLS),
+    baseUrl: z.string().trim().url().max(2_048).refine((value) => /^https?:\/\//i.test(value), 'Base URI must use HTTP or HTTPS').optional(),
+    credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
+    models: z.array(z.string().trim().min(1).max(240)).max(100).default([]),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((input, context) => {
+    if (new Set(input.models).size !== input.models.length) {
+      context.addIssue({ code: 'custom', path: ['models'], message: 'Connection models must be unique' });
+    }
+    if (input.kind === 'official_cli') {
+      if (input.protocol !== 'cli_managed') {
+        context.addIssue({ code: 'custom', path: ['protocol'], message: 'Official CLI connections use cli_managed' });
+      }
+      if (input.baseUrl || input.credentialEnv) {
+        context.addIssue({ code: 'custom', path: ['kind'], message: 'Official CLI authentication is managed by the CLI' });
+      }
+    } else {
+      if (input.adapterType !== 'opencode_cli') {
+        context.addIssue({ code: 'custom', path: ['adapterType'], message: 'Custom APIs currently require OpenCode CLI' });
+      }
+      if (input.protocol === 'cli_managed') {
+        context.addIssue({ code: 'custom', path: ['protocol'], message: 'Custom APIs require an API protocol' });
+      }
+      if (!input.baseUrl) {
+        context.addIssue({ code: 'custom', path: ['baseUrl'], message: 'Custom APIs require a Base URI' });
+      }
+      if (input.models.length === 0) {
+        context.addIssue({ code: 'custom', path: ['models'], message: 'Custom APIs require at least one model' });
+      }
+    }
+  });
+
+export type ProviderConnectionInput = z.infer<typeof ProviderConnectionInputSchema>;
+
+export const ProviderConnectionSnapshotSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  kind: z.enum(PROVIDER_CONNECTION_KINDS),
+  adapterType: z.enum(['codex_cli', 'opencode_cli']),
+  protocol: z.enum(PROVIDER_PROTOCOLS),
+  baseUrl: z.string().url().optional(),
+  credentialEnv: z.string().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
+  models: z.array(z.string()),
+});
+
+export type ProviderConnectionSnapshot = z.infer<typeof ProviderConnectionSnapshotSchema>;
+
+export function openCodeProviderKey(connectionId: string): string {
+  return `relayhub-${connectionId.replaceAll('-', '')}`;
+}
+
+export function openCodeProviderConfig(connection: ProviderConnectionSnapshot): Record<string, unknown> {
+  if (connection.kind !== 'custom_api' || !connection.baseUrl) return {};
+  return {
+    provider: {
+      [openCodeProviderKey(connection.id)]: {
+        npm: connection.protocol === 'openai_responses' ? '@ai-sdk/openai' : '@ai-sdk/openai-compatible',
+        name: connection.name,
+        options: {
+          baseURL: connection.baseUrl,
+          ...(connection.credentialEnv ? { apiKey: `{env:${connection.credentialEnv}}` } : {}),
+        },
+        models: Object.fromEntries(connection.models.map((model) => [model, { name: model }])),
+      },
+    },
+  };
+}
+
 export const AgentProfileInputSchema = z
   .object({
     name: z.string().trim().min(2).max(80),
     adapterType: z.enum(AGENT_ADAPTER_TYPES),
     capabilities: z.array(z.enum(AGENT_CAPABILITIES)).min(1).max(2),
+    providerConnectionId: z.string().uuid().optional(),
     model: z.string().trim().min(3).max(240).optional(),
     variant: z.string().trim().min(1).max(80).optional(),
     agentName: z.string().trim().min(1).max(80).optional(),
@@ -24,7 +107,7 @@ export const AgentProfileInputSchema = z
     enabled: z.boolean().default(true),
   })
   .superRefine((input, context) => {
-    if (input.adapterType === 'opencode_cli' && !input.model?.includes('/')) {
+    if (input.adapterType === 'opencode_cli' && !input.providerConnectionId && !input.model?.includes('/')) {
       context.addIssue({
         code: 'custom',
         path: ['model'],
@@ -38,6 +121,9 @@ export const AgentProfileInputSchema = z
         message: 'Provider-specific fields are only supported by the OpenCode CLI adapter',
       });
     }
+    if (input.adapterType === 'mock' && input.providerConnectionId) {
+      context.addIssue({ code: 'custom', path: ['providerConnectionId'], message: 'Mock Agents do not use a provider connection' });
+    }
     if (new Set(input.capabilities).size !== input.capabilities.length) {
       context.addIssue({ code: 'custom', path: ['capabilities'], message: 'Agent capabilities must be unique' });
     }
@@ -46,10 +132,11 @@ export const AgentProfileInputSchema = z
 export type AgentProfileInput = z.infer<typeof AgentProfileInputSchema>;
 
 export const OpenCodeRuntimeConfigSchema = z.object({
-  model: z.string().trim().min(3).max(240).refine((value) => value.includes('/'), 'Expected provider/model'),
+  model: z.string().trim().min(1).max(240),
   variant: z.string().trim().min(1).max(80).optional(),
   agentName: z.string().trim().min(1).max(80).optional(),
   credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
+  providerConnection: ProviderConnectionSnapshotSchema.optional(),
 });
 
 export type OpenCodeRuntimeConfig = z.infer<typeof OpenCodeRuntimeConfigSchema>;
@@ -345,11 +432,19 @@ export interface Workspace {
   updatedAt: string;
 }
 
+export interface ProviderConnection extends ProviderConnectionSnapshot {
+  workspaceId: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AgentProfile {
   id: string;
   workspaceId: string;
   name: string;
   adapterType: AgentAdapterType;
+  providerConnectionId?: string;
   provider?: string;
   modelLabel?: string;
   modelFamily?: string;

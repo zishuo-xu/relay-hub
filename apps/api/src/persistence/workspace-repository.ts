@@ -1,7 +1,15 @@
-import type { AgentProfile, AgentProfileInput, BootstrapPolicy, Workspace } from '@relay-hub/contracts';
-import { agentProfiles, type RelayDatabase, workspaces } from '@relay-hub/db';
-import { asc, eq } from 'drizzle-orm';
-import { mapAgentProfile, mapWorkspace } from './mappers.js';
+import type {
+  AgentProfile,
+  AgentProfileInput,
+  BootstrapPolicy,
+  ProviderConnection,
+  ProviderConnectionInput,
+  ProviderConnectionSnapshot,
+  Workspace,
+} from '@relay-hub/contracts';
+import { agentProfiles, providerConnections, type RelayDatabase, workspaces } from '@relay-hub/db';
+import { and, asc, eq } from 'drizzle-orm';
+import { mapAgentProfile, mapProviderConnection, mapWorkspace } from './mappers.js';
 
 export async function listWorkspaces(db: RelayDatabase): Promise<Workspace[]> {
   const rows = await db.select().from(workspaces).orderBy(asc(workspaces.createdAt));
@@ -30,11 +38,90 @@ export async function listAgentProfiles(db: RelayDatabase, workspaceId: string):
   return rows.map(mapAgentProfile);
 }
 
-function profileValues(input: AgentProfileInput) {
-  const provider = input.adapterType === 'opencode_cli' ? input.model?.split('/')[0] : undefined;
+export async function listProviderConnections(db: RelayDatabase, workspaceId: string): Promise<ProviderConnection[]> {
+  const rows = await db
+    .select()
+    .from(providerConnections)
+    .where(eq(providerConnections.workspaceId, workspaceId))
+    .orderBy(asc(providerConnections.createdAt));
+  return rows.map(mapProviderConnection);
+}
+
+export async function getProviderConnection(db: RelayDatabase, connectionId: string): Promise<ProviderConnection | null> {
+  const [row] = await db.select().from(providerConnections).where(eq(providerConnections.id, connectionId)).limit(1);
+  return row ? mapProviderConnection(row) : null;
+}
+
+export async function createProviderConnection(
+  db: RelayDatabase,
+  workspaceId: string,
+  input: ProviderConnectionInput,
+): Promise<ProviderConnection | null> {
+  const [workspace] = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+  if (!workspace) return null;
+  const [row] = await db.insert(providerConnections).values({ workspaceId, ...input }).returning();
+  return row ? mapProviderConnection(row) : null;
+}
+
+export async function updateProviderConnection(
+  db: RelayDatabase,
+  connectionId: string,
+  input: ProviderConnectionInput,
+): Promise<ProviderConnection | null> {
+  const [row] = await db
+    .update(providerConnections)
+    .set({ ...input, updatedAt: new Date() })
+    .where(eq(providerConnections.id, connectionId))
+    .returning();
+  return row ? mapProviderConnection(row) : null;
+}
+
+function connectionSnapshot(connection: ProviderConnection): ProviderConnectionSnapshot {
+  return {
+    id: connection.id,
+    name: connection.name,
+    kind: connection.kind,
+    adapterType: connection.adapterType,
+    protocol: connection.protocol,
+    models: connection.models,
+    ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
+    ...(connection.credentialEnv ? { credentialEnv: connection.credentialEnv } : {}),
+  };
+}
+
+async function resolveConnection(
+  db: RelayDatabase,
+  workspaceId: string,
+  input: AgentProfileInput,
+): Promise<ProviderConnection | undefined> {
+  if (!input.providerConnectionId) return undefined;
+  const [row] = await db
+    .select()
+    .from(providerConnections)
+    .where(and(eq(providerConnections.id, input.providerConnectionId), eq(providerConnections.workspaceId, workspaceId)))
+    .limit(1);
+  const connection = row ? mapProviderConnection(row) : undefined;
+  if (!connection?.enabled) throw new Error('Provider connection is missing or disabled');
+  if (connection.adapterType !== input.adapterType) throw new Error('Provider connection does not support this Agent CLI');
+  if (input.adapterType === 'opencode_cli' && input.model) {
+    if (connection.kind === 'custom_api' && !connection.models.includes(input.model)) {
+      throw new Error('Selected model is not configured on this provider connection');
+    }
+    if (connection.kind === 'official_cli' && !input.model.includes('/')) {
+      throw new Error('Official OpenCode models must use provider/model format');
+    }
+  }
+  return connection;
+}
+
+function profileValues(input: AgentProfileInput, connection?: ProviderConnection) {
+  const provider = connection?.kind === 'custom_api'
+    ? `relayhub-${connection.id.replaceAll('-', '')}`
+    : input.adapterType === 'opencode_cli' ? input.model?.split('/')[0] : undefined;
   return {
     name: input.name,
     adapterType: input.adapterType,
+    providerConnectionId: connection?.id ?? null,
     provider: provider ?? (input.adapterType === 'codex_cli' ? 'openai' : 'local'),
     modelLabel: input.model ?? (input.adapterType === 'codex_cli' ? 'Codex CLI default' : 'deterministic-mock'),
     modelFamily: provider ?? (input.adapterType === 'codex_cli' ? 'codex' : 'mock'),
@@ -44,6 +131,7 @@ function profileValues(input: AgentProfileInput) {
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.agentName ? { agentName: input.agentName } : {}),
       ...(input.credentialEnv ? { credentialEnv: input.credentialEnv } : {}),
+      ...(connection ? { providerConnection: connectionSnapshot(connection) } : {}),
     },
     enabled: input.enabled,
   };
@@ -56,9 +144,10 @@ export async function createAgentProfile(
 ): Promise<AgentProfile | null> {
   const [workspace] = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
   if (!workspace) return null;
+  const connection = await resolveConnection(db, workspaceId, input);
   const [row] = await db
     .insert(agentProfiles)
-    .values({ workspaceId, ...profileValues(input) })
+    .values({ workspaceId, ...profileValues(input, connection) })
     .returning();
   return row ? mapAgentProfile(row) : null;
 }
@@ -68,9 +157,12 @@ export async function updateAgentProfile(
   agentId: string,
   input: AgentProfileInput,
 ): Promise<AgentProfile | null> {
+  const [existing] = await db.select({ workspaceId: agentProfiles.workspaceId }).from(agentProfiles).where(eq(agentProfiles.id, agentId)).limit(1);
+  if (!existing) return null;
+  const connection = await resolveConnection(db, existing.workspaceId, input);
   const [row] = await db
     .update(agentProfiles)
-    .set({ ...profileValues(input), updatedAt: new Date() })
+    .set({ ...profileValues(input, connection), updatedAt: new Date() })
     .where(eq(agentProfiles.id, agentId))
     .returning();
   return row ? mapAgentProfile(row) : null;

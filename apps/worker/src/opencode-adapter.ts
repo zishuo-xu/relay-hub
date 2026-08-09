@@ -3,6 +3,8 @@ import {
   type ClaimedRun,
   type CommandEvidence,
   OpenCodeRuntimeConfigSchema,
+  openCodeProviderConfig,
+  openCodeProviderKey,
 } from '@relay-hub/contracts';
 import { z } from 'zod';
 import { buildAgentPrompt, parseReviewDraft } from './agent-prompt.js';
@@ -22,8 +24,8 @@ function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   return text.length <= limit ? text : `${text.slice(0, limit)}…`;
 }
 
-function runtimePermissions(isReviewer: boolean): string {
-  return JSON.stringify({
+function runtimePermissions(isReviewer: boolean): Record<string, unknown> {
+  return {
     share: 'disabled',
     permission: isReviewer
       ? {
@@ -40,7 +42,7 @@ function runtimePermissions(isReviewer: boolean): string {
           question: 'deny',
           task: 'deny',
         },
-  });
+  };
 }
 
 export async function* runOpenCodeAgent(
@@ -49,6 +51,9 @@ export async function* runOpenCodeAgent(
   options: { processOverride?: { command: string; args: string[] }; signal?: AbortSignal } = {},
 ): AsyncGenerator<AgentEvent> {
   const config = OpenCodeRuntimeConfigSchema.parse(claimed.agent.config);
+  const customConnection = config.providerConnection?.kind === 'custom_api' ? config.providerConnection : undefined;
+  const runtimeModel = customConnection ? `${openCodeProviderKey(customConnection.id)}/${config.model}` : config.model;
+  const credentialEnv = customConnection?.credentialEnv ?? config.credentialEnv;
   const binary = options.processOverride?.command ?? process.env.RELAY_HUB_OPENCODE_BIN ?? 'opencode';
   const timeoutMs = Number(process.env.RELAY_HUB_AGENT_TIMEOUT_MS ?? 15 * 60 * 1_000);
   const isReviewer = claimed.run.triggerType === 'review';
@@ -58,7 +63,7 @@ export async function* runOpenCodeAgent(
     '--format',
     'json',
     '--model',
-    config.model,
+    runtimeModel,
     '--dir',
     workingDirectory,
     ...(config.variant ? ['--variant', config.variant] : []),
@@ -66,10 +71,13 @@ export async function* runOpenCodeAgent(
   ];
   const environment = {
     ...safeChildEnvironment(),
-    ...(config.credentialEnv && process.env[config.credentialEnv]
-      ? { [config.credentialEnv]: process.env[config.credentialEnv] }
+    ...(credentialEnv && process.env[credentialEnv]
+      ? { [credentialEnv]: process.env[credentialEnv] }
       : {}),
-    OPENCODE_CONFIG_CONTENT: runtimePermissions(isReviewer),
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      ...runtimePermissions(isReviewer),
+      ...(customConnection ? openCodeProviderConfig(customConnection) : {}),
+    }),
   };
 
   let finalMessage = '';
