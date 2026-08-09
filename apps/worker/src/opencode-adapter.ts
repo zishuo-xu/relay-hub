@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
 import { truncateText } from './bounded-text.js';
+import { buildReviewHandoff, nextActionAfterBuilder } from './handoff.js';
 import { safeChildEnvironment, superviseProcess } from './process-supervisor.js';
 
 const OpenCodeEnvelopeSchema = z.object({
@@ -134,13 +135,12 @@ export async function* runOpenCodeAgent(
         } else if (claimed.task.reviewerAgentId) {
           yield {
             type: 'handoff.requested',
-            handoff: {
-              targetAgentId: claimed.task.reviewerAgentId,
-              objective: `Review Builder result for: ${claimed.task.title}`,
-              summary: truncate(finalMessage || 'Builder completed the task and requested independent review.'),
-              artifactRefs: [{ kind: 'worktree', value: workingDirectory, label: 'Builder worktree' }],
-              acceptanceCriteria: claimed.task.acceptanceCriteria,
-            },
+            handoff: buildReviewHandoff(
+              claimed,
+              workingDirectory,
+              truncate(finalMessage || 'Builder completed the task and requested independent review.'),
+              commandEvidence,
+            ),
           };
         }
         yield {
@@ -148,6 +148,7 @@ export async function* runOpenCodeAgent(
           outcome: {
             summary: truncate(finalMessage || 'OpenCode completed the task.'),
             commandEvidence,
+            ...(!isReviewer ? { nextAction: nextActionAfterBuilder(claimed) } : {}),
           },
         };
       }

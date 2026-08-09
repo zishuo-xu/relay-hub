@@ -2,7 +2,7 @@
 
 ## 状态
 
-Accepted（2026-08-09，尚未实现）
+Accepted（2026-08-09，第一实现切片已落地）
 
 ## 背景
 
@@ -47,6 +47,14 @@ RelayHub 已完成固定的 Builder → Reviewer → 用户确认/返工主链�
 3. 增加“当前责任 + 下一动作”查询投影和审计事件。
 4. 在单屏任务概览中展示 State、Owner、Evidence、Verdict、Route，而不是先建设工作流编辑器。
 5. 使用 Mock 和真实 OpenCode Builder → Codex Reviewer 两条链验证继续、审查、返工、等待用户和完成。
+
+### 已实现范围（2026-08-09）
+
+- 合约层已经定义五种封闭 `NextAction`；Builder Outcome 现在明确提出 `request_review` 或 `wait_for_user`，Handoff 只能携带目标一致的 `handoff/request_review`。
+- Handoff V2 持久化 objective、context summary、artifact/evidence refs、验收标准、decisions、open questions、risks 和 NextAction；平台从 Task canonical truth 写入验收标准，不信任 Agent 改写。
+- 每个 V2 交接包在写入时生成 SHA-256 内容摘要；Reviewer claim 在事务内复算摘要，目标 Worker 加载后回报 `handoff.consumed`，Handoff 从 `dispatched` 变为 `accepted`。
+- Reviewer Prompt 从持久化交接包组装上下文；页面展示当前责任 Agent、Handoff 版本/状态/下一动作和接收事件。
+- 尚未把 Reviewer verdict、repair、用户确认全部改造成统一 NextAction 输入，也尚未开放通用动态目标 Handoff；这些仍由现有确定性 Orchestrator 路径执行。
 
 ## 明确不做
 

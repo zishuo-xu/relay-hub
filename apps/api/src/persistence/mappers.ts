@@ -59,16 +59,23 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
 export function mapHandoff(row: HandoffRow): Handoff {
   return {
     id: row.id,
+    bundleVersion: row.bundleVersion,
     sourceRunId: row.sourceRunId,
     targetAgentId: row.targetAgentId,
     objective: row.objective,
     contextSummary: row.contextSummary,
     artifactRefs: row.artifactRefs,
+    evidenceRefs: row.evidenceRefs,
     acceptanceCriteria: row.acceptanceCriteria,
+    decisions: row.decisions,
+    openQuestions: row.openQuestions,
+    risks: row.risks,
     status: row.status,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
     ...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
+    ...(row.nextAction ? { nextAction: row.nextAction } : {}),
+    ...(row.contentDigest ? { contentDigest: row.contentDigest } : {}),
   };
 }
 

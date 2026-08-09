@@ -21,6 +21,7 @@ import {
 } from '@relay-hub/db';
 import { and, eq } from 'drizzle-orm';
 import { planAfterReview, planAfterSuccessfulBuilderRun } from '../workflow-orchestrator.js';
+import { handoffContentDigest } from '../handoff-integrity.js';
 import { mapAgentProfile, mapEvent } from './mappers.js';
 import { getTaskDetail } from './task-repository.js';
 import type { MutationResult } from './types.js';
@@ -89,6 +90,9 @@ export async function recordAgentEvent(
         if (agentEvent.handoff.targetAgentId === run.agentId) {
           throw new Error('Builder and Reviewer AgentProfile must be different');
         }
+        if (agentEvent.handoff.nextAction.type !== 'request_review') {
+          throw new Error('The current Reviewer route requires nextAction request_review');
+        }
         const [targetAgent] = await tx
           .select({
             enabled: agentProfiles.enabled,
@@ -111,17 +115,68 @@ export async function recordAgentEvent(
           .where(eq(handoffs.sourceRunId, run.id))
           .limit(1);
         if (existingHandoff) throw new Error(`Run already has a Handoff: ${run.id}`);
-        await tx.insert(handoffs).values({
+        const handoffId = randomUUID();
+        const bundle = {
+          bundleVersion: agentEvent.handoff.bundleVersion ?? 2,
           sourceRunId: run.id,
           targetAgentId: agentEvent.handoff.targetAgentId,
           objective: agentEvent.handoff.objective,
           contextSummary: agentEvent.handoff.summary,
-          artifactRefs: agentEvent.handoff.artifactRefs,
-          acceptanceCriteria: agentEvent.handoff.acceptanceCriteria,
+          artifactRefs: agentEvent.handoff.artifactRefs ?? [],
+          evidenceRefs: agentEvent.handoff.evidenceRefs ?? [],
+          acceptanceCriteria: task.acceptanceCriteria,
+          decisions: agentEvent.handoff.decisions ?? [],
+          openQuestions: agentEvent.handoff.openQuestions ?? [],
+          risks: agentEvent.handoff.risks ?? [],
+          nextAction: agentEvent.handoff.nextAction,
+        };
+        await tx.insert(handoffs).values({
+          id: handoffId,
+          bundleVersion: bundle.bundleVersion,
+          sourceRunId: run.id,
+          targetAgentId: agentEvent.handoff.targetAgentId,
+          objective: bundle.objective,
+          contextSummary: bundle.contextSummary,
+          artifactRefs: bundle.artifactRefs,
+          evidenceRefs: bundle.evidenceRefs,
+          acceptanceCriteria: bundle.acceptanceCriteria,
+          decisions: bundle.decisions,
+          openQuestions: bundle.openQuestions,
+          risks: bundle.risks,
+          nextAction: bundle.nextAction,
+          contentDigest: handoffContentDigest(bundle),
           status: 'pending',
           createdAt: now,
           updatedAt: now,
         });
+        break;
+      }
+      case 'handoff.consumed': {
+        if (run.status !== 'claimed' && run.status !== 'starting') {
+          throw new Error(`Cannot consume Handoff while run is ${run.status}`);
+        }
+        const [handoff] = await tx
+          .select()
+          .from(handoffs)
+          .where(eq(handoffs.targetRunId, run.id))
+          .limit(1);
+        if (!handoff || handoff.id !== agentEvent.handoffId) {
+          throw new Error(`Handoff does not belong to target Run: ${agentEvent.handoffId}`);
+        }
+        if (handoff.status !== 'dispatched') {
+          throw new Error(`Cannot consume Handoff while it is ${handoff.status}`);
+        }
+        if (
+          handoff.bundleVersion !== agentEvent.bundleVersion ||
+          !handoff.contentDigest ||
+          handoff.contentDigest !== agentEvent.contentDigest
+        ) {
+          throw new Error('Handoff integrity metadata does not match the persisted bundle');
+        }
+        await tx
+          .update(handoffs)
+          .set({ status: 'accepted', updatedAt: now })
+          .where(and(eq(handoffs.id, handoff.id), eq(handoffs.status, 'dispatched')));
         break;
       }
       case 'review.submitted': {
@@ -374,7 +429,15 @@ export async function recordAgentEvent(
     const { type: eventType, ...payload } = agentEvent;
     const [eventRow] = await tx
       .insert(runEvents)
-      .values({ taskId: run.taskId, runId, eventType, payload, source: 'agent', occurredAt: now, dedupeKey })
+      .values({
+        taskId: run.taskId,
+        runId,
+        eventType,
+        payload,
+        source: agentEvent.type === 'handoff.consumed' ? 'worker' : 'agent',
+        occurredAt: now,
+        dedupeKey,
+      })
       .returning();
     if (!eventRow) throw new Error('Agent event insert did not return a row');
     const emitted = [mapEvent(eventRow)];

@@ -17,6 +17,7 @@ import type {
   BootstrapPolicy,
   CompletionPolicy,
   HandoffArtifactRef,
+  NextAction,
   RunOutcome,
   RunStatus,
   TaskStatus,
@@ -257,6 +258,7 @@ export const handoffs = pgTable(
   'handoffs',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    bundleVersion: integer('bundle_version').default(1).notNull(),
     sourceRunId: uuid('source_run_id')
       .notNull()
       .references(() => runs.id),
@@ -267,7 +269,13 @@ export const handoffs = pgTable(
     objective: text('objective').notNull(),
     contextSummary: text('context_summary').notNull(),
     artifactRefs: jsonb('artifact_refs').$type<HandoffArtifactRef[]>().default([]).notNull(),
+    evidenceRefs: jsonb('evidence_refs').$type<HandoffArtifactRef[]>().default([]).notNull(),
     acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
+    decisions: jsonb('decisions').$type<string[]>().default([]).notNull(),
+    openQuestions: jsonb('open_questions').$type<string[]>().default([]).notNull(),
+    risks: jsonb('risks').$type<string[]>().default([]).notNull(),
+    nextAction: jsonb('next_action').$type<NextAction>(),
+    contentDigest: text('content_digest'),
     status: handoffStatusEnum('status').default('pending').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

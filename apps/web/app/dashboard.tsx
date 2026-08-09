@@ -44,6 +44,7 @@ const eventLabels: Record<string, string> = {
   'tool.completed': '工具完成',
   'run.completed': '执行结束',
   'handoff.requested': '已准备交接',
+  'handoff.consumed': '已接收交接',
   'task.waiting_for_review': '等待审查',
   'task.review_requested': '进入审查',
   'task.review_run_completed': 'Reviewer 执行完成',
@@ -94,6 +95,8 @@ function eventText(event: RunEvent): string {
       const handoff = event.payload.handoff as { targetAgentId?: unknown; summary?: unknown } | undefined;
       return `Builder 已准备交接给 ${String(handoff?.targetAgentId ?? 'Reviewer')}：${String(handoff?.summary ?? '')}`;
     }
+    case 'handoff.consumed':
+      return `目标 Worker 已校验并加载 Handoff v${String(event.payload.bundleVersion ?? '')}（${String(event.payload.handoffId ?? '').slice(0, 8)}）。`;
     case 'task.waiting_for_review':
       return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
     case 'task.review_requested':
@@ -391,6 +394,7 @@ export function TimelineWorkspace({
 }: TimelineWorkspaceProps) {
   const [workspaceView, setWorkspaceView] = useState<'overview' | 'activity'>('overview');
   const latestReview = detail?.reviews.at(-1);
+  const latestHandoff = detail?.handoffs.at(-1);
   const milestoneEvents = detail?.events.filter((event) => ![
     'output.delta',
     'tool.called',
@@ -424,7 +428,7 @@ export function TimelineWorkspace({
       {detail ? (
         <>
           <section className="run-overview" aria-label="当前执行信息">
-            <div><span>Agent</span><strong>{currentAgent?.name ?? detail.task.agentId}</strong></div>
+            <div><span>当前责任 Agent</span><strong>{currentAgent?.name ?? detail.task.agentId}</strong></div>
             <div><span>Run</span><code>{currentRun?.id.slice(0, 8) ?? '—'}</code></div>
             <div><span>版本</span><strong>v{detail.task.version}</strong></div>
             <div className="run-state"><span>状态</span><strong>{currentRun?.status ?? '等待中'}</strong></div>
@@ -497,6 +501,9 @@ export function TimelineWorkspace({
                   </header>
                   <p>{latestReview?.summary ?? currentRun?.outcome?.summary ?? 'Agent 正在准备结果，关键进展会显示在这里。'}</p>
                   {latestReview ? <small>{latestReview.findings.length} 个 finding</small> : null}
+                  {latestHandoff ? (
+                    <small>Handoff v{latestHandoff.bundleVersion} · {latestHandoff.status} · {latestHandoff.nextAction?.type ?? 'legacy'}</small>
+                  ) : null}
                 </article>
 
                 <article className="overview-card milestone-card">

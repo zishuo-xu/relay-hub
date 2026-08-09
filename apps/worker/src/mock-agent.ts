@@ -1,4 +1,5 @@
 import type { AgentEvent, ClaimedRun } from '@relay-hub/contracts';
+import { buildReviewHandoff, nextActionAfterBuilder } from './handoff.js';
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -44,13 +45,12 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
   if (!isReviewer && claimed.task.reviewerAgentId) {
     yield {
       type: 'handoff.requested',
-      handoff: {
-        targetAgentId: claimed.task.reviewerAgentId,
-        objective: `Review Builder result for: ${claimed.task.title}`,
-        summary: 'Mock Builder completed the requested work and prepared it for independent review.',
-        artifactRefs: [],
-        acceptanceCriteria: claimed.task.acceptanceCriteria,
-      },
+      handoff: buildReviewHandoff(
+        claimed,
+        claimed.run.workingDirectory ?? claimed.run.workspaceRoot,
+        'Mock Builder completed the requested work and prepared it for independent review.',
+        [],
+      ),
     };
   }
   if (isReviewer) {
@@ -68,6 +68,7 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
     outcome: {
       summary: isReviewer ? 'Mock review execution completed successfully.' : 'Mock execution completed successfully.',
       commandEvidence: [],
+      ...(!isReviewer ? { nextAction: nextActionAfterBuilder(claimed) } : {}),
     },
   };
 }

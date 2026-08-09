@@ -5,6 +5,7 @@ import {
   effectiveExecutionPolicyForAdapter,
   executionPolicyPreset,
   CreateTaskInputSchema,
+  DEFAULT_CODEX_AGENT_ID,
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
   DEFAULT_OPENCODE_CONNECTION_ID,
@@ -128,16 +129,31 @@ describe('Handoff contract', () => {
           targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
           objective: 'Review the Builder result',
           summary: 'Builder completed the requested implementation.',
+          nextAction: {
+            type: 'request_review',
+            targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+            reason: 'Independent review is required.',
+          },
         },
       }),
     ).toEqual({
       type: 'handoff.requested',
       handoff: {
+        bundleVersion: 2,
         targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
         objective: 'Review the Builder result',
         summary: 'Builder completed the requested implementation.',
         artifactRefs: [],
+        evidenceRefs: [],
         acceptanceCriteria: [],
+        decisions: [],
+        openQuestions: [],
+        risks: [],
+        nextAction: {
+          type: 'request_review',
+          targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+          reason: 'Independent review is required.',
+        },
       },
     });
   });
@@ -149,6 +165,31 @@ describe('Handoff contract', () => {
         handoff: { targetAgentId: 'reviewer', objective: 'Review', summary: 'Done' },
       }),
     ).toThrow();
+  });
+
+  it('rejects an open-ended action and a mismatched action target', () => {
+    expect(() => AgentEventSchema.parse({
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+        objective: 'Review',
+        summary: 'Done',
+        nextAction: { type: 'delegate_anywhere', reason: 'Bypass routing rules' },
+      },
+    })).toThrow();
+    expect(() => AgentEventSchema.parse({
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+        objective: 'Review',
+        summary: 'Done',
+        nextAction: {
+          type: 'request_review',
+          targetAgentId: DEFAULT_CODEX_AGENT_ID,
+          reason: 'Use a different target.',
+        },
+      },
+    })).toThrow('nextAction targetAgentId');
   });
 });
 

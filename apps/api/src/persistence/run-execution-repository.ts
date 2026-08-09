@@ -20,6 +20,7 @@ import {
 } from '@relay-hub/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { issueRunToken, verifyRunToken } from '../run-token.js';
+import { handoffContentDigest } from '../handoff-integrity.js';
 import {
   mapEvent,
   mapHandoff,
@@ -67,6 +68,28 @@ export async function claimRun(
     const [workspaceRow] = await tx.select().from(workspaces).where(eq(workspaces.id, taskRow.workspaceId)).limit(1);
     if (!workspaceRow) throw new Error(`Workspace not found for run: ${runId}`);
     const [handoffRow] = await tx.select().from(handoffs).where(eq(handoffs.targetRunId, claimed.id)).limit(1);
+    if (handoffRow?.bundleVersion && handoffRow.bundleVersion >= 2) {
+      if (!handoffRow.contentDigest || !handoffRow.nextAction) {
+        throw new Error(`Persisted Handoff V2 is missing integrity metadata: ${handoffRow.id}`);
+      }
+      const actualDigest = handoffContentDigest({
+        bundleVersion: handoffRow.bundleVersion,
+        sourceRunId: handoffRow.sourceRunId,
+        targetAgentId: handoffRow.targetAgentId,
+        objective: handoffRow.objective,
+        contextSummary: handoffRow.contextSummary,
+        artifactRefs: handoffRow.artifactRefs,
+        evidenceRefs: handoffRow.evidenceRefs,
+        acceptanceCriteria: handoffRow.acceptanceCriteria,
+        decisions: handoffRow.decisions,
+        openQuestions: handoffRow.openQuestions,
+        risks: handoffRow.risks,
+        nextAction: handoffRow.nextAction,
+      });
+      if (actualDigest !== handoffRow.contentDigest) {
+        throw new Error(`Persisted Handoff integrity check failed: ${handoffRow.id}`);
+      }
+    }
     const [reviewRow] = claimed.triggerType === 'retry' && claimed.parentRunId
       ? await tx.select().from(reviews).where(eq(reviews.runId, claimed.parentRunId)).limit(1)
       : [];

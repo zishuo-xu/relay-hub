@@ -174,7 +174,12 @@ sequenceDiagram
     B->>API: run.completed + Outcome
     API->>DB: 原子完成 Builder + 创建 Reviewer Run + Outbox
     DB-->>Q: 发布 Reviewer Run
-    Q->>R: 原始需求 + Diff + Tests + Handoff
+    Q->>R: 唤醒 Reviewer Worker
+    R->>API: claim Reviewer Run
+    API->>DB: 复算并校验 Handoff 内容摘要
+    API-->>R: 原始需求 + Diff + Tests + Handoff V2
+    R->>API: handoff.consumed(id + version + digest)
+    API->>DB: 匹配目标 Run 并标记 accepted
     R->>API: 提交结构化 Review
     alt approved
       API->>DB: 按 CompletionPolicy 自动完成或等待用户确认

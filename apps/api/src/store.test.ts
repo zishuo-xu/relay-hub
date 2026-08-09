@@ -311,6 +311,11 @@ suite('PostgresStore integration', () => {
           summary: 'This target must be rejected.',
           artifactRefs: [],
           acceptanceCriteria: [],
+          nextAction: {
+            type: 'request_review',
+            targetAgentId: DEFAULT_CODEX_AGENT_ID,
+            reason: 'Attempt to bypass the configured Reviewer.',
+          },
         },
       }),
     ).rejects.toThrow('Handoff target must match the Task reviewerAgentId');
@@ -322,6 +327,15 @@ suite('PostgresStore integration', () => {
         summary: 'Builder changed the implementation and ran the relevant tests.',
         artifactRefs: [{ kind: 'worktree', value: '/tmp/relay-hub-review-fixture' }],
         acceptanceCriteria: ['Reviewer receives the structured Handoff'],
+        decisions: ['Builder selected the verified implementation.'],
+        evidenceRefs: [{ kind: 'command', value: 'pnpm test', label: 'succeeded' }],
+        openQuestions: [],
+        risks: [],
+        nextAction: {
+          type: 'request_review',
+          targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+          reason: 'Independent review is required.',
+        },
       },
     });
 
@@ -361,9 +375,36 @@ suite('PostgresStore integration', () => {
     if (!reviewerRun) throw new Error('Reviewer Run was not created');
     const reviewerClaim = await store.claimRun(reviewerRun.id, 'handoff-reviewer');
     expect(reviewerClaim.value?.claimed.handoff).toMatchObject({
+      bundleVersion: 2,
       sourceRunId: builderRunId,
       targetRunId: reviewerRun.id,
       status: 'dispatched',
+      decisions: ['Builder selected the verified implementation.'],
+      evidenceRefs: [{ kind: 'command', value: 'pnpm test', label: 'succeeded' }],
+      nextAction: { type: 'request_review', targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID },
+    });
+    const claimedHandoff = reviewerClaim.value?.claimed.handoff;
+    if (!claimedHandoff?.contentDigest) throw new Error('Reviewer claim is missing Handoff integrity metadata');
+    await expect(
+      store.recordAgentEvent(reviewerRun.id, 'handoff-consumed-tampered', {
+        type: 'handoff.consumed',
+        handoffId: claimedHandoff.id,
+        bundleVersion: claimedHandoff.bundleVersion,
+        contentDigest: '0'.repeat(64),
+      }),
+    ).rejects.toThrow('integrity metadata');
+    await store.recordAgentEvent(reviewerRun.id, 'handoff-consumed', {
+      type: 'handoff.consumed',
+      handoffId: claimedHandoff.id,
+      bundleVersion: claimedHandoff.bundleVersion,
+      contentDigest: claimedHandoff.contentDigest,
+    });
+    const consumed = await store.getTaskDetail(created.value.detail.task.id);
+    expect(consumed?.handoffs[0]?.status).toBe('accepted');
+    expect(consumed?.events.at(-1)).toMatchObject({
+      type: 'handoff.consumed',
+      source: 'worker',
+      payload: { handoffId: claimedHandoff.id, contentDigest: claimedHandoff.contentDigest },
     });
     await store.recordAgentEvent(reviewerRun.id, 'reviewer-started', { type: 'run.started' });
     await expect(
@@ -438,6 +479,11 @@ suite('PostgresStore integration', () => {
         summary: 'Builder addressed all actionable Findings.',
         artifactRefs: [{ kind: 'worktree', value: '/tmp/relay-hub-review-fixture' }],
         acceptanceCriteria: ['Reviewer receives the structured Handoff'],
+        nextAction: {
+          type: 'request_review',
+          targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+          reason: 'The repaired result requires another review.',
+        },
       },
     });
     await store.recordAgentEvent(repairRun.id, 'repair-completed', {
@@ -502,6 +548,11 @@ suite('PostgresStore integration', () => {
         summary: 'Builder requests the only permitted Review.',
         artifactRefs: [],
         acceptanceCriteria: ['At most one Review is allowed'],
+        nextAction: {
+          type: 'request_review',
+          targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+          reason: 'Use the configured review round.',
+        },
       },
     });
     await store.recordAgentEvent(builderRunId, 'bounded-builder-completed', {

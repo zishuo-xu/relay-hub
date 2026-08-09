@@ -6,6 +6,7 @@ import {
 import { z } from 'zod';
 import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
 import { truncateText } from './bounded-text.js';
+import { buildReviewHandoff, nextActionAfterBuilder } from './handoff.js';
 import { superviseProcess } from './process-supervisor.js';
 
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
@@ -207,13 +208,12 @@ export async function* runCodexAgent(
         } else if (claimed.task.reviewerAgentId) {
           yield {
             type: 'handoff.requested',
-            handoff: {
-              targetAgentId: claimed.task.reviewerAgentId,
-              objective: `Review Builder result for: ${claimed.task.title}`,
-              summary: truncate(finalMessage || 'Builder completed the task and requested independent review.'),
-              artifactRefs: [{ kind: 'worktree', value: workingDirectory, label: 'Builder worktree' }],
-              acceptanceCriteria: claimed.task.acceptanceCriteria,
-            },
+            handoff: buildReviewHandoff(
+              claimed,
+              workingDirectory,
+              truncate(finalMessage || 'Builder completed the task and requested independent review.'),
+              commandEvidence,
+            ),
           };
         }
         yield {
@@ -221,6 +221,7 @@ export async function* runCodexAgent(
           outcome: {
             summary: truncate(finalMessage || 'Codex completed the task.'),
             commandEvidence,
+            ...(!isReviewer ? { nextAction: nextActionAfterBuilder(claimed) } : {}),
           },
         };
         break;

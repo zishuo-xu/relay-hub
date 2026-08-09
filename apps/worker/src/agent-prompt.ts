@@ -76,6 +76,14 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
     const artifacts = handoff.artifactRefs.length
       ? handoff.artifactRefs.map((artifact) => `- ${artifact.kind}: ${artifact.value}`).join('\n')
       : '- Current inherited Builder worktree';
+    const evidence = handoff.evidenceRefs.length
+      ? handoff.evidenceRefs.map((item) => `- ${item.kind}: ${item.value}${item.label ? ` (${item.label})` : ''}`).join('\n')
+      : '- No separate evidence references were supplied; inspect the worktree independently.';
+    const decisions = handoff.decisions.length ? handoff.decisions.map((item) => `- ${item}`).join('\n') : '- None recorded.';
+    const openQuestions = handoff.openQuestions.length
+      ? handoff.openQuestions.map((item) => `- ${item}`).join('\n')
+      : '- None recorded.';
+    const risks = handoff.risks.length ? handoff.risks.map((item) => `- ${item}`).join('\n') : '- None recorded.';
     return [
       'You are the independent Reviewer Agent for a RelayHub task.',
       ...executionRules(claimed),
@@ -89,6 +97,15 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
       `Builder handoff: ${handoff.contextSummary}`,
       'Artifacts:',
       artifacts,
+      'Evidence references:',
+      evidence,
+      'Recorded decisions:',
+      decisions,
+      'Open questions:',
+      openQuestions,
+      'Known risks:',
+      risks,
+      `Requested next action: ${handoff.nextAction?.type ?? 'legacy_handoff'}`,
       '',
       'Acceptance criteria:',
       criteria,

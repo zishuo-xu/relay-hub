@@ -1,5 +1,24 @@
 # 07. 实现状态
 
+## 2026-08-09：NextAction 与无损 Handoff V2 第一切片
+
+### 已实现
+
+- 新增封闭 `NextAction` 合约：`continue`、`handoff`、`request_review`、`wait_for_user`、`complete`；未知动作、Handoff 目标不一致和当前主链不支持的路由均被拒绝。
+- Builder Outcome 现在明确提出 `request_review` 或 `wait_for_user`。现有 Builder → Reviewer 路由使用 Handoff V2，不引入 Ball/Custody 表或通用 Workflow Engine。
+- Handoff V2 在 PostgreSQL 保存 artifact/evidence refs、decisions、open questions、risks、NextAction 和版本；验收标准由平台从 Task 写入，避免 Agent 遗漏或改写 canonical requirement。
+- 平台对交接内容生成 SHA-256 摘要。Reviewer claim 前会复算并拒绝被篡改的持久化包；目标 Worker 真正加载后提交 `handoff.consumed`，Handoff 状态从 `dispatched` 收敛为 `accepted`。
+- Reviewer Prompt 注入完整 V2 字段，但仍要求 Reviewer 独立读取 worktree 和证据；隐藏 reasoning、Builder Session 和执行 Token 不进入交接。
+- 任务概览继续保持单屏结构，并显示当前责任 Agent、Handoff 版本/状态/下一动作；Timeline 新增“已接收交接”审计节点。
+
+### 验证证据
+
+- Contracts 24/24、Worker 21/21 单元测试通过，覆盖封闭动作、目标一致性、证据映射和 consumed 事件生成。
+- 全新隔离 PostgreSQL 应用 migration `0011_abandoned_mockingbird.sql` 后，API 19/19 测试通过；完整 Builder → Reviewer → repair → second Reviewer 链验证摘要不匹配会拒绝、正确 consumed 会接受且记录 Worker 来源事件。测试数据库验收后已单独清理。
+- migration 只为 `handoffs` 增加带默认值或可空的列，不删除或改写已有 Task、Run、Event、Handoff、Review 数据；历史 Handoff 保持 bundle version 1 兼容读取。
+- 正式 PostgreSQL 已无损应用 migration；迁移前后均为 Task 27、Run 34、Handoff 7、Event 463。全仓 `pnpm check` 通过，包含 TypeScript、所有单元测试和 Next.js production build。
+- `http://localhost:3010/` 已用新 production bundle 重启并验收：当前责任 Agent 与历史 Handoff v1 兼容信息可见；614 × 772 视口下 document/body 与 viewport 等高、Workspace 无外层溢出，浏览器控制台无错误。
+
 ## 2026-08-09：真实 Agent 配置闭环与证据长度边界
 
 ### 已实现

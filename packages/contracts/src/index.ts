@@ -388,15 +388,34 @@ export const CommandEvidenceSchema = z.object({
 
 export type CommandEvidence = z.infer<typeof CommandEvidenceSchema>;
 
+export const NextActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('continue'), reason: z.string().min(1).max(2_000) }).strict(),
+  z.object({
+    type: z.literal('handoff'),
+    targetAgentId: z.string().uuid(),
+    reason: z.string().min(1).max(2_000),
+  }).strict(),
+  z.object({
+    type: z.literal('request_review'),
+    targetAgentId: z.string().uuid(),
+    reason: z.string().min(1).max(2_000),
+  }).strict(),
+  z.object({ type: z.literal('wait_for_user'), reason: z.string().min(1).max(2_000) }).strict(),
+  z.object({ type: z.literal('complete'), reason: z.string().min(1).max(2_000) }).strict(),
+]);
+
+export type NextAction = z.infer<typeof NextActionSchema>;
+
 export const RunOutcomeSchema = z.object({
   summary: z.string().min(1).max(10_000),
   commandEvidence: z.array(CommandEvidenceSchema).max(100).default([]),
+  nextAction: NextActionSchema.optional(),
 });
 
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
 export const HandoffArtifactRefSchema = z.object({
-  kind: z.enum(['worktree', 'file', 'url', 'text']),
+  kind: z.enum(['worktree', 'file', 'url', 'text', 'command']),
   value: z.string().min(1).max(4_096),
   label: z.string().min(1).max(200).optional(),
 });
@@ -404,11 +423,33 @@ export const HandoffArtifactRefSchema = z.object({
 export type HandoffArtifactRef = z.infer<typeof HandoffArtifactRefSchema>;
 
 export const HandoffDraftSchema = z.object({
+  bundleVersion: z.literal(2).default(2),
   targetAgentId: z.string().uuid(),
   objective: z.string().min(1).max(2_000),
   summary: z.string().min(1).max(10_000),
   artifactRefs: z.array(HandoffArtifactRefSchema).max(100).default([]),
+  evidenceRefs: z.array(HandoffArtifactRefSchema).max(100).default([]),
   acceptanceCriteria: z.array(z.string().min(1).max(500)).max(20).default([]),
+  decisions: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  openQuestions: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  risks: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  nextAction: NextActionSchema,
+}).superRefine((handoff, context) => {
+  if (handoff.nextAction.type !== 'handoff' && handoff.nextAction.type !== 'request_review') {
+    context.addIssue({
+      code: 'custom',
+      path: ['nextAction', 'type'],
+      message: 'a Handoff nextAction must be handoff or request_review',
+    });
+    return;
+  }
+  if (handoff.nextAction.targetAgentId !== handoff.targetAgentId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['nextAction', 'targetAgentId'],
+      message: 'nextAction targetAgentId must match the Handoff targetAgentId',
+    });
+  }
 });
 
 export type HandoffDraft = z.infer<typeof HandoffDraftSchema>;
@@ -501,6 +542,12 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     outputSummary: z.unknown().optional(),
   }),
   z.object({ type: z.literal('handoff.requested'), handoff: HandoffDraftSchema }),
+  z.object({
+    type: z.literal('handoff.consumed'),
+    handoffId: z.string().uuid(),
+    bundleVersion: z.number().int().positive(),
+    contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  }),
   z.object({ type: z.literal('review.submitted'), review: ReviewDraftSchema }),
   z.object({ type: z.literal('run.completed'), outcome: RunOutcomeSchema }),
   z.object({ type: z.literal('run.cancelled'), reason: z.string().optional() }),
@@ -532,13 +579,20 @@ export interface Task {
 
 export interface Handoff {
   id: string;
+  bundleVersion: number;
   sourceRunId: string;
   targetAgentId: string;
   targetRunId?: string;
   objective: string;
   contextSummary: string;
   artifactRefs: HandoffArtifactRef[];
+  evidenceRefs: HandoffArtifactRef[];
   acceptanceCriteria: string[];
+  decisions: string[];
+  openQuestions: string[];
+  risks: string[];
+  nextAction?: NextAction;
+  contentDigest?: string;
   status: 'pending' | 'accepted' | 'dispatched' | 'rejected' | 'cancelled' | 'expired';
   createdAt: string;
   updatedAt: string;
