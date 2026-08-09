@@ -33,6 +33,7 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
     return [
       'You are the independent Reviewer Agent for a RelayHub task.',
       'Inspect the current Builder worktree in read-only mode. Do not modify files, commit, or push.',
+      'You may run local verification commands and start temporary services bound only to 127.0.0.1 or localhost. Do not bind to other interfaces or access unrelated local services.',
       'Check the implementation and available verification evidence against the acceptance criteria.',
       '',
       `Task: ${claimed.task.title}`,

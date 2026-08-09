@@ -10,9 +10,33 @@ import { superviseProcess } from './process-supervisor.js';
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
 const CodexRuntimeConfigSchema = z.object({ model: z.string().trim().min(1).max(240).optional() });
 const MAX_EVENT_TEXT = 4_000;
+const REVIEWER_PERMISSION_PROFILE = 'relayhub-reviewer-local-test';
 
 export function codexSandboxForRun(claimed: ClaimedRun): 'read-only' | 'workspace-write' {
   return claimed.run.triggerType === 'review' ? 'read-only' : 'workspace-write';
+}
+
+export function codexPermissionArgumentsForRun(claimed: ClaimedRun): string[] {
+  if (claimed.run.triggerType !== 'review') {
+    return ['--sandbox', 'workspace-write'];
+  }
+
+  return [
+    '-c',
+    `default_permissions="${REVIEWER_PERMISSION_PROFILE}"`,
+    '-c',
+    `permissions.${REVIEWER_PERMISSION_PROFILE}.extends=":read-only"`,
+    '-c',
+    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.enabled=true`,
+    '-c',
+    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.mode="limited"`,
+    '-c',
+    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.allow_local_binding=true`,
+    '-c',
+    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.domains={"localhost"="allow","127.0.0.1"="allow"}`,
+    '-c',
+    'features.network_proxy={enabled=true,allow_local_binding=true,domains={"localhost"="allow","127.0.0.1"="allow"}}',
+  ];
 }
 
 export function codexArgumentsForRun(claimed: ClaimedRun, workingDirectory: string): string[] {
@@ -20,8 +44,8 @@ export function codexArgumentsForRun(claimed: ClaimedRun, workingDirectory: stri
   return [
     'exec',
     '--json',
-    '--sandbox',
-    codexSandboxForRun(claimed),
+    '--strict-config',
+    ...codexPermissionArgumentsForRun(claimed),
     '--ignore-user-config',
     '--ignore-rules',
     '-c',

@@ -1,5 +1,21 @@
 # 07. 实现状态
 
+## 2026-08-09：Reviewer 只读代码与本地测试权限分离
+
+### 已实现
+
+- Codex Reviewer 改用 RelayHub 注入的命名 permission profile：文件权限继承 `:read-only`，网络仅允许 `localhost` / `127.0.0.1` 的本地验证与回环监听。
+- Reviewer 仍不能修改 Builder Worktree、commit 或 push；Builder 和 repair Run 继续使用独立 Worktree 的 `workspace-write`，两种角色不共享权限策略。
+- Reviewer Prompt 明确允许运行本地测试和启动仅绑定回环地址的临时服务；`--strict-config` 防止旧 CLI 不认识权限字段时静默降级。
+- 外部网络没有随本地测试权限开放，Reviewer 也不得绑定 `0.0.0.0` 或访问无关本地服务。
+
+### 验证证据
+
+- Codex sandbox 探针确认：项目文件写入返回 `EPERM`，绑定 `127.0.0.1` 成功，外部 `https://example.com` 请求被拒绝。
+- 真实任务 `e366a4d7-a6eb-4bd1-953e-b595c6c38178` 完成 OpenCode Builder → Codex Reviewer 双 Run；Reviewer Run `ec1ae96f-4918-4942-b3a5-f1fa148882ae` 独立执行 `npm test`，HTTP 测试 2/2 通过且不再出现 `listen EPERM`。
+- Reviewer 前后 `git status --short` 均为空，提交 `approved`、0 findings；任务按 `require_user_confirmation` 正确进入 `waiting_for_user`，Workspace 根路径已恢复为 RelayHub 仓库。
+- Worker 15/15 测试和 TypeScript 类型检查通过；覆盖 Reviewer profile 参数与 Prompt 权限说明。
+
 ## 2026-08-09：真实 OpenCode Builder → Codex Reviewer 验收
 
 ### 已验证
@@ -10,9 +26,9 @@
 - Codex Reviewer 保持只读，提交 `approved` 且无 findings；平台没有自动完成任务，而是正确进入 `waiting_for_user`，等待用户最终确认。
 - 默认 Workspace 路径已恢复为 RelayHub 仓库；RelayHub 主工作区和临时示例仓库主分支均保持干净，Builder 改动只存在于 Run worktree。
 
-### 已知限制
+### 后续状态
 
-- Reviewer 只读沙箱禁止监听 `127.0.0.1`，因此其 `npm test` 因 `listen EPERM` 无法复跑；Reviewer 基于 Builder 命令证据和静态实现检查批准。需要后续把“只读代码权限”和“允许本地测试进程”解耦。
+- 该次验收暴露的 `listen EPERM` 已由上面的 Reviewer permission profile 解决；原任务记录保持不变，作为修复前证据。
 
 ## 2026-08-09：模型连接管理闭环
 

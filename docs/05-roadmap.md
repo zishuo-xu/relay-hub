@@ -84,7 +84,7 @@
 
 1. [x] Handoff schema、Task Reviewer 选择与目标 AgentProfile 校验。
 2. [x] Builder → Reviewer 父子 Run、持久 Handoff 与 Outbox/BullMQ 可靠派发。
-3. [x] Reviewer 独立上下文、Run Token 和继承 Worktree 的只读执行边界。
+3. [x] Reviewer 独立上下文、Run Token 和继承 Worktree 的只读执行边界；Codex Reviewer 可在只读代码前提下运行仅绑定回环地址的本地测试。
 4. [x] Review、Finding 与 `approved/changes_requested/blocked` 结构化裁决。
 5. [x] `changes_requested` 后的修复 Run、结构化 Finding 注入和 Review 轮次预算。
 6. [ ] Timeline 中展示完整协作图与审查详情。

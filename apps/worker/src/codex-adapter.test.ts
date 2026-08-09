@@ -2,7 +2,12 @@ import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
 import { parseReviewDraft } from './agent-prompt.js';
-import { codexArgumentsForRun, codexSandboxForRun, runCodexAgent } from './codex-adapter.js';
+import {
+  codexArgumentsForRun,
+  codexPermissionArgumentsForRun,
+  codexSandboxForRun,
+  runCodexAgent,
+} from './codex-adapter.js';
 
 const claimed: ClaimedRun = {
   workspace: {
@@ -61,6 +66,34 @@ describe('runCodexAgent', () => {
       '--sandbox',
       'workspace-write',
     ]));
+  });
+
+  it('keeps Reviewer files read-only while allowing localhost test servers', () => {
+    const reviewer: ClaimedRun = {
+      ...claimed,
+      agent: { ...claimed.agent, capabilities: ['review'] },
+      run: { ...claimed.run, triggerType: 'review' },
+    };
+    const args = codexArgumentsForRun(reviewer, '/tmp/relayhub-review');
+
+    expect(codexPermissionArgumentsForRun(reviewer)).toEqual([
+      '-c',
+      'default_permissions="relayhub-reviewer-local-test"',
+      '-c',
+      'permissions.relayhub-reviewer-local-test.extends=":read-only"',
+      '-c',
+      'permissions.relayhub-reviewer-local-test.network.enabled=true',
+      '-c',
+      'permissions.relayhub-reviewer-local-test.network.mode="limited"',
+      '-c',
+      'permissions.relayhub-reviewer-local-test.network.allow_local_binding=true',
+      '-c',
+      'permissions.relayhub-reviewer-local-test.network.domains={"localhost"="allow","127.0.0.1"="allow"}',
+      '-c',
+      'features.network_proxy={enabled=true,allow_local_binding=true,domains={"localhost"="allow","127.0.0.1"="allow"}}',
+    ]);
+    expect(args).toContain('--strict-config');
+    expect(args).not.toContain('--sandbox');
   });
 
   it('maps public Codex JSONL events and excludes reasoning text', async () => {
@@ -201,6 +234,7 @@ describe('runCodexAgent', () => {
     expect(events[0]).toMatchObject({ type: 'output.delta' });
     expect((events[0] as { text?: string }).text).toContain('independent Reviewer Agent');
     expect((events[0] as { text?: string }).text).toContain('Builder says the implementation is complete.');
+    expect((events[0] as { text?: string }).text).toContain('127.0.0.1 or localhost');
     expect(events.at(-2)).toMatchObject({
       type: 'review.submitted',
       review: { verdict: 'approved', findings: [] },
