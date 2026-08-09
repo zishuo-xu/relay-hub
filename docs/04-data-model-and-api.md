@@ -116,10 +116,10 @@ erDiagram
 | 字段 | 说明 |
 |---|---|
 | `adapter_type` | `mock`、`codex_cli` 或 `opencode_cli` |
-| `provider_connection_id` | 可复用的 Workspace ProviderConnection；旧 Profile 可空 |
+| `provider_connection_id` | 可复用的 Workspace ProviderConnection；新的非 Mock Agent 必填，旧 Profile 可空 |
 | `model_label` | 仅作展示与诊断，不参与安全判断 |
 | `capabilities` | 例如 `implement`、`review`、`research` |
-| `config` | 非敏感配置；密钥只保存环境变量引用名 |
+| `config` | Agent 非敏感运行参数和创建 Run 时固化的连接快照 |
 | `enabled` | 停用后不能创建新 Run |
 
 约束：同一 Workspace 内 Agent 名称唯一。
@@ -130,13 +130,14 @@ erDiagram
 - `variant`：可选，传给 OpenCode 的模型 variant。
 - `agentName`：可选，选择 OpenCode 已定义的 agent。
 - `providerConnection`：使用连接时固化的非敏感快照，供未来 Run 保持可重复执行。
-- `credentialEnv`：仅用于兼容旧 Profile；新配置由 ProviderConnection 保存环境变量名称。
+
+旧 Profile 或历史 Run 快照中的 `credentialEnv` 仍可由 Worker 读取以保持兼容，但新的 Agent 创建和编辑接口不再接受该字段。凭证环境变量名称只属于 ProviderConnection。
 
 AgentProfile 属于 Workspace，可被多个新 Task 复用；修改配置不会改写已经创建的 Run 或历史事件。CLI 专属配置继续复用通用 JSONB `config`；ProviderConnection 本身由 migration `0010_wealthy_pet_avengers.sql` 新增。
 
 AgentProfile 表达用户定义的 Agent 身份，不表达一次执行。名称和能力是通用字段，`adapter_type` 才选择 Mock、Codex CLI 或 OpenCode CLI；CLI 专属配置只进入经过白名单校验的 `config`。
 
-Codex AgentProfile 可在 `config.model` 中固定模型；Worker 启动时传给 `codex exec --model`。留空则继续使用 Codex CLI 默认模型。Web 对所有 AgentProfile 使用同一编辑入口，允许修改名称、能力、运行 CLI、ProviderConnection、模型和启停状态；更新只影响之后创建的 Run。
+Codex AgentProfile 可在 `config.model` 中固定模型；Worker 启动时传给 `codex exec --model`。留空则继续使用 Codex CLI 默认模型。Web 对所有 AgentProfile 使用同一编辑入口，允许修改名称、能力、运行 CLI、ProviderConnection、模型和启停状态；OpenCode 的可用模型优先从所选连接目录中选择。更新只影响之后创建的 Run。
 
 ### `provider_connections`
 

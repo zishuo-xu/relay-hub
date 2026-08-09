@@ -770,9 +770,9 @@ export function ProviderConnectionDrawer({
           </select>
         </label>
         <label>Base URI<input onChange={(event) => onBaseUrlChange(event.target.value)} placeholder="https://api.example.com/v1" required type="url" value={baseUrl} /></label>
-        <label>密钥环境变量（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="DEEPSEEK_API_KEY" value={credentialEnv} /></label>
+        <label>凭证环境变量名称（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="DEEPSEEK_API_KEY" value={credentialEnv} /></label>
         <label>模型 ID（每行一个）<textarea onChange={(event) => onModelsChange(event.target.value)} placeholder={'deepseek-chat\ndeepseek-reasoner'} required rows={5} value={models} /></label>
-        <div className="config-note">这里只保存 URI、协议、模型目录和环境变量名称，不保存 API Key。执行时由 Worker 从自己的环境读取密钥。</div>
+        <div className="config-note">连接统一管理 URI、协议、模型目录和凭证引用。这里只保存环境变量名称，不保存 API Key；执行时由 Worker 从自己的环境读取密钥。</div>
         {health ? <div className={`health-result ${health.status}`}><strong>{health.status === 'healthy' ? '连接配置可用' : '连接需要处理'}</strong><span>{health.message}</span></div> : null}
         <button className="primary-button" disabled={saving || name.trim().length < 2 || !baseUrl || !models.trim()} type="submit">{saving ? '保存并检测中…' : '保存连接'}</button>
       </form>
@@ -790,7 +790,6 @@ interface AgentConfigDrawerProps {
   model: string;
   variant: string;
   agentName: string;
-  credentialEnv: string;
   providerConnectionId: string;
   connections: ProviderConnection[];
   runtimes: AgentRuntimeDescriptor[];
@@ -804,7 +803,6 @@ interface AgentConfigDrawerProps {
   onNameChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onVariantChange: (value: string) => void;
-  onCredentialEnvChange: (value: string) => void;
   onProviderConnectionChange: (value: string) => void;
   onEnabledChange: (value: boolean) => void;
 }
@@ -819,7 +817,6 @@ export function AgentConfigDrawer({
   model,
   variant,
   agentName,
-  credentialEnv,
   providerConnectionId,
   connections,
   runtimes,
@@ -833,7 +830,6 @@ export function AgentConfigDrawer({
   onNameChange,
   onModelChange,
   onVariantChange,
-  onCredentialEnvChange,
   onProviderConnectionChange,
   onEnabledChange,
 }: AgentConfigDrawerProps) {
@@ -917,16 +913,20 @@ export function AgentConfigDrawer({
           {adapterType === 'opencode_cli' ? <>
             <label>
               模型（provider/model）
-              <input
-                list="opencode-models"
-                onChange={(event) => onModelChange(event.target.value)}
-                placeholder={selectedConnection?.kind === 'custom_api' ? '选择此连接已配置的模型' : '例如 opencode/big-pickle'}
-                required
-                value={model}
-              />
-              <datalist id="opencode-models">
-                {selectableModels.map((candidate) => <option key={candidate} value={candidate} />)}
-              </datalist>
+              {selectableModels.length > 0 ? (
+                <select onChange={(event) => onModelChange(event.target.value)} required value={model}>
+                  <option value="">请选择模型</option>
+                  {model && !selectableModels.includes(model) ? <option value={model}>{model} · 兼容旧配置</option> : null}
+                  {selectableModels.map((candidate) => <option key={candidate} value={candidate}>{candidate}</option>)}
+                </select>
+              ) : (
+                <input
+                  onChange={(event) => onModelChange(event.target.value)}
+                  placeholder="当前连接未提供模型目录"
+                  required
+                  value={model}
+                />
+              )}
             </label>
             <div className="policy-grid">
               <label>
@@ -938,7 +938,6 @@ export function AgentConfigDrawer({
                 <input onChange={(event) => onAgentNameChange(event.target.value)} placeholder="build" value={agentName} />
               </label>
             </div>
-            {!selectedConnection ? <label>旧配置密钥环境变量（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="OPENAI_API_KEY" value={credentialEnv} /></label> : null}
           </> : adapterType === 'codex_cli' ? <label>
             Codex 模型（可选）
             <input
@@ -949,7 +948,7 @@ export function AgentConfigDrawer({
           </label> : null}
           <div className="config-note">
             {adapterType === 'opencode_cli' ? <>
-              Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。URI 与凭证引用来自“模型与连接”，Agent 这里只选择连接和模型。
+              Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。URI、协议与凭证引用统一由“模型与连接”管理，这里只选择连接和模型。
             </> : adapterType === 'codex_cli' ? <>
               Agent 使用本机 Codex CLI 官方认证。填写模型时固定使用该模型；留空则跟随 CLI 默认模型。
             </> : <>

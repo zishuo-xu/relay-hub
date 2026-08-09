@@ -103,22 +103,22 @@ export const AgentProfileInputSchema = z
     model: z.string().trim().min(3).max(240).optional(),
     variant: z.string().trim().min(1).max(80).optional(),
     agentName: z.string().trim().min(1).max(80).optional(),
-    credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
     enabled: z.boolean().default(true),
   })
+  .strict()
   .superRefine((input, context) => {
-    if (input.adapterType === 'opencode_cli' && !input.providerConnectionId && !input.model?.includes('/')) {
+    if (input.adapterType !== 'mock' && !input.providerConnectionId) {
       context.addIssue({
         code: 'custom',
-        path: ['model'],
-        message: 'OpenCode model must use provider/model format',
+        path: ['providerConnectionId'],
+        message: 'Executable Agents must reference a provider connection',
       });
     }
-    if (input.adapterType !== 'opencode_cli' && (input.variant || input.agentName || input.credentialEnv)) {
+    if (input.adapterType !== 'opencode_cli' && (input.variant || input.agentName)) {
       context.addIssue({
         code: 'custom',
         path: ['adapterType'],
-        message: 'Variant, internal Agent, and legacy credential fields are only supported by OpenCode CLI',
+        message: 'Variant and internal Agent fields are only supported by OpenCode CLI',
       });
     }
     if (input.adapterType === 'mock' && input.model) {

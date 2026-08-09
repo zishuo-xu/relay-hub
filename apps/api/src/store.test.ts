@@ -3,6 +3,7 @@ import {
   DEFAULT_CODEX_CONNECTION_ID,
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  DEFAULT_OPENCODE_CONNECTION_ID,
 } from '@relay-hub/contracts';
 import { createDatabase, runs } from '@relay-hub/db';
 import { eq } from 'drizzle-orm';
@@ -29,27 +30,28 @@ suite('PostgresStore integration', () => {
     const created = await store.createAgentProfile('00000000-0000-4000-8000-000000000001', {
       name: `OpenCode Builder ${suffix}`,
       adapterType: 'opencode_cli',
+      providerConnectionId: DEFAULT_OPENCODE_CONNECTION_ID,
       capabilities: ['implement'],
       model: 'opencode/north-mini-code-free',
       variant: 'high',
-      credentialEnv: 'OPENCODE_API_KEY',
       enabled: true,
     });
     expect(created).toMatchObject({
       adapterType: 'opencode_cli',
       provider: 'opencode',
+      providerConnectionId: DEFAULT_OPENCODE_CONNECTION_ID,
       modelLabel: 'opencode/north-mini-code-free',
       capabilities: ['implement'],
       config: {
         model: 'opencode/north-mini-code-free',
         variant: 'high',
-        credentialEnv: 'OPENCODE_API_KEY',
       },
     });
     if (!created) throw new Error('OpenCode AgentProfile was not created');
     const updated = await store.updateAgentProfile(created.id, {
       name: created.name,
       adapterType: 'opencode_cli',
+      providerConnectionId: DEFAULT_OPENCODE_CONNECTION_ID,
       capabilities: ['implement', 'review'],
       model: 'opencode/longcat-2.0-free',
       enabled: false,

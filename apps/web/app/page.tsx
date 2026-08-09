@@ -56,7 +56,6 @@ export default function HomePage() {
   const [agentConfigModel, setAgentConfigModel] = useState('');
   const [agentConfigVariant, setAgentConfigVariant] = useState('');
   const [agentConfigAgentName, setAgentConfigAgentName] = useState('');
-  const [agentConfigCredentialEnv, setAgentConfigCredentialEnv] = useState('');
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeDescriptor[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
@@ -255,7 +254,6 @@ export default function HomePage() {
       setAgentConfigModel(typeof config.model === 'string' ? config.model : '');
       setAgentConfigVariant(typeof config.variant === 'string' ? config.variant : '');
       setAgentConfigAgentName(typeof config.agentName === 'string' ? config.agentName : '');
-      setAgentConfigCredentialEnv(typeof config.credentialEnv === 'string' ? config.credentialEnv : '');
       setAgentConfigEnabled(agent.enabled);
       return;
     }
@@ -269,7 +267,6 @@ export default function HomePage() {
     setAgentConfigModel(defaultConnection?.kind === 'custom_api' ? defaultConnection.models[0] ?? '' : openCode?.models[0] ?? '');
     setAgentConfigVariant('');
     setAgentConfigAgentName('');
-    setAgentConfigCredentialEnv('');
     setAgentConfigEnabled(true);
   }
 
@@ -338,7 +335,6 @@ export default function HomePage() {
                   model: agentConfigModel,
                   ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
                   ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
-                  ...(agentConfigCredentialEnv.trim() ? { credentialEnv: agentConfigCredentialEnv.trim() } : {}),
                 }
               : agentConfigAdapter === 'codex_cli' && agentConfigModel.trim()
                 ? { model: agentConfigModel.trim() }
@@ -452,7 +448,6 @@ export default function HomePage() {
         adapterType={agentConfigAdapter}
         agentName={agentConfigAgentName}
         capabilities={agentConfigCapabilities}
-        credentialEnv={agentConfigCredentialEnv}
         editing={editingAgentId !== null}
         enabled={agentConfigEnabled}
         connections={connections}
@@ -473,7 +468,6 @@ export default function HomePage() {
         onClose={() => setAgentConfigOpen(false)}
         onAgentNameChange={setAgentConfigAgentName}
         onCapabilitiesChange={setAgentConfigCapabilities}
-        onCredentialEnvChange={setAgentConfigCredentialEnv}
         onEnabledChange={setAgentConfigEnabled}
         onProviderConnectionChange={(value) => {
           setAgentConfigConnectionId(value);

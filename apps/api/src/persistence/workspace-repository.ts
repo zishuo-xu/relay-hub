@@ -130,7 +130,6 @@ function profileValues(input: AgentProfileInput, connection?: ProviderConnection
       ...(input.model ? { model: input.model } : {}),
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.agentName ? { agentName: input.agentName } : {}),
-      ...(input.credentialEnv ? { credentialEnv: input.credentialEnv } : {}),
       ...(connection ? { providerConnection: connectionSnapshot(connection) } : {}),
     },
     enabled: input.enabled,

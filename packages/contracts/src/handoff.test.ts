@@ -5,6 +5,7 @@ import {
   CreateTaskInputSchema,
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  DEFAULT_OPENCODE_CONNECTION_ID,
   ReviewDraftSchema,
 } from './index.js';
 
@@ -13,33 +14,47 @@ describe('AgentProfile configuration contract', () => {
     expect(AgentProfileInputSchema.parse({
       name: 'OpenCode Reviewer',
       adapterType: 'opencode_cli',
+      providerConnectionId: DEFAULT_OPENCODE_CONNECTION_ID,
       capabilities: ['review'],
       model: 'opencode/north-mini-code-free',
     })).toMatchObject({ adapterType: 'opencode_cli', enabled: true });
   });
 
-  it('rejects an OpenCode model without a provider prefix', () => {
+  it('requires every executable Agent to reference a provider connection', () => {
     expect(() => AgentProfileInputSchema.parse({
       name: 'Broken OpenCode',
       adapterType: 'opencode_cli',
       capabilities: ['implement'],
       model: 'north-mini-code-free',
-    })).toThrow('provider/model');
+    })).toThrow('provider connection');
   });
 
   it('allows a Codex model but keeps OpenCode-only fields out of Codex profiles', () => {
     expect(AgentProfileInputSchema.parse({
       name: 'Codex Builder',
       adapterType: 'codex_cli',
+      providerConnectionId: '00000000-0000-4000-8000-000000000005',
       capabilities: ['implement'],
     })).toMatchObject({ adapterType: 'codex_cli' });
     expect(() => AgentProfileInputSchema.parse({
       name: 'Misconfigured Codex',
       adapterType: 'codex_cli',
+      providerConnectionId: '00000000-0000-4000-8000-000000000005',
       capabilities: ['implement'],
       model: 'gpt-5.6-codex',
       variant: 'max',
     })).toThrow('only supported by OpenCode');
+  });
+
+  it('rejects credentials on Agent profiles because connections own authentication', () => {
+    expect(() => AgentProfileInputSchema.parse({
+      name: 'Leaky OpenCode Agent',
+      adapterType: 'opencode_cli',
+      providerConnectionId: DEFAULT_OPENCODE_CONNECTION_ID,
+      capabilities: ['implement'],
+      model: 'opencode/big-pickle',
+      credentialEnv: 'OPENAI_API_KEY',
+    })).toThrow('Unrecognized key');
   });
 });
 

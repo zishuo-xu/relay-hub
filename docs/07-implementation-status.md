@@ -1,5 +1,20 @@
 # 07. 实现状态
 
+## 2026-08-09：Agent 与模型凭证职责收敛
+
+### 已实现
+
+- Agent 配置抽屉移除旧凭证环境变量入口；URI、协议、模型目录和凭证引用统一归 Workspace ProviderConnection 管理。
+- 新的非 Mock Agent 创建和编辑必须引用 ProviderConnection，Agent API 输入不再接受 `credentialEnv`。
+- OpenCode 模型在连接提供目录时改为明确选择，避免把任意模型字符串误当成连接配置；旧的目录外模型仍以兼容项展示。
+- Worker 继续读取已有 Profile 和历史 Run 快照中的旧凭证引用，不改写持久数据，也不破坏历史执行证据。
+
+### 验证证据
+
+- Contracts 19/19、Worker 14/14 测试通过；隔离 PostgreSQL API 集成测试 15/15 通过。
+- 全仓 `pnpm check` 通过，覆盖 TypeScript、单元测试、API/Worker 构建和 Next.js 生产构建。
+- 真实 `http://localhost:3010/` 验收通过：OpenCode Agent 正确预填连接和模型，模型显示为连接目录下的下拉选项，Agent 抽屉中不再出现凭证字段；未提交任何正式配置修改，浏览器控制台无错误。
+
 ## 2026-08-09：现有 Agent 编辑与模型切换
 
 ### 已实现
