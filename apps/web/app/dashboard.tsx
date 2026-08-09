@@ -7,7 +7,9 @@ import type {
   AgentProfile,
   AgentProfileSnapshotSummary,
   AgentRuntimeDescriptor,
+  AgentPermissionPreset,
   CompletionPolicy,
+  ExecutionPolicy,
   ProviderConnection,
   ProviderProtocol,
   RunEvent,
@@ -838,6 +840,9 @@ interface AgentConfigDrawerProps {
   model: string;
   variant: string;
   agentName: string;
+  instructions: string;
+  executionPolicy: ExecutionPolicy;
+  permissionPreset: AgentPermissionPreset | 'custom';
   providerConnectionId: string;
   connections: ProviderConnection[];
   runtimes: AgentRuntimeDescriptor[];
@@ -847,6 +852,9 @@ interface AgentConfigDrawerProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onAdapterChange: (value: AgentAdapterType) => void;
   onAgentNameChange: (value: string) => void;
+  onInstructionsChange: (value: string) => void;
+  onExecutionPolicyChange: (value: ExecutionPolicy) => void;
+  onPermissionPresetChange: (value: AgentPermissionPreset | 'custom') => void;
   onCapabilitiesChange: (value: AgentCapability[]) => void;
   onNameChange: (value: string) => void;
   onModelChange: (value: string) => void;
@@ -865,6 +873,9 @@ export function AgentConfigDrawer({
   model,
   variant,
   agentName,
+  instructions,
+  executionPolicy,
+  permissionPreset,
   providerConnectionId,
   connections,
   runtimes,
@@ -874,6 +885,9 @@ export function AgentConfigDrawer({
   onSubmit,
   onAdapterChange,
   onAgentNameChange,
+  onInstructionsChange,
+  onExecutionPolicyChange,
+  onPermissionPresetChange,
   onCapabilitiesChange,
   onNameChange,
   onModelChange,
@@ -951,6 +965,58 @@ export function AgentConfigDrawer({
               ))}
             </div>
           </fieldset>
+          <details className="agent-policy-details">
+            <summary>
+              <span><strong>角色与权限</strong><small>{permissionPreset === 'builder_standard' ? 'Builder · 工作区可写' : permissionPreset === 'reviewer_standard' ? 'Reviewer · 严格只读' : permissionPreset === 'analysis_read_only' ? '分析 · 离线只读' : '自定义策略'} · 子 Agent {executionPolicy.internalSubagents === 'allow' ? '允许' : '禁止'}</small></span>
+              <span>配置</span>
+            </summary>
+            <div className="agent-policy-settings">
+              <label>
+                长期提示词（可选）
+                <textarea
+                  maxLength={8000}
+                  onChange={(event) => onInstructionsChange(event.target.value)}
+                  placeholder="例如：优先保持架构简洁；修改后运行相关测试，并说明取舍。"
+                  rows={3}
+                  value={instructions}
+                />
+              </label>
+              <div className="policy-grid">
+                <label>
+                  权限模板
+                  <select
+                    onChange={(event) => onPermissionPresetChange(event.target.value as AgentPermissionPreset | 'custom')}
+                    value={permissionPreset}
+                  >
+                    <option value="builder_standard">Builder · 工作区可写</option>
+                    <option value="reviewer_standard">Reviewer · 严格只读</option>
+                    <option value="analysis_read_only">分析 · 离线只读</option>
+                    {permissionPreset === 'custom' ? <option value="custom">自定义策略</option> : null}
+                  </select>
+                </label>
+                <label>
+                  CLI 内部子 Agent
+                  <select
+                    onChange={(event) => onExecutionPolicyChange({
+                      ...executionPolicy,
+                      internalSubagents: event.target.value as 'deny' | 'allow',
+                    })}
+                    value={executionPolicy.internalSubagents}
+                  >
+                    <option value="allow">允许 · 继承本 Run</option>
+                    <option value="deny">禁止</option>
+                  </select>
+                </label>
+              </div>
+              <div className="permission-summary" aria-label="当前执行边界">
+                <span>文件：{executionPolicy.fileAccess === 'workspace_write' ? '工作区可写' : '只读'}</span>
+                <span>命令：{executionPolicy.commandAccess === 'allow' ? '允许' : '禁止'}</span>
+                <span>网络：{executionPolicy.networkAccess === 'outbound' ? '按需外网' : executionPolicy.networkAccess === 'loopback' ? '仅回环' : '关闭'}</span>
+                <span>外部目录：禁止</span>
+                <span>Git：禁止提交/推送</span>
+              </div>
+            </div>
+          </details>
           <label>
             Agent 状态
             <select onChange={(event) => onEnabledChange(event.target.value === 'enabled')} value={enabled ? 'enabled' : 'disabled'}>

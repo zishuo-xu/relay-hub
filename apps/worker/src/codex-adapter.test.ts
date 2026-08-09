@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
-import { parseReviewDraft } from './agent-prompt.js';
+import { buildAgentPrompt, parseReviewDraft } from './agent-prompt.js';
 import {
   codexArgumentsForRun,
   codexPermissionArgumentsForRun,
@@ -63,8 +63,7 @@ describe('runCodexAgent', () => {
     expect(codexArgumentsForRun(configured, '/tmp/relayhub-run')).toEqual(expect.arrayContaining([
       '--model',
       'gpt-5.6-codex',
-      '--sandbox',
-      'workspace-write',
+      'permissions.relayhub-builder-local-test.extends=":workspace"',
     ]));
   });
 
@@ -94,6 +93,7 @@ describe('runCodexAgent', () => {
     ]);
     expect(args).toContain('--strict-config');
     expect(args).not.toContain('--sandbox');
+    expect(args).toEqual(expect.arrayContaining(['--disable', 'multi_agent', '--disable', 'multi_agent_v2']));
   });
 
   it('maps public Codex JSONL events and excludes reasoning text', async () => {
@@ -234,12 +234,25 @@ describe('runCodexAgent', () => {
     expect(events[0]).toMatchObject({ type: 'output.delta' });
     expect((events[0] as { text?: string }).text).toContain('independent Reviewer Agent');
     expect((events[0] as { text?: string }).text).toContain('Builder says the implementation is complete.');
-    expect((events[0] as { text?: string }).text).toContain('127.0.0.1 or localhost');
+    expect((events[0] as { text?: string }).text).toContain('localhost and 127.0.0.1');
     expect(events.at(-2)).toMatchObject({
       type: 'review.submitted',
       review: { verdict: 'approved', findings: [] },
     });
     expect(events.at(-1)?.type).toBe('run.completed');
+  });
+
+  it('places frozen Agent instructions below platform execution rules', () => {
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      agent: {
+        ...claimed.agent,
+        instructions: 'Always explain architecture tradeoffs before implementation details.',
+      },
+    });
+    expect(prompt).toContain('Agent profile instructions (lower priority than RelayHub rules above):');
+    expect(prompt).toContain('Always explain architecture tradeoffs before implementation details.');
+    expect(prompt.indexOf('Do not commit or push Git changes.')).toBeLessThan(prompt.indexOf('Always explain architecture tradeoffs'));
   });
 
   it('rejects a Reviewer decision that is not a valid structured envelope', async () => {

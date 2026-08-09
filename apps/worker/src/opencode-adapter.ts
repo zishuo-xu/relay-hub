@@ -7,7 +7,7 @@ import {
   openCodeProviderKey,
 } from '@relay-hub/contracts';
 import { z } from 'zod';
-import { buildAgentPrompt, parseReviewDraft } from './agent-prompt.js';
+import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
 import { safeChildEnvironment, superviseProcess } from './process-supervisor.js';
 
 const OpenCodeEnvelopeSchema = z.object({
@@ -24,24 +24,30 @@ function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   return text.length <= limit ? text : `${text.slice(0, limit)}…`;
 }
 
-function runtimePermissions(isReviewer: boolean): Record<string, unknown> {
+export function openCodeRuntimePermissions(claimed: ClaimedRun): Record<string, unknown> {
+  const policy = executionPolicyForRun(claimed);
+  const strictReadOnly = policy.fileAccess === 'read_only';
   return {
     share: 'disabled',
-    permission: isReviewer
-      ? {
-          '*': 'allow',
-          edit: 'deny',
-          bash: 'deny',
-          external_directory: 'deny',
-          question: 'deny',
-          task: 'deny',
-        }
-      : {
-          '*': 'allow',
-          external_directory: 'deny',
-          question: 'deny',
-          task: 'deny',
-        },
+    permission: {
+      '*': 'allow',
+      ...(strictReadOnly ? { edit: 'deny' } : {}),
+      ...(strictReadOnly || policy.commandAccess === 'deny'
+        ? { bash: 'deny' }
+        : {
+            bash: {
+              '*': 'allow',
+              'git commit*': 'deny',
+              'git push*': 'deny',
+              'git * commit*': 'deny',
+              'git * push*': 'deny',
+            },
+          }),
+      ...(policy.networkAccess !== 'outbound' ? { webfetch: 'deny' } : {}),
+      external_directory: 'deny',
+      question: 'deny',
+      ...(policy.internalSubagents === 'deny' ? { task: 'deny' } : {}),
+    },
   };
 }
 
@@ -75,7 +81,7 @@ export async function* runOpenCodeAgent(
       ? { [credentialEnv]: process.env[credentialEnv] }
       : {}),
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
-      ...runtimePermissions(isReviewer),
+      ...openCodeRuntimePermissions(claimed),
       ...(customConnection ? openCodeProviderConfig(customConnection) : {}),
     }),
   };

@@ -4,6 +4,7 @@ import {
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
   DEFAULT_OPENCODE_CONNECTION_ID,
+  executionPolicyPreset,
 } from '@relay-hub/contracts';
 import { createDatabase, runs } from '@relay-hub/db';
 import { eq } from 'drizzle-orm';
@@ -153,6 +154,8 @@ suite('PostgresStore integration', () => {
       adapterType: 'opencode_cli',
       capabilities: ['implement'],
       model: 'opencode/big-pickle',
+      instructions: 'Keep the implementation deliberately small.',
+      executionPolicy: executionPolicyPreset('opencode_cli', 'builder_standard'),
       enabled: true,
     });
     if (!agent) throw new Error('Snapshot AgentProfile was not created');
@@ -169,6 +172,8 @@ suite('PostgresStore integration', () => {
       adapterType: 'opencode_cli',
       capabilities: ['implement'],
       model: 'opencode/longcat-2.0-free',
+      instructions: 'Use the newest architecture guidance instead.',
+      executionPolicy: executionPolicyPreset('opencode_cli', 'analysis_read_only'),
       enabled: true,
     });
 
@@ -176,6 +181,7 @@ suite('PostgresStore integration', () => {
     expect(queued?.runs[0]?.agentProfileSnapshot).toMatchObject({
       id: agent.id,
       modelLabel: 'opencode/big-pickle',
+      executionPolicy: executionPolicyPreset('opencode_cli', 'builder_standard'),
     });
     expect(queued?.runs[0]?.agentProfileSnapshot).not.toHaveProperty('config');
 
@@ -184,6 +190,8 @@ suite('PostgresStore integration', () => {
       id: agent.id,
       adapterType: 'opencode_cli',
       config: { model: 'opencode/big-pickle' },
+      instructions: 'Keep the implementation deliberately small.',
+      executionPolicy: executionPolicyPreset('opencode_cli', 'builder_standard'),
     });
   });
 

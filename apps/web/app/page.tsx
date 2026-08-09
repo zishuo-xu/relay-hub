@@ -3,15 +3,20 @@
 import {
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
+  defaultExecutionPolicy,
+  executionPolicyPreset,
+  identifyExecutionPolicyPreset,
   type AgentAdapterType,
   type AgentCapability,
   type AgentHealth,
+  type AgentPermissionPreset,
   type AgentProfile,
   type AgentRuntimeDescriptor,
   type CompletionPolicy,
   type ProviderConnection,
   type ProviderProtocol,
   type RealtimeEnvelope,
+  type ExecutionPolicy,
   type Task,
   type TaskDetail,
   type Workspace,
@@ -56,6 +61,11 @@ export default function HomePage() {
   const [agentConfigModel, setAgentConfigModel] = useState('');
   const [agentConfigVariant, setAgentConfigVariant] = useState('');
   const [agentConfigAgentName, setAgentConfigAgentName] = useState('');
+  const [agentConfigInstructions, setAgentConfigInstructions] = useState('');
+  const [agentConfigExecutionPolicy, setAgentConfigExecutionPolicy] = useState<ExecutionPolicy>(
+    defaultExecutionPolicy('opencode_cli', ['implement']),
+  );
+  const [agentConfigPermissionPreset, setAgentConfigPermissionPreset] = useState<AgentPermissionPreset | 'custom'>('builder_standard');
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeDescriptor[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
@@ -258,6 +268,10 @@ export default function HomePage() {
       setAgentConfigModel(typeof config.model === 'string' ? config.model : '');
       setAgentConfigVariant(typeof config.variant === 'string' ? config.variant : '');
       setAgentConfigAgentName(typeof config.agentName === 'string' ? config.agentName : '');
+      setAgentConfigInstructions(agent.instructions ?? '');
+      const policy = agent.executionPolicy ?? defaultExecutionPolicy(agent.adapterType, agent.capabilities);
+      setAgentConfigExecutionPolicy(policy);
+      setAgentConfigPermissionPreset(identifyExecutionPolicyPreset(agent.adapterType, policy));
       setAgentConfigEnabled(agent.enabled);
       return;
     }
@@ -271,6 +285,10 @@ export default function HomePage() {
     setAgentConfigModel(defaultConnection?.kind === 'custom_api' ? defaultConnection.models[0] ?? '' : openCode?.models[0] ?? '');
     setAgentConfigVariant('');
     setAgentConfigAgentName('');
+    setAgentConfigInstructions('');
+    const policy = defaultExecutionPolicy('opencode_cli', ['implement']);
+    setAgentConfigExecutionPolicy(policy);
+    setAgentConfigPermissionPreset('builder_standard');
     setAgentConfigEnabled(true);
   }
 
@@ -404,6 +422,8 @@ export default function HomePage() {
             name: agentConfigName,
             adapterType: agentConfigAdapter,
             capabilities: agentConfigCapabilities,
+            instructions: agentConfigInstructions,
+            executionPolicy: agentConfigExecutionPolicy,
             ...(agentConfigAdapter !== 'mock' ? { providerConnectionId: agentConfigConnectionId } : {}),
             ...(agentConfigAdapter === 'opencode_cli'
               ? {
@@ -519,6 +539,9 @@ export default function HomePage() {
       <AgentConfigDrawer
         adapterType={agentConfigAdapter}
         agentName={agentConfigAgentName}
+        instructions={agentConfigInstructions}
+        executionPolicy={agentConfigExecutionPolicy}
+        permissionPreset={agentConfigPermissionPreset}
         capabilities={agentConfigCapabilities}
         editing={editingAgentId !== null}
         enabled={agentConfigEnabled}
@@ -536,10 +559,29 @@ export default function HomePage() {
             const runtime = agentRuntimes.find((candidate) => candidate.adapterType === value);
             setAgentConfigModel(connection?.kind === 'custom_api' ? connection.models[0] ?? '' : runtime?.models[0] ?? '');
           } else setAgentConfigModel('');
+          if (agentConfigPermissionPreset !== 'custom') {
+            setAgentConfigExecutionPolicy(executionPolicyPreset(value, agentConfigPermissionPreset));
+          }
         }}
         onClose={() => setAgentConfigOpen(false)}
         onAgentNameChange={setAgentConfigAgentName}
-        onCapabilitiesChange={setAgentConfigCapabilities}
+        onInstructionsChange={setAgentConfigInstructions}
+        onExecutionPolicyChange={(policy) => {
+          setAgentConfigExecutionPolicy(policy);
+          setAgentConfigPermissionPreset(identifyExecutionPolicyPreset(agentConfigAdapter, policy));
+        }}
+        onPermissionPresetChange={(preset) => {
+          setAgentConfigPermissionPreset(preset);
+          if (preset !== 'custom') setAgentConfigExecutionPolicy(executionPolicyPreset(agentConfigAdapter, preset));
+        }}
+        onCapabilitiesChange={(capabilities) => {
+          setAgentConfigCapabilities(capabilities);
+          if (agentConfigPermissionPreset !== 'custom') {
+            const nextPreset = capabilities.includes('implement') ? 'builder_standard' : 'reviewer_standard';
+            setAgentConfigPermissionPreset(nextPreset);
+            setAgentConfigExecutionPolicy(executionPolicyPreset(agentConfigAdapter, nextPreset));
+          }
+        }}
         onEnabledChange={setAgentConfigEnabled}
         onProviderConnectionChange={(value) => {
           setAgentConfigConnectionId(value);

@@ -10,6 +10,7 @@ import type {
   Workspace,
   ProviderConnection,
 } from '@relay-hub/contracts';
+import { defaultExecutionPolicy, effectiveExecutionPolicyForAdapter, ExecutionPolicySchema } from '@relay-hub/contracts';
 import {
   agentProfiles,
   handoffs,
@@ -101,6 +102,10 @@ export function mapReview(row: ReviewRow, findings: ReviewFinding[]): Review {
 
 export function mapRun(row: RunRow): Run {
   const snapshot = row.agentProfileSnapshot;
+  const policyResult = ExecutionPolicySchema.safeParse(snapshot.executionPolicy ?? snapshot.config.executionPolicy);
+  const snapshotPolicy = policyResult.success
+    ? policyResult.data
+    : defaultExecutionPolicy(snapshot.adapterType, snapshot.capabilities);
   return {
     id: row.id,
     taskId: row.taskId,
@@ -115,6 +120,7 @@ export function mapRun(row: RunRow): Run {
       name: snapshot.name,
       adapterType: snapshot.adapterType,
       capabilities: snapshot.capabilities,
+      executionPolicy: effectiveExecutionPolicyForAdapter(snapshot.adapterType, snapshotPolicy, row.triggerType),
       ...(snapshot.provider ? { provider: snapshot.provider } : {}),
       ...(snapshot.modelLabel ? { modelLabel: snapshot.modelLabel } : {}),
       ...(snapshot.modelFamily ? { modelFamily: snapshot.modelFamily } : {}),
@@ -153,6 +159,7 @@ export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
     throw new Error(`Unsupported adapter type: ${row.adapterType}`);
   }
   const adapterType: AgentAdapterType = row.adapterType;
+  const policyResult = ExecutionPolicySchema.safeParse(row.config.executionPolicy);
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -161,6 +168,10 @@ export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
     ...(row.providerConnectionId ? { providerConnectionId: row.providerConnectionId } : {}),
     capabilities: row.capabilities,
     config: row.config,
+    instructions: typeof row.config.instructions === 'string' ? row.config.instructions : '',
+    executionPolicy: policyResult.success
+      ? policyResult.data
+      : defaultExecutionPolicy(adapterType, row.capabilities),
     enabled: row.enabled,
     ...(row.provider ? { provider: row.provider } : {}),
     ...(row.modelLabel ? { modelLabel: row.modelLabel } : {}),

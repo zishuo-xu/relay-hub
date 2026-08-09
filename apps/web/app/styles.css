@@ -453,6 +453,17 @@ textarea:focus-visible {
 .runtime-card small { color: var(--muted); font-size: 9px; }
 .config-note { padding: 9px 10px; color: var(--muted); border-radius: 8px; background: var(--surface-soft); font-size: 10px; line-height: 1.55; }
 .config-note code { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.agent-policy-details { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+.agent-policy-details summary { display: flex; min-height: 32px; padding: 5px 10px; align-items: center; justify-content: space-between; gap: 10px; list-style: none; cursor: pointer; }
+.agent-policy-details summary::-webkit-details-marker { display: none; }
+.agent-policy-details summary > span:first-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.agent-policy-details summary strong { color: var(--text); font-size: 10px; }
+.agent-policy-details summary small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-policy-details summary > span:last-child { flex: none; color: var(--accent); font-size: 9px; font-weight: 750; }
+.agent-policy-settings { display: flex; padding: 0 9px 9px; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); }
+.agent-policy-settings > label { margin-top: 8px; }
+.permission-summary { display: flex; padding: 8px 9px; flex-wrap: wrap; gap: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+.permission-summary span { padding: 3px 6px; color: var(--text-secondary); border-radius: 6px; background: white; font-size: 8px; font-weight: 650; }
 .capability-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .capability-fieldset legend { margin-bottom: 5px; color: var(--text-secondary); font-size: 10px; font-weight: 700; }
 .capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

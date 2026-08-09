@@ -1,5 +1,24 @@
 # 07. 实现状态
 
+## 2026-08-09：Agent 长期提示词与权限模板
+
+### 已实现
+
+- Agent 配置新增最多 8,000 字的长期提示词；平台执行规则保持高优先级，提示词随 AgentProfile 一起进入不可变 Run snapshot。
+- 新增统一 ExecutionPolicy，并提供 Builder、Reviewer、只读分析三种模板；当前摘要明确展示文件、命令、网络、外部目录与 Git 边界。
+- CLI 内部子 Agent 可按 Profile 允许或禁止，但始终作为父 Run 的内部实现，不获得独立平台身份、Token、Handoff 或 Review authority。
+- Codex Adapter 把只读/工作区可写和回环网络映射为命名 permission profile，禁止子 Agent 时关闭 Codex multi-agent features；OpenCode Adapter 映射 edit/bash/webfetch/external_directory/task，在只读 Run 禁用 bash，并拒绝可写 Run 的常规 git commit/push 命令。
+- 当前 Adapter 无法可靠执行的策略组合由合约拒绝；第一版固定禁止外部目录、commit 和 push。
+- 复用既有 AgentProfile JSONB 和 Run snapshot，不增加重复数据模型，也不需要数据库 migration；旧 Profile 和历史 Run 通过角色/Adapter 默认策略保持兼容。
+
+### 验证证据
+
+- Contracts 23/23、Worker 17/17 测试通过，覆盖长期提示词、模板、不可执行组合拒绝、Codex/OpenCode 映射、Reviewer 与 Adapter 双重收紧和 Prompt 优先级。
+- 全新隔离 PostgreSQL 中 API 19/19 测试通过，验证 Agent 修改后，Worker claim 仍获得 Run 创建时的旧模型、长期提示词和权限策略；测试数据库已在验收后单独清理，正式数据未改动。
+- 全仓 `pnpm check` 通过，包含所有 TypeScript 类型检查、单元测试和 Next.js 生产构建。
+- Codex 本机 permission profile 探针确认 `:workspace` + 回环网络配置可加载，并允许在指定工作区写入测试文件。
+- 真实 `http://localhost:3010/` 在 614 × 772 视口验收通过：Agent 抽屉默认将角色与权限收为一行摘要，表单 `clientHeight` 与 `scrollHeight` 均为 681；展开后切换 Reviewer 模板会同步显示只读、禁命令、关闭网络和禁止子 Agent，未保存验收输入，控制台无新增错误。
+
 ## 2026-08-09：Reviewer 只读代码与本地测试权限分离
 
 ### 已实现

@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import type { ClaimedRun } from '@relay-hub/contracts';
 import { describe, expect, it } from 'vitest';
-import { runOpenCodeAgent } from './opencode-adapter.js';
+import { openCodeRuntimePermissions, runOpenCodeAgent } from './opencode-adapter.js';
 
 const claimed: ClaimedRun = {
   workspace: {
@@ -54,6 +54,34 @@ const claimed: ClaimedRun = {
 };
 
 describe('runOpenCodeAgent', () => {
+  it('maps the Run policy to OpenCode permissions without elevating read-only Runs', () => {
+    const reviewer: ClaimedRun = {
+      ...claimed,
+      agent: { ...claimed.agent, capabilities: ['review'] },
+      run: { ...claimed.run, triggerType: 'review' },
+    };
+    expect(openCodeRuntimePermissions(reviewer)).toMatchObject({
+      share: 'disabled',
+      permission: {
+        edit: 'deny',
+        bash: 'deny',
+        webfetch: 'deny',
+        external_directory: 'deny',
+        task: 'deny',
+      },
+    });
+    expect(openCodeRuntimePermissions(claimed)).toMatchObject({
+      permission: {
+        external_directory: 'deny',
+        bash: {
+          'git commit*': 'deny',
+          'git push*': 'deny',
+        },
+      },
+    });
+    expect((openCodeRuntimePermissions(claimed).permission as Record<string, unknown>).task).toBeUndefined();
+  });
+
   it('maps OpenCode JSON events to RelayHub events and Builder completion', async () => {
     const fixture = [
       { type: 'step_start', sessionID: 'ses_test' },

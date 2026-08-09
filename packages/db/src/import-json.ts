@@ -1,18 +1,28 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { type AgentProfile, DEFAULT_MOCK_AGENT_ID, DEFAULT_WORKSPACE_ID } from '@relay-hub/contracts';
+import {
+  type AgentProfile,
+  defaultExecutionPolicy,
+  DEFAULT_MOCK_AGENT_ID,
+  DEFAULT_WORKSPACE_ID,
+  ExecutionPolicySchema,
+} from '@relay-hub/contracts';
 import { eq } from 'drizzle-orm';
 import { createDatabase } from './index.js';
 import { agentProfiles, idempotencyKeys, runEvents, runs, tasks } from './schema.js';
 
 function snapshotAgent(row: typeof agentProfiles.$inferSelect): AgentProfile {
+  const adapterType = row.adapterType === 'codex_cli' || row.adapterType === 'opencode_cli' ? row.adapterType : 'mock';
+  const policyResult = ExecutionPolicySchema.safeParse(row.config.executionPolicy);
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     name: row.name,
-    adapterType: row.adapterType === 'codex_cli' || row.adapterType === 'opencode_cli' ? row.adapterType : 'mock',
+    adapterType,
     capabilities: row.capabilities,
     config: row.config,
+    instructions: typeof row.config.instructions === 'string' ? row.config.instructions : '',
+    executionPolicy: policyResult.success ? policyResult.data : defaultExecutionPolicy(adapterType, row.capabilities),
     enabled: row.enabled,
     ...(row.provider ? { provider: row.provider } : {}),
     ...(row.modelLabel ? { modelLabel: row.modelLabel } : {}),

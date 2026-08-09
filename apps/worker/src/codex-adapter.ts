@@ -4,7 +4,7 @@ import {
   type CommandEvidence,
 } from '@relay-hub/contracts';
 import { z } from 'zod';
-import { buildAgentPrompt, parseReviewDraft } from './agent-prompt.js';
+import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
 import { superviseProcess } from './process-supervisor.js';
 
 const CodexEnvelopeSchema = z.object({ type: z.string() }).passthrough();
@@ -13,27 +13,31 @@ const MAX_EVENT_TEXT = 4_000;
 const REVIEWER_PERMISSION_PROFILE = 'relayhub-reviewer-local-test';
 
 export function codexSandboxForRun(claimed: ClaimedRun): 'read-only' | 'workspace-write' {
-  return claimed.run.triggerType === 'review' ? 'read-only' : 'workspace-write';
+  return executionPolicyForRun(claimed).fileAccess === 'read_only' ? 'read-only' : 'workspace-write';
 }
 
 export function codexPermissionArgumentsForRun(claimed: ClaimedRun): string[] {
-  if (claimed.run.triggerType !== 'review') {
-    return ['--sandbox', 'workspace-write'];
+  const policy = executionPolicyForRun(claimed);
+  if (policy.networkAccess !== 'loopback') {
+    return ['--sandbox', policy.fileAccess === 'read_only' ? 'read-only' : 'workspace-write'];
   }
 
+  const permissionProfile = policy.fileAccess === 'read_only'
+    ? REVIEWER_PERMISSION_PROFILE
+    : 'relayhub-builder-local-test';
   return [
     '-c',
-    `default_permissions="${REVIEWER_PERMISSION_PROFILE}"`,
+    `default_permissions="${permissionProfile}"`,
     '-c',
-    `permissions.${REVIEWER_PERMISSION_PROFILE}.extends=":read-only"`,
+    `permissions.${permissionProfile}.extends="${policy.fileAccess === 'read_only' ? ':read-only' : ':workspace'}"`,
     '-c',
-    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.enabled=true`,
+    `permissions.${permissionProfile}.network.enabled=true`,
     '-c',
-    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.mode="limited"`,
+    `permissions.${permissionProfile}.network.mode="limited"`,
     '-c',
-    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.allow_local_binding=true`,
+    `permissions.${permissionProfile}.network.allow_local_binding=true`,
     '-c',
-    `permissions.${REVIEWER_PERMISSION_PROFILE}.network.domains={"localhost"="allow","127.0.0.1"="allow"}`,
+    `permissions.${permissionProfile}.network.domains={"localhost"="allow","127.0.0.1"="allow"}`,
     '-c',
     'features.network_proxy={enabled=true,allow_local_binding=true,domains={"localhost"="allow","127.0.0.1"="allow"}}',
   ];
@@ -41,6 +45,7 @@ export function codexPermissionArgumentsForRun(claimed: ClaimedRun): string[] {
 
 export function codexArgumentsForRun(claimed: ClaimedRun, workingDirectory: string): string[] {
   const config = CodexRuntimeConfigSchema.parse(claimed.agent.config);
+  const policy = executionPolicyForRun(claimed);
   return [
     'exec',
     '--json',
@@ -50,6 +55,9 @@ export function codexArgumentsForRun(claimed: ClaimedRun, workingDirectory: stri
     '--ignore-rules',
     '-c',
     'approval_policy="never"',
+    ...(policy.internalSubagents === 'deny'
+      ? ['--disable', 'multi_agent', '--disable', 'multi_agent_v2']
+      : []),
     ...(config.model ? ['--model', config.model] : []),
     '-C',
     workingDirectory,
@@ -75,7 +83,7 @@ export async function* runCodexAgent(
 ): AsyncGenerator<AgentEvent> {
   const codexBinary = options.processOverride?.command ?? process.env.RELAY_HUB_CODEX_BIN ?? 'codex';
   const timeoutMs = Number(process.env.RELAY_HUB_AGENT_TIMEOUT_MS ?? 15 * 60 * 1_000);
-  const isReviewer = codexSandboxForRun(claimed) === 'read-only';
+  const isReviewer = claimed.run.triggerType === 'review';
   const args = options.processOverride?.args ?? codexArgumentsForRun(claimed, workingDirectory);
 
   let finalMessage = '';

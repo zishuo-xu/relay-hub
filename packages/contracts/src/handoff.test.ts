@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AgentEventSchema,
   AgentProfileInputSchema,
+  effectiveExecutionPolicyForAdapter,
+  executionPolicyPreset,
   CreateTaskInputSchema,
   DEFAULT_MOCK_AGENT_ID,
   DEFAULT_MOCK_REVIEWER_AGENT_ID,
@@ -55,6 +57,47 @@ describe('AgentProfile configuration contract', () => {
       model: 'opencode/big-pickle',
       credentialEnv: 'OPENAI_API_KEY',
     })).toThrow('Unrecognized key');
+  });
+
+  it('accepts bounded long-term instructions and an adapter-enforceable policy', () => {
+    const executionPolicy = executionPolicyPreset('codex_cli', 'reviewer_standard');
+    expect(AgentProfileInputSchema.parse({
+      name: 'Codex Architecture Reviewer',
+      adapterType: 'codex_cli',
+      providerConnectionId: '00000000-0000-4000-8000-000000000005',
+      capabilities: ['review'],
+      instructions: 'Prefer simple boundaries and report evidence for every finding.',
+      executionPolicy,
+    })).toMatchObject({
+      instructions: 'Prefer simple boundaries and report evidence for every finding.',
+      executionPolicy,
+    });
+  });
+
+  it('rejects policy combinations the selected CLI cannot enforce', () => {
+    expect(() => AgentProfileInputSchema.parse({
+      name: 'Unsafe OpenCode Reviewer',
+      adapterType: 'opencode_cli',
+      providerConnectionId: DEFAULT_OPENCODE_CONNECTION_ID,
+      capabilities: ['review'],
+      model: 'opencode/north-mini-code-free',
+      executionPolicy: {
+        ...executionPolicyPreset('opencode_cli', 'reviewer_standard'),
+        commandAccess: 'allow',
+      },
+    })).toThrow('shell writes cannot be sandboxed');
+  });
+
+  it('reports the stricter OpenCode Reviewer policy after role and Adapter narrowing', () => {
+    expect(effectiveExecutionPolicyForAdapter(
+      'opencode_cli',
+      executionPolicyPreset('opencode_cli', 'builder_standard'),
+      'review',
+    )).toMatchObject({
+      fileAccess: 'read_only',
+      commandAccess: 'deny',
+      networkAccess: 'none',
+    });
   });
 });
 

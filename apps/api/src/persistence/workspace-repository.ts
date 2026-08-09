@@ -7,6 +7,7 @@ import type {
   ProviderConnectionSnapshot,
   Workspace,
 } from '@relay-hub/contracts';
+import { defaultExecutionPolicy } from '@relay-hub/contracts';
 import { agentProfiles, providerConnections, type RelayDatabase, workspaces } from '@relay-hub/db';
 import { and, asc, eq } from 'drizzle-orm';
 import { mapAgentProfile, mapProviderConnection, mapWorkspace } from './mappers.js';
@@ -130,9 +131,11 @@ function profileValues(input: AgentProfileInput, connection?: ProviderConnection
       ...(input.model ? { model: input.model } : {}),
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.agentName ? { agentName: input.agentName } : {}),
+      instructions: input.instructions ?? '',
+      executionPolicy: input.executionPolicy ?? defaultExecutionPolicy(input.adapterType, input.capabilities),
       ...(connection ? { providerConnection: connectionSnapshot(connection) } : {}),
     },
-    enabled: input.enabled,
+    enabled: input.enabled ?? true,
   };
 }
 

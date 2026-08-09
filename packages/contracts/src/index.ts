@@ -14,6 +14,101 @@ export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 export const AGENT_CAPABILITIES = ['implement', 'review'] as const;
 export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
 
+export const AGENT_PERMISSION_PRESETS = ['builder_standard', 'reviewer_standard', 'analysis_read_only'] as const;
+export type AgentPermissionPreset = (typeof AGENT_PERMISSION_PRESETS)[number];
+
+export const ExecutionPolicySchema = z.object({
+  fileAccess: z.enum(['read_only', 'workspace_write']),
+  commandAccess: z.enum(['deny', 'allow']),
+  networkAccess: z.enum(['none', 'loopback', 'outbound']),
+  externalDirectoryAccess: z.literal('deny'),
+  gitAccess: z.literal('none'),
+  internalSubagents: z.enum(['deny', 'allow']),
+}).strict();
+
+export type ExecutionPolicy = z.infer<typeof ExecutionPolicySchema>;
+
+export function executionPolicyPreset(
+  adapterType: AgentAdapterType,
+  preset: AgentPermissionPreset,
+): ExecutionPolicy {
+  if (preset === 'builder_standard') {
+    return {
+      fileAccess: 'workspace_write',
+      commandAccess: 'allow',
+      networkAccess: adapterType === 'opencode_cli' ? 'outbound' : adapterType === 'codex_cli' ? 'loopback' : 'none',
+      externalDirectoryAccess: 'deny',
+      gitAccess: 'none',
+      internalSubagents: 'allow',
+    };
+  }
+  if (preset === 'reviewer_standard') {
+    return {
+      fileAccess: 'read_only',
+      commandAccess: adapterType === 'opencode_cli' ? 'deny' : 'allow',
+      networkAccess: adapterType === 'opencode_cli' ? 'none' : adapterType === 'codex_cli' ? 'loopback' : 'none',
+      externalDirectoryAccess: 'deny',
+      gitAccess: 'none',
+      internalSubagents: 'deny',
+    };
+  }
+  return {
+    fileAccess: 'read_only',
+    commandAccess: adapterType === 'opencode_cli' ? 'deny' : 'allow',
+    networkAccess: 'none',
+    externalDirectoryAccess: 'deny',
+    gitAccess: 'none',
+    internalSubagents: 'deny',
+  };
+}
+
+export function defaultExecutionPolicy(
+  adapterType: AgentAdapterType,
+  capabilities: readonly string[],
+): ExecutionPolicy {
+  return executionPolicyPreset(
+    adapterType,
+    capabilities.includes('implement') ? 'builder_standard' : 'reviewer_standard',
+  );
+}
+
+export function identifyExecutionPolicyPreset(
+  adapterType: AgentAdapterType,
+  policy: ExecutionPolicy,
+): AgentPermissionPreset | 'custom' {
+  for (const preset of AGENT_PERMISSION_PRESETS) {
+    const candidate = executionPolicyPreset(adapterType, preset);
+    if (Object.entries(candidate).every(([key, value]) => policy[key as keyof ExecutionPolicy] === value)) return preset;
+  }
+  return 'custom';
+}
+
+export function effectiveExecutionPolicy(
+  policy: ExecutionPolicy,
+  triggerType: 'user' | 'handoff' | 'review' | 'retry',
+): ExecutionPolicy {
+  if (triggerType !== 'review') return policy;
+  return {
+    ...policy,
+    fileAccess: 'read_only',
+    networkAccess: policy.networkAccess === 'outbound' ? 'loopback' : policy.networkAccess,
+    externalDirectoryAccess: 'deny',
+    gitAccess: 'none',
+  };
+}
+
+export function effectiveExecutionPolicyForAdapter(
+  adapterType: AgentAdapterType,
+  policy: ExecutionPolicy,
+  triggerType: 'user' | 'handoff' | 'review' | 'retry',
+): ExecutionPolicy {
+  const effective = effectiveExecutionPolicy(policy, triggerType);
+  if (adapterType === 'opencode_cli' && effective.fileAccess === 'read_only') {
+    return { ...effective, commandAccess: 'deny', networkAccess: 'none' };
+  }
+  return effective;
+}
+
 export const PROVIDER_CONNECTION_KINDS = ['official_cli', 'custom_api'] as const;
 export type ProviderConnectionKind = (typeof PROVIDER_CONNECTION_KINDS)[number];
 
@@ -110,6 +205,8 @@ export const AgentProfileInputSchema = z
     model: z.string().trim().min(3).max(240).optional(),
     variant: z.string().trim().min(1).max(80).optional(),
     agentName: z.string().trim().min(1).max(80).optional(),
+    instructions: z.string().trim().max(8_000).default(''),
+    executionPolicy: ExecutionPolicySchema.optional(),
     enabled: z.boolean().default(true),
   })
   .strict()
@@ -137,9 +234,41 @@ export const AgentProfileInputSchema = z
     if (new Set(input.capabilities).size !== input.capabilities.length) {
       context.addIssue({ code: 'custom', path: ['capabilities'], message: 'Agent capabilities must be unique' });
     }
+    if (input.executionPolicy && input.adapterType === 'codex_cli') {
+      if (input.executionPolicy.commandAccess === 'deny') {
+        context.addIssue({
+          code: 'custom',
+          path: ['executionPolicy', 'commandAccess'],
+          message: 'Codex CLI command denial is not enforceable by the current adapter',
+        });
+      }
+      if (input.executionPolicy.networkAccess === 'outbound') {
+        context.addIssue({
+          code: 'custom',
+          path: ['executionPolicy', 'networkAccess'],
+          message: 'Codex CLI outbound network is not enabled by RelayHub',
+        });
+      }
+    }
+    if (input.executionPolicy && input.adapterType === 'opencode_cli') {
+      if (input.executionPolicy.networkAccess === 'loopback') {
+        context.addIssue({
+          code: 'custom',
+          path: ['executionPolicy', 'networkAccess'],
+          message: 'OpenCode CLI cannot enforce loopback-only shell network access',
+        });
+      }
+      if (input.executionPolicy.fileAccess === 'read_only' && input.executionPolicy.commandAccess === 'allow') {
+        context.addIssue({
+          code: 'custom',
+          path: ['executionPolicy', 'commandAccess'],
+          message: 'OpenCode read-only Agents must deny shell commands because shell writes cannot be sandboxed',
+        });
+      }
+    }
   });
 
-export type AgentProfileInput = z.infer<typeof AgentProfileInputSchema>;
+export type AgentProfileInput = z.input<typeof AgentProfileInputSchema>;
 
 export const OpenCodeRuntimeConfigSchema = z.object({
   model: z.string().trim().min(1).max(240),
@@ -460,6 +589,8 @@ export interface AgentProfile {
   modelFamily?: string;
   capabilities: string[];
   config: Record<string, unknown>;
+  instructions?: string;
+  executionPolicy?: ExecutionPolicy;
   enabled: boolean;
 }
 
@@ -471,6 +602,7 @@ export interface AgentProfileSnapshotSummary {
   modelLabel?: string;
   modelFamily?: string;
   capabilities: string[];
+  executionPolicy?: ExecutionPolicy;
 }
 
 export interface AgentHealth {

@@ -2,7 +2,7 @@
 
 ## 状态
 
-Accepted / Not implemented（2026-08-09）
+Accepted / Implemented（2026-08-09）
 
 ## 背景
 
@@ -26,3 +26,9 @@ Codex、OpenCode、Claude 等 Agent CLI 可以自行把一个较大目标拆成�
 - 主 Agent 可以自主利用 CLI 原生多 Agent 能力处理较大的多维问题。
 - 内部子 Agent 不能伪装成平台独立 Agent，也不能绕过父 Run 的权限快照。
 - 后续接入新的 CLI 时，只需声明是否支持内部子 Agent以及如何保证父权限覆盖整个执行树。
+
+## 实现说明
+
+- `ExecutionPolicy.internalSubagents` 已进入 Agent 配置和不可变 Run AgentProfile 快照。
+- OpenCode Adapter 通过 `permission.task` 映射允许/禁止；Codex 由 RelayHub Prompt 和父 Run permission profile 共同约束，内部线程不获得平台 Token 或 API 身份。
+- 权限模板默认允许 Builder 使用内部子 Agent、禁止 Reviewer 和只读分析 Agent 使用；用户可在 Agent 配置中覆盖该单项，但不能扩大父 Run 的文件、网络、外部目录或 Git 边界。

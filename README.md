@@ -45,7 +45,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成 `changes_requested` 自动返工、Review 多轮复审与轮次预算
 - [x] 完成多 Agent 交接与 Review 主流程
 - [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
-- [x] 完成通用 Agent 创建、CLI/能力动态配置与不可变 Run AgentProfile 快照
+- [x] 完成通用 Agent 创建、CLI/模型/长期提示词/权限模板配置与不可变 Run AgentProfile 快照
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定
@@ -110,7 +110,7 @@ opencode providers login
 opencode models
 ```
 
-RelayHub 的“Agent 配置”面板只保存精确的 `provider/model`、可选 variant、OpenCode agent 名称和凭证环境变量名称，不保存 API Key。运行时配置参考 OpenCode 官方的 [Config](https://opencode.ai/docs/config/)、[Providers](https://opencode.ai/docs/providers/) 和 [Permissions](https://opencode.ai/docs/permissions/) 约定。
+RelayHub 的“模型与连接”统一管理 URI、协议、模型目录和凭证环境变量名称，不保存 API Key。“Agent 配置”只引用连接和模型，并保存长期提示词与执行权限。运行时配置参考 OpenCode 官方的 [Config](https://opencode.ai/docs/config/)、[Providers](https://opencode.ai/docs/providers/) 和 [Permissions](https://opencode.ai/docs/permissions/) 约定。
 
 ```bash
 cd relay-hub
@@ -128,7 +128,7 @@ pnpm dev
 - `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
 - 自定义 Agent：点击页面右上方“Agent 配置”，先填写自定义名称和 Builder/Reviewer 能力，再选择 Mock、Codex CLI 或 OpenCode CLI。CLI 只是运行载体；只有选择 OpenCode 时才填写 `provider/model` 等专属字段。
 
-AgentProfile 是可长期复用、可修改的当前配置。每个 Run 在创建时保存不可变 AgentProfile 快照，因此修改 Agent 名称、CLI 或模型不会改变已经排队和历史 Run；后续 Run 才使用新配置。
+AgentProfile 是可长期复用、可修改的当前配置。长期提示词定义角色偏好，Builder、Reviewer 和只读分析权限模板定义统一执行边界；CLI 内部子 Agent 只能继承父 Run 权限。每个 Run 在创建时保存不可变 AgentProfile 快照，因此修改 Agent 名称、CLI、模型、提示词或权限不会改变已经排队和历史 Run；后续 Run 才使用新配置。
 
 Agent 健康检测只确认本机 CLI 可启动且所填模型出现在 `opencode models` 目录中，不会为了检测而发起计费模型请求；provider 凭证是否有效会在第一次真实任务中得到验证。
 
