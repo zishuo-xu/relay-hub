@@ -8,8 +8,8 @@ import {
 } from '@relay-hub/contracts';
 import { z } from 'zod';
 import { buildAgentPrompt, executionPolicyForRun, parseReviewDraft } from './agent-prompt.js';
+import { agentCompletionEvents } from './agent-result.js';
 import { truncateText } from './bounded-text.js';
-import { buildReviewHandoff, nextActionAfterBuilder } from './handoff.js';
 import { safeChildEnvironment, superviseProcess } from './process-supervisor.js';
 
 const OpenCodeEnvelopeSchema = z.object({
@@ -132,25 +132,33 @@ export async function* runOpenCodeAgent(
             };
             continue;
           }
-        } else if (claimed.task.reviewerAgentId) {
           yield {
-            type: 'handoff.requested',
-            handoff: buildReviewHandoff(
+            type: 'run.completed',
+            outcome: {
+              summary: truncate(finalMessage || 'OpenCode completed the task.'),
+              commandEvidence,
+            },
+          };
+        } else {
+          let completionEvents: AgentEvent[];
+          try {
+            completionEvents = agentCompletionEvents({
               claimed,
               workingDirectory,
-              truncate(finalMessage || 'Builder completed the task and requested independent review.'),
+              finalMessage,
               commandEvidence,
-            ),
-          };
+              fallbackSummary: 'OpenCode completed the task.',
+            });
+          } catch (error) {
+            yield {
+              type: 'run.failed',
+              code: 'protocol_error',
+              message: truncate(error instanceof Error ? error.message : String(error)),
+            };
+            continue;
+          }
+          for (const event of completionEvents) yield event;
         }
-        yield {
-          type: 'run.completed',
-          outcome: {
-            summary: truncate(finalMessage || 'OpenCode completed the task.'),
-            commandEvidence,
-            ...(!isReviewer ? { nextAction: nextActionAfterBuilder(claimed) } : {}),
-          },
-        };
       }
       continue;
     }

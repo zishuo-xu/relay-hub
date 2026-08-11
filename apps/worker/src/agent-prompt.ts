@@ -1,4 +1,6 @@
 import {
+  AGENT_RESULT_ENVELOPE_END,
+  AGENT_RESULT_ENVELOPE_START,
   type ClaimedRun,
   defaultExecutionPolicy,
   effectiveExecutionPolicyForAdapter,
@@ -63,6 +65,62 @@ export function parseReviewDraft(message: string): ReviewDraft {
   } catch (error) {
     throw new Error(`Reviewer returned an invalid structured Review: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function routingInstructions(claimed: ClaimedRun): string[] {
+  const targets = claimed.handoffTargets ?? [];
+  const directory = targets.length
+    ? targets.map((target) => `- ${target.id} · ${target.name} · capabilities: ${target.capabilities.join(', ')}`).join('\n')
+    : '- No other platform Agents are available; finish this Run yourself.';
+  const reviewerRule = claimed.task.reviewerAgentId
+    ? `To request the configured independent Review, use nextAction request_review with targetAgentId ${claimed.task.reviewerAgentId}.`
+    : 'This Task has no configured Reviewer; do not use request_review.';
+  return [
+    '',
+    'Routing with a structured result:',
+    'You may end this Run with exactly one structured envelope and no Markdown fence:',
+    AGENT_RESULT_ENVELOPE_START,
+    '{"summary":"What this Run finished","nextAction":{"type":"wait_for_user","reason":"Why the user must decide next"}}',
+    AGENT_RESULT_ENVELOPE_END,
+    'Allowed nextAction types: handoff, request_review, wait_for_user, continue, complete.',
+    'A handoff nextAction also requires a "handoff" object with objective, summary, artifactRefs, evidenceRefs, decisions, openQuestions, and risks, and its targetAgentId must come from the candidate directory below. RelayHub validates the target, writes the acceptance criteria itself, and creates the next Run.',
+    reviewerRule,
+    'If you omit the envelope, RelayHub applies the default route for this Task.',
+    'Candidate platform Agents (id · name · capabilities):',
+    directory,
+  ];
+}
+
+function incomingHandoffSection(claimed: ClaimedRun): string[] {
+  const handoff = claimed.handoff;
+  if (!handoff) return [];
+  const artifacts = handoff.artifactRefs.length
+    ? handoff.artifactRefs.map((artifact) => `- ${artifact.kind}: ${artifact.value}${artifact.label ? ` (${artifact.label})` : ''}`).join('\n')
+    : '- None recorded.';
+  const evidence = handoff.evidenceRefs.length
+    ? handoff.evidenceRefs.map((item) => `- ${item.kind}: ${item.value}${item.label ? ` (${item.label})` : ''}`).join('\n')
+    : '- None recorded.';
+  const decisions = handoff.decisions.length ? handoff.decisions.map((item) => `- ${item}`).join('\n') : '- None recorded.';
+  const openQuestions = handoff.openQuestions.length
+    ? handoff.openQuestions.map((item) => `- ${item}`).join('\n')
+    : '- None recorded.';
+  const risks = handoff.risks.length ? handoff.risks.map((item) => `- ${item}`).join('\n') : '- None recorded.';
+  return [
+    '',
+    'The previous platform Agent handed this Task to you. Its structured Handoff:',
+    `Handoff objective: ${handoff.objective}`,
+    `Context summary: ${handoff.contextSummary}`,
+    'Artifacts:',
+    artifacts,
+    'Evidence references:',
+    evidence,
+    'Recorded decisions:',
+    decisions,
+    'Open questions:',
+    openQuestions,
+    'Known risks:',
+    risks,
+  ];
 }
 
 export function buildAgentPrompt(claimed: ClaimedRun): string {
@@ -148,6 +206,7 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
       criteria,
       '',
       'In the final response, summarize fixes, verification performed, and any remaining risk.',
+      ...routingInstructions(claimed),
     ].join('\n');
   }
 
@@ -159,10 +218,12 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
     '',
     `Task: ${claimed.task.title}`,
     claimed.task.description,
+    ...incomingHandoffSection(claimed),
     '',
     'Acceptance criteria:',
     criteria,
     '',
     'In the final response, summarize changed files, verification performed, and any remaining risk.',
+    ...routingInstructions(claimed),
   ].join('\n');
 }

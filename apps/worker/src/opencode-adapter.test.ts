@@ -165,6 +165,65 @@ describe('runOpenCodeAgent', () => {
     ]);
   });
 
+  it('routes a structured generic Handoff result from the final text', async () => {
+    const uxAgentId = '00000000-0000-4000-8000-000000000031';
+    const text = [
+      'Design finished.',
+      '<relayhub_result>',
+      JSON.stringify({
+        summary: 'Design notes are ready.',
+        nextAction: { type: 'handoff', targetAgentId: uxAgentId, reason: 'UX Agent owns the next step.' },
+        handoff: { objective: 'Draft the UX flow', summary: 'Compared two layouts.' },
+      }),
+      '</relayhub_result>',
+    ].join('\n');
+    const fixture = [
+      { type: 'step_start', sessionID: 'ses_handoff' },
+      { type: 'text', sessionID: 'ses_handoff', part: { text } },
+      { type: 'step_finish', sessionID: 'ses_handoff' },
+    ];
+    const script = `for (const item of ${JSON.stringify(fixture)}) console.log(JSON.stringify(item));`;
+    const events = [];
+    for await (const event of runOpenCodeAgent(claimed, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) events.push(event);
+
+    expect(events.map((event) => event.type)).toEqual([
+      'run.started',
+      'output.delta',
+      'handoff.requested',
+      'run.completed',
+    ]);
+    expect(events[2]).toMatchObject({
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: uxAgentId,
+        nextAction: { type: 'handoff', targetAgentId: uxAgentId },
+        acceptanceCriteria: ['Terminal event is emitted'],
+      },
+    });
+    expect(events[3]).toMatchObject({
+      type: 'run.completed',
+      outcome: { nextAction: { type: 'handoff', targetAgentId: uxAgentId } },
+    });
+  });
+
+  it('fails the Run as a protocol error when the result envelope is malformed', async () => {
+    const fixture = [
+      { type: 'step_start', sessionID: 'ses_bad' },
+      { type: 'text', sessionID: 'ses_bad', part: { text: 'Broken <relayhub_result>{"summary":' } },
+      { type: 'step_finish', sessionID: 'ses_bad' },
+    ];
+    const script = `for (const item of ${JSON.stringify(fixture)}) console.log(JSON.stringify(item));`;
+    const events = [];
+    for await (const event of runOpenCodeAgent(claimed, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) events.push(event);
+
+    expect(events.some((event) => event.type === 'run.completed')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: 'run.failed', code: 'protocol_error' });
+  });
+
   it('turns an OpenCode error envelope into a terminal failure', async () => {
     const script = "console.log(JSON.stringify({type:'error',sessionID:'ses_error',error:{message:'provider failed'}}));";
     const events = [];

@@ -8,6 +8,12 @@ export const DEFAULT_CODEX_CONNECTION_ID = '00000000-0000-4000-8000-000000000005
 export const DEFAULT_OPENCODE_CONNECTION_ID = '00000000-0000-4000-8000-000000000006';
 export const RUN_QUEUE_NAME = 'relay-hub-runs';
 
+export const AGENT_RESULT_ENVELOPE_START = '<relayhub_result>';
+export const AGENT_RESULT_ENVELOPE_END = '</relayhub_result>';
+export const MAX_SEQUENTIAL_HANDOFFS = 6;
+export const HANDOFF_REJECTION_REASONS = ['handoff_budget_exhausted', 'handoff_target_unavailable'] as const;
+export type HandoffRejectionReason = (typeof HANDOFF_REJECTION_REASONS)[number];
+
 export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli', 'opencode_cli'] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 
@@ -454,6 +460,52 @@ export const HandoffDraftSchema = z.object({
 
 export type HandoffDraft = z.infer<typeof HandoffDraftSchema>;
 
+export const HandoffTargetViewSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(80),
+  capabilities: z.array(z.enum(AGENT_CAPABILITIES)).min(1).max(2),
+}).strict();
+
+export type HandoffTargetView = z.infer<typeof HandoffTargetViewSchema>;
+
+export const AgentResultHandoffSchema = z.object({
+  objective: z.string().min(1).max(2_000),
+  summary: z.string().min(1).max(10_000),
+  artifactRefs: z.array(HandoffArtifactRefSchema).max(100).default([]),
+  evidenceRefs: z.array(HandoffArtifactRefSchema).max(100).default([]),
+  decisions: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  openQuestions: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  risks: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+}).strict();
+
+export type AgentResultHandoff = z.infer<typeof AgentResultHandoffSchema>;
+
+export const AgentResultSchema = z
+  .object({
+    summary: z.string().min(1).max(10_000),
+    nextAction: NextActionSchema,
+    handoff: AgentResultHandoffSchema.optional(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (result.nextAction.type === 'handoff' && !result.handoff) {
+      context.addIssue({
+        code: 'custom',
+        path: ['handoff'],
+        message: 'A handoff nextAction requires structured Handoff content',
+      });
+    }
+    if (result.handoff && result.nextAction.type !== 'handoff' && result.nextAction.type !== 'request_review') {
+      context.addIssue({
+        code: 'custom',
+        path: ['handoff'],
+        message: 'Handoff content requires a handoff or request_review nextAction',
+      });
+    }
+  });
+
+export type AgentResult = z.infer<typeof AgentResultSchema>;
+
 export const ReviewFindingDraftSchema = z
   .object({
     severity: z.enum(FINDING_SEVERITIES),
@@ -726,6 +778,7 @@ export type CoordinationReason =
   | 'current_run_missing'
   | 'run_waiting_for_dispatch'
   | 'run_owned_by_agent'
+  | 'handoff_waiting_for_dispatch'
   | 'review_waiting_for_dispatch'
   | 'review_in_progress'
   | 'repair_in_progress'
@@ -789,6 +842,7 @@ export interface ClaimedRun {
   agent: AgentProfile;
   handoff?: Handoff;
   review?: Review;
+  handoffTargets?: HandoffTargetView[];
 }
 
 export interface ClaimedExecution {

@@ -183,6 +183,71 @@ describe('runCodexAgent', () => {
     });
   });
 
+  it('routes a structured generic Handoff result from the final agent message', async () => {
+    const uxAgentId = '00000000-0000-4000-8000-000000000031';
+    const resultEnvelope = [
+      '<relayhub_result>',
+      JSON.stringify({
+        summary: 'Design notes are ready.',
+        nextAction: { type: 'handoff', targetAgentId: uxAgentId, reason: 'UX Agent owns the next step.' },
+        handoff: {
+          objective: 'Draft the UX flow',
+          summary: 'Compared two layouts without hidden reasoning.',
+          decisions: ['Keep the single-column layout.'],
+        },
+      }),
+      '</relayhub_result>',
+    ].join('\n');
+    const fixture = [
+      { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: `Design finished.\n${resultEnvelope}` } },
+      { type: 'turn.completed' },
+    ];
+    const script = `for (const item of ${JSON.stringify(fixture)}) console.log(JSON.stringify(item));`;
+    const events = [];
+    for await (const event of runCodexAgent(claimed, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(['output.delta', 'handoff.requested', 'run.completed']);
+    expect(events[1]).toMatchObject({
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: uxAgentId,
+        objective: 'Draft the UX flow',
+        acceptanceCriteria: ['Terminal event is emitted'],
+        decisions: ['Keep the single-column layout.'],
+        nextAction: { type: 'handoff', targetAgentId: uxAgentId },
+      },
+    });
+    expect(events[2]).toMatchObject({
+      type: 'run.completed',
+      outcome: {
+        summary: 'Design notes are ready.',
+        nextAction: { type: 'handoff', targetAgentId: uxAgentId },
+      },
+    });
+  });
+
+  it('fails the Run as a protocol error when the result envelope is malformed', async () => {
+    const fixture = [
+      { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'Oops <relayhub_result>{"summary":' } },
+      { type: 'turn.completed' },
+    ];
+    const script = `for (const item of ${JSON.stringify(fixture)}) console.log(JSON.stringify(item));`;
+    const events = [];
+    for await (const event of runCodexAgent(claimed, tmpdir(), {
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) {
+      events.push(event);
+    }
+
+    expect(events.some((event) => event.type === 'run.completed')).toBe(false);
+    expect(events.some((event) => event.type === 'handoff.requested')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: 'run.failed', code: 'protocol_error' });
+  });
+
   it('builds isolated Reviewer context without requesting another Handoff', async () => {
     const reviewer: ClaimedRun = {
       ...claimed,
@@ -265,6 +330,92 @@ describe('runCodexAgent', () => {
     expect(prompt.indexOf('Do not commit or push Git changes.')).toBeLessThan(prompt.indexOf('Always explain architecture tradeoffs'));
   });
 
+  it('offers only the minimal candidate directory and the result envelope to a Builder', () => {
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      handoffTargets: [
+        { id: '00000000-0000-4000-8000-000000000031', name: 'UX Agent', capabilities: ['implement'] },
+        { id: '00000000-0000-4000-8000-000000000004', name: 'Codex Reviewer', capabilities: ['review'] },
+      ],
+    });
+    expect(prompt).toContain('<relayhub_result>');
+    expect(prompt).toContain('</relayhub_result>');
+    expect(prompt).toContain('00000000-0000-4000-8000-000000000031');
+    expect(prompt).toContain('UX Agent');
+    expect(prompt).toContain('capabilities: implement');
+    expect(prompt).toContain('no configured Reviewer');
+  });
+
+  it('points request_review at the configured Reviewer in the Builder prompt', () => {
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      task: { ...claimed.task, reviewerAgentId: '00000000-0000-4000-8000-000000000004' },
+      handoffTargets: [{ id: '00000000-0000-4000-8000-000000000004', name: 'Codex Reviewer', capabilities: ['review'] }],
+    });
+    expect(prompt).toContain('request_review with targetAgentId 00000000-0000-4000-8000-000000000004');
+  });
+
+  it('never offers routing candidates to a Reviewer Run', () => {
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      agent: { ...claimed.agent, capabilities: ['review'] },
+      run: { ...claimed.run, triggerType: 'review' },
+      handoff: {
+        id: '00000000-0000-4000-8000-000000000020',
+        bundleVersion: 2,
+        sourceRunId: claimed.run.id,
+        targetAgentId: claimed.agent.id,
+        objective: 'Review the Builder result',
+        contextSummary: 'Builder completed the change.',
+        artifactRefs: [],
+        evidenceRefs: [],
+        acceptanceCriteria: claimed.task.acceptanceCriteria,
+        decisions: [],
+        openQuestions: [],
+        risks: [],
+        status: 'dispatched',
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+      handoffTargets: [{ id: '00000000-0000-4000-8000-000000000031', name: 'UX Agent', capabilities: ['implement'] }],
+    });
+    expect(prompt).not.toContain('<relayhub_result>');
+    expect(prompt).not.toContain('UX Agent');
+  });
+
+  it('feeds the consumed Handoff V2 context to a generic handoff target Run', () => {
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      run: { ...claimed.run, triggerType: 'handoff' },
+      handoff: {
+        id: '00000000-0000-4000-8000-000000000020',
+        bundleVersion: 2,
+        sourceRunId: '00000000-0000-4000-8000-000000000099',
+        targetAgentId: claimed.agent.id,
+        targetRunId: claimed.run.id,
+        objective: 'Draft the UX flow',
+        contextSummary: 'The design Agent compared two layouts and kept the simpler one.',
+        artifactRefs: [{ kind: 'text', value: 'layout-comparison.md', label: 'analysis' }],
+        evidenceRefs: [],
+        acceptanceCriteria: ['Terminal event is emitted'],
+        decisions: ['Single-column layout wins.'],
+        openQuestions: ['Is the copy final?'],
+        risks: ['Illustrations are missing.'],
+        nextAction: { type: 'handoff', targetAgentId: claimed.agent.id, reason: 'UX owns the next step.' },
+        contentDigest: 'b'.repeat(64),
+        status: 'dispatched',
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+    });
+    expect(prompt).toContain('Handoff objective: Draft the UX flow');
+    expect(prompt).toContain('The design Agent compared two layouts and kept the simpler one.');
+    expect(prompt).toContain('Single-column layout wins.');
+    expect(prompt).toContain('Is the copy final?');
+    expect(prompt).toContain('Illustrations are missing.');
+    expect(prompt).toContain('layout-comparison.md');
+  });
+
   it('rejects a Reviewer decision that is not a valid structured envelope', async () => {
     expect(() => parseReviewDraft('approved')).toThrow('missing the RelayHub review envelope');
     expect(() =>
@@ -275,6 +426,8 @@ describe('runCodexAgent', () => {
   });
 
   it('injects structured Findings into a workspace-write repair Run', async () => {
+    // The echo fixture strips the routing envelope markers from the prompt so
+    // the reply exercises the legacy fixed-Reviewer fallback path.
     const repair: ClaimedRun = {
       ...claimed,
       task: {
@@ -315,7 +468,8 @@ describe('runCodexAgent', () => {
       "let input = '';",
       "process.stdin.on('data', (chunk) => { input += chunk; });",
       "process.stdin.on('end', () => {",
-      "console.log(JSON.stringify({type:'item.completed',item:{id:'msg',type:'agent_message',text:input}}));",
+      "const reply = input.replaceAll('<relayhub_result>', '').replaceAll('</relayhub_result>', '');",
+      "console.log(JSON.stringify({type:'item.completed',item:{id:'msg',type:'agent_message',text:reply}}));",
       "console.log(JSON.stringify({type:'turn.completed'}));",
       '});',
     ].join('');
