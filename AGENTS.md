@@ -37,9 +37,11 @@ Do not leave submitted or completed RelayHub changes only in the local repositor
 
 ## Delegated development workflow
 
-All work implemented by a delegated developer follows `docs/10-delegated-development-workflow.md` and must have a registered Work Item under `docs/work-items/`.
+All work implemented by the sole delegated developer follows `docs/10-delegated-development-workflow.md` and must have a registered Work Item under `docs/work-items/`.
 
-- The Architect owns scope, invariants, acceptance criteria, `VERIFYING`, `ACCEPTED`, main-branch integration, and `DONE`.
+- The Architect is the only delegator, acceptance authority, and main-branch integrator. The Architect owns major feature and architecture decisions, scope, invariants, acceptance criteria, `VERIFYING`, `ACCEPTED`, and `DONE`.
+- There may be at most one Active Work Item. Do not start or register the next implementation plan until the current item is `DONE` or `CANCELLED`.
+- The Implementer may choose the internal design, decomposition, algorithms, tests, and in-scope refactors as long as the frozen goal, invariants, contracts, and acceptance criteria remain intact.
 - The Implementer owns the topic branch and may mark only `IN_PROGRESS`, `BLOCKED`, and `SUBMITTED` for implementation progress.
 - `SUBMITTED` means ready for independent verification; it never means accepted or complete.
 - Any unresolved P1 or P2 finding requires `CHANGES_REQUESTED`.

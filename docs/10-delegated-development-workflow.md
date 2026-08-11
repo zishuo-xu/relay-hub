@@ -2,11 +2,11 @@
 
 - 状态：Accepted
 - 日期：2026-08-11
-- 适用范围：由总体设计者拆分工作、其他开发者实现、总体设计者最终验收和集成的所有 RelayHub 变更。
+- 适用范围：一名总体设计者向一名开发者委派工作，并由总体设计者最终验收和集成的所有 RelayHub 变更。
 
 ## 1. 目的
 
-RelayHub 采用“总体设计者掌握架构与验收，开发者负责有边界的实现”的协作方式。工作不能只靠聊天中的一句需求，也不能由开发者自行宣布完成。
+RelayHub 当前采用“单 Architect、单 Implementer、单活跃计划”的协作方式。Architect 决定做什么、为什么做、架构边界和怎样算通过；Implementer 在这些约束内自主决定怎样实现。工作不能只靠聊天中的一句需求，也不能由开发者自行宣布完成。
 
 每项工作必须满足：
 
@@ -15,6 +15,7 @@ RelayHub 采用“总体设计者掌握架构与验收，开发者负责有边�
 3. 开发者提交的是实现与证据，不是最终验收结论。
 4. 总体设计者依据预先写明的标准独立验收。
 5. 只有验收通过、集成到主分支、文档同步并推送后，任务才能标记为 `DONE`。
+6. 任意时刻最多只有一个 Active Work Item；当前工作关闭前不启动下一项实现计划。
 
 `docs/work-items/README.md` 是委派任务登记表；每项工作使用独立 Work Item 文件保存范围、证据、Findings 和最终提交。
 
@@ -22,11 +23,13 @@ RelayHub 采用“总体设计者掌握架构与验收，开发者负责有边�
 
 ### 总体设计者 / Architect
 
+Architect 是唯一委派者，也是唯一验收与主分支集成责任人。
+
 负责：
 
 - 维护整体目标、架构边界、领域模型和路线顺序。
-- 创建 Work Item，定义范围、接口、验收标准和禁止事项。
-- 决定依赖关系和分配开发者。
+- 决定大特性、架构方向和路线顺序。
+- 创建唯一活跃 Work Item，定义目标、范围、接口、验收标准和禁止事项。
 - 审查合约、migration、状态迁移、安全边界和架构一致性。
 - 独立运行必要的自动化、集成和浏览器验收。
 - 给出 `CHANGES_REQUESTED` 或 `ACCEPTED` 结论。
@@ -37,14 +40,18 @@ RelayHub 采用“总体设计者掌握架构与验收，开发者负责有边�
 - 在验收时临时加入任务包未说明的大功能，再据此拒绝交付。
 - 用个人偏好代替已经冻结的验收标准。
 - 在缺少验证证据时直接标记 `ACCEPTED` 或 `DONE`。
+- 在不涉及架构不变量和验收要求时，替开发者规定内部类、函数、算法或逐步实现细节。
 
 ### 开发者 / Implementer
+
+当前只有一名 Implementer，因此任务进入 `READY` 后不再设置单独的分配状态。Implementer 对约束范围内的实现方案负责。
 
 负责：
 
 - 在接受任务前阅读完整 Work Item、相关 ADR 和接口定义。
 - 只修改任务包允许的范围；发现范围不足时先标记 `BLOCKED`。
 - 实现代码、测试、migration 和必要文档。
+- 自主决定模块内部拆分、算法、辅助抽象、测试组织和允许范围内的重构方式。
 - 完成本地自测、提交和 topic branch 推送。
 - 提交结构化 Delivery Report，并把 Work Item 标记为 `SUBMITTED`。
 - 根据验收 Findings 修复并重新提交。
@@ -56,9 +63,7 @@ RelayHub 采用“总体设计者掌握架构与验收，开发者负责有边�
 - 直接把任务标记为 `ACCEPTED` 或 `DONE`。
 - 以“代码写完”“本地能跑”代替完整交付证据。
 
-### 独立 Reviewer（按风险选用）
-
-高风险变更可以指定独立 Reviewer。Reviewer 提交 Findings 和建议结论，但最终 `ACCEPTED` 仍由总体设计者确认。作者不能充当自己变更的独立 Reviewer。
+Architect 可以把静态检查、AI 审查或跨模型审查作为验收工具，但它们不是额外的流程角色，也不能替代 Architect 的最终结论。
 
 ## 3. Work Item 状态机
 
@@ -66,10 +71,9 @@ RelayHub 采用“总体设计者掌握架构与验收，开发者负责有边�
 stateDiagram-v2
     [*] --> DRAFT
     DRAFT --> READY: Architect 冻结任务包
-    READY --> ASSIGNED: Architect 指定开发者
-    ASSIGNED --> IN_PROGRESS: Developer 确认接单
+    READY --> IN_PROGRESS: Developer 确认开始
     IN_PROGRESS --> BLOCKED: 发现依赖、权限或范围问题
-    BLOCKED --> ASSIGNED: Architect 解除阻塞或重写任务包
+    BLOCKED --> READY: Architect 解除阻塞或修订任务包
     IN_PROGRESS --> SUBMITTED: Developer 提交实现与证据
     SUBMITTED --> VERIFYING: Architect 开始验收
     VERIFYING --> CHANGES_REQUESTED: 存在 P1/P2 Finding
@@ -78,7 +82,6 @@ stateDiagram-v2
     ACCEPTED --> DONE: 已集成、推送、文档同步
     DRAFT --> CANCELLED
     READY --> CANCELLED
-    ASSIGNED --> CANCELLED
     BLOCKED --> CANCELLED
 ```
 
@@ -87,8 +90,7 @@ stateDiagram-v2
 | 状态 | 含义 | 谁可以标记 | 必须附带的信息 |
 |---|---|---|---|
 | `DRAFT` | 正在设计任务，禁止开始实现 | Architect | 初步目标和背景 |
-| `READY` | 范围、接口和验收标准已冻结 | Architect | 完整任务包、依赖和风险 |
-| `ASSIGNED` | 已指定开发者，等待确认接单 | Architect | Owner、branch 名称、基线 SHA |
+| `READY` | 范围、接口和验收标准已冻结，可由唯一开发者开始 | Architect | 完整任务包、branch 名称、基线 SHA 和风险 |
 | `IN_PROGRESS` | 开发者已确认并开始实现 | Developer | 开始时间、计划修改范围 |
 | `BLOCKED` | 无法在既定范围内继续 | Developer | 阻塞证据、已尝试方案、需要的决定 |
 | `SUBMITTED` | 开发者认为实现可验收 | Developer | Delivery Report、commit、测试结果、已知风险 |
@@ -104,8 +106,9 @@ stateDiagram-v2
 - `SUBMITTED` 不等于完成；它只表示开发者把责任交给验收者。
 - `ACCEPTED` 不等于已经发布；只有完成主分支集成和推送后才是 `DONE`。
 - `DONE` 后发现回归，不改写历史结论；创建关联的新 Work Item。
+- `READY`、`IN_PROGRESS`、`BLOCKED`、`SUBMITTED`、`VERIFYING`、`CHANGES_REQUESTED` 和 `ACCEPTED` 合计最多只能有一个 Work Item。
 
-## 4. 总体设计者如何创建和分配工作
+## 4. 总体设计者如何制定唯一计划
 
 ### 第一步：建立任务包
 
@@ -119,27 +122,28 @@ Architect 从 `docs/work-items/TEMPLATE.md` 创建 `WI-<阶段>-<序号>-<slug>.
 - 合约、状态迁移、数据库和兼容要求。
 - 自动化、集成、浏览器和故障验收标准。
 - 交付物、回滚方案和 Definition of Done。
+- 哪些决定属于 Architect，哪些实现选择留给 Developer。
 
 任务包在 `DRAFT` 阶段可以讨论；进入 `READY` 后，验收标准即冻结。需要实质改变范围时，由 Architect 修改任务包并记录 revision，不能只在聊天中追加要求。
 
-### 第二步：检查可执行性
+### 第二步：检查计划槽位和可执行性
 
 进入 `READY` 前，Architect 必须确认：
 
-- 前置 Work Item 已经 `DONE`，或依赖可以明确并行。
-- 不与其他进行中的工作修改同一核心边界；无法避免时指定集成顺序。
+- 登记表中没有其他 Active Work Item；上一项工作已经 `DONE` 或 `CANCELLED`。
+- 当前任务本身可以独立验收，不依赖尚未实现的隐含后续任务。
 - 数据迁移、配置、费用、密钥或外部权限要求已经说明。
 - 开发者可以在不猜测架构意图的情况下完成任务。
 
-### 第三步：正式分配
+### 第三步：发布计划
 
-Architect 在登记表中填写 Owner、topic branch、基线 SHA 和依赖，将状态改为 `ASSIGNED`。推荐 branch：
+Architect 在登记表中登记 Work Item，在任务包中填写 topic branch 和基线 SHA，将状态改为 `READY`。推荐 branch：
 
 ```text
 work/<work-item-id>-<short-slug>
 ```
 
-开发者阅读任务包并确认后，把状态改为 `IN_PROGRESS`。未确认前不得修改实现。
+唯一开发者阅读任务包并确认后，把状态改为 `IN_PROGRESS`。在目标、边界、接口和验收标准不变的前提下，开发者不需要为每个内部实现选择再次申请批准；如果必须越过边界，则标记 `BLOCKED`，等待 Architect 修订计划。
 
 ## 5. 开发者如何执行和提交
 
@@ -216,14 +220,14 @@ Architect 接收 `SUBMITTED` 后先标记 `VERIFYING`，按以下顺序验收：
 = DONE
 ```
 
-## 8. 多人并行规则
+## 8. 单开发者、单计划规则
 
-- 一个 Work Item 只有一个 Owner；协作者写入 Contributors。
-- 一个核心合约在同一时间只有一个 Work Item 可以修改。
-- 可以并行的工作必须在任务包中写明共享接口和集成顺序。
-- 开发者之间不通过未提交工作区隐式交接，只通过 branch、commit、Work Item 和正式接口交接。
-- 后续任务不得依赖尚未 `ACCEPTED` 的实现；如必须提前并行，应固定 commit SHA 并明确返工风险。
-- Architect 是唯一主分支集成责任人，开发者不得直接把未经验收的提交推入 `main`。
+- `docs/work-items/README.md` 的 Active 区最多登记一项工作。
+- Architect 只有在当前 Work Item 已经 `DONE` 或 `CANCELLED` 后，才制定下一项正式实现计划。
+- 路线图、想法和候选特性可以提前记录，但不能同时变成多个 Active Work Item。
+- Developer 只推进当前 Work Item，不自行从路线图领取下一项工作。
+- Architect 不把一个特性拆成需要并行协调的多个活跃任务；必要时在同一个 Work Item 内按验收切片顺序执行。
+- Developer 推送 topic branch；Architect 是唯一主分支集成责任人，未经其验收的提交不得进入 `main`。
 
 ## 9. 适用于 RelayHub 的固定质量门槛
 
@@ -238,4 +242,4 @@ Architect 接收 `SUBMITTED` 后先标记 `VERIFYING`，按以下顺序验收：
 
 ## 10. 第一个采用本协议的工作
 
-下一项 Work Item 应是：真实 OpenCode Builder → Handoff V2 → Codex Reviewer 双路径验收。它在创建任务包并进入 `READY` 后，才能正式分配给开发者。
+下一项 Work Item 应是：真实 OpenCode Builder → Handoff V2 → Codex Reviewer 双路径验收。Architect 为它制定唯一计划并标记为 `READY` 后，开发者才能开始；它关闭前不创建第二项活跃计划。
