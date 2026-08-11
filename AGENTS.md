@@ -34,15 +34,3 @@ After every RelayHub code or documentation change:
 4. Report both the commit SHA and push result to the user.
 
 Do not leave submitted or completed RelayHub changes only in the local repository.
-
-## Autonomous design and delivery workflow
-
-RelayHub follows `docs/10-autonomous-development-workflow.md`.
-
-- Codex is the single owner of product design, architecture, implementation, verification, documentation, commit, and GitHub push.
-- Do not require the user to relay implementation prompts or coordinate a second developer.
-- Work in one focused vertical slice at a time. Finish and verify the current slice before starting the next.
-- Use a Work Item for large, risky, or multi-session changes when frozen scope and durable acceptance evidence add value. Small changes do not require ceremony.
-- Preserve the modular-monolith boundaries and prefer the smallest coherent change over a generic workflow engine or speculative abstraction.
-- Product and UX decisions must keep the interface concise, elegant, single-screen where practical, and consistent with RelayHub's clean-room UX baseline.
-- A change is complete only when proportional verification passes, durable documentation is current, the focused commit is pushed to `origin/main`, `HEAD == origin/main`, and the worktree is clean.

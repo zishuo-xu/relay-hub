@@ -397,5 +397,5 @@ TEST_DATABASE_URL="$RELAY_HUB_WORK_ITEM_DATABASE_URL" pnpm --filter @relay-hub/a
 - Main commit: 见本次最终提交
 - Push result: 见本次最终推送记录
 - Final verification: `git diff --check`、`pnpm check`、隔离 API 43/43、Worker 47/47、Mock 浏览器链和真实 OpenCode A → B 均通过
-- Documentation updated: Work Item、登记表、实现状态、路线图、自主交付工作流和 README
+- Documentation updated: Work Item、登记表、实现状态、路线图和 README
 - Closed at: 2026-08-12

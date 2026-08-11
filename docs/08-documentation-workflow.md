@@ -50,7 +50,6 @@ RelayHub 同时是实现项目和面试学习材料。讨论中出现的高价�
 | 简历 bullet 与面试回答 | `06-interview-story.md` |
 | 已经完成并验证的事实 | `07-implementation-status.md` |
 | 整体产品、领域和架构基线 | `09-overall-design-baseline.md` |
-| 自主设计、实现、验证与交付闭环 | `10-autonomous-development-workflow.md`；重大特性证据保存在 `work-items/` |
 | 重大、长期、难以逆转的决定 | `docs/decisions/ADR-*.md` |
 
 优先更新现有文档，避免为每次聊天创建一份孤立会议记录。

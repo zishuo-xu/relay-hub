@@ -85,8 +85,7 @@ relay-hub/
 8. [实现状态](docs/07-implementation-status.md)
 9. [讨论沉淀规则](docs/08-documentation-workflow.md)
 10. [整体设计基线草案](docs/09-overall-design-baseline.md)
-11. [自主设计与交付工作流](docs/10-autonomous-development-workflow.md)
-12. [Work Item 登记表](docs/work-items/README.md)
+11. [重大特性 Work Item 记录](docs/work-items/README.md)
 
 ## 独立性原则
 
