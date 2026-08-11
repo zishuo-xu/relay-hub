@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `IN_PROGRESS`
+- Status: `BLOCKED`
 - Architect: RelayHub Architect（唯一委派与验收责任人）
 - Implementer: Delegated Developer（唯一实现者）
 - Shared branch: `main`
@@ -288,26 +288,76 @@ TEST_DATABASE_URL="$RELAY_HUB_WORK_ITEM_DATABASE_URL" pnpm --filter @relay-hub/a
 
 由 Developer 在标记 `SUBMITTED` 前填写。
 
+> 状态说明（2026-08-12）：本 Work Item 被标记为 `BLOCKED`，**不是架构边界阻塞**。核心实现已完成且全部自动化验证通过；用户指示 Implementer 提前收尾，浏览器验收与真实 CLI 冒烟未执行，因此不能诚实地标记 `SUBMITTED`。剩余待办见文末「剩余待办」。
+
 ### 实现摘要
+
+顺序型平台 Agent 动态 Handoff 主链已端到端打通：非 Review Agent 通过 `<relayhub_result>` 结构化信封提出 `handoff`；Worker 三个 Adapter 统一解析并生成 `handoff.requested`/`run.completed`；Orchestrator 按 `nextAction.type` 分流，`handoff` 在单事务内完成目标校验、预算收敛、`triggerType=handoff` 目标 Run（独立 Profile 快照/Token/Session、继承 Worktree）、Handoff 状态机、Task `currentRunId` 迁移与 Outbox；`request_review` 固定 Reviewer 语义完全保留。固定预算 6 次，第 7 次或目标 pending 后被禁用时 Handoff `rejected`、Task 转 `waiting_for_user` 并记录稳定审计原因。claim 返回同 Workspace 启用 Agent 的最小目录（仅 id/name/capabilities）；Coordination 投影与 Web 文案已泛化且区分普通交接与正式 Review。
 
 ### 修改文件与职责
 
+- `packages/contracts/src/index.ts`：`AgentResultSchema`、`HandoffTargetViewSchema`、`MAX_SEQUENTIAL_HANDOFFS=6`、`HANDOFF_REJECTION_REASONS`、信封标记常量、`ClaimedRun.handoffTargets`、`CoordinationReason` 增加 `handoff_waiting_for_dispatch`。
+- `packages/contracts/src/agent-result.test.ts`：合法/非法信封、Handoff 缺失、目标一致性、旧 RunOutcome 兼容、最小目录 strict 校验。
+- `apps/worker/src/agent-result.ts`（+test）：统一信封解析与终止事件组装；无信封走旧固定回退；malformed 抛错供 Adapter 转 `protocol_error`。
+- `apps/worker/src/agent-prompt.ts`：非 Review Prompt 增加路由说明、最小候选目录与来信 Handoff V2 上下文；示例信封固定为合法 `wait_for_user`。
+- `apps/worker/src/codex-adapter.ts`、`opencode-adapter.ts`（+tests）：接入共享完成路径，保留 Reviewer `<relayhub_review>` 合约与固定回退。
+- `apps/worker/src/mock-agent.ts`（+test）：确定性 `relayhub:handoff-chain=` 指令路由；角色按 `triggerType` 判定，handoff Run 不提交 Review。
+- `apps/api/src/workflow-orchestrator.ts`（+test）：`planSequentialHandoffDispatch` 纯决策（预算优先于目标可用性）。
+- `apps/api/src/persistence/workflow-repository.ts`：`handoff.requested` 分流校验；`run.completed` 通用派发/拒绝事务；Task 仅迁 `currentRunId` 时也正确落库。
+- `apps/api/src/persistence/run-execution-repository.ts`：claim 返回最小候选目录（排除自身与禁用 Agent）。
+- `apps/api/src/task-coordination.ts`：通用 pending/dispatched 投影与 `handoff` allowed action。
+- `apps/api/src/sequential-handoff.test.ts`：隔离 PostgreSQL 集成套件（11 个用例）。
+- `apps/web/app/dashboard.tsx`：中性交接文案、新事件标签与拒绝事件 tone。
+- `docs/07-implementation-status.md`、`docs/decisions/ADR-017-…md`：已验证事实同步。
+
 ### 与任务包的差异
+
+- Mock 确定性路由采用 Task 描述中的 `relayhub:handoff-chain=<uuid,…>` 指令（Work Item 允许 Implementer 自主选择 Mock 行为；该指令只被 Mock 读取，不进入平台合约）。
+- Prompt 示例信封固定为合法 `wait_for_user`：避免 Agent 原样引用说明文本时触发协议错误（开发中由 repair 回显测试暴露）。
+- 「非当前 Run」校验只加在通用 `handoff` 路径；`request_review` 路径的校验顺序与错误消息保持现状，避免回归。
+- 目标在 pending 后被禁用时不抛错回滚，而是按 WI 状态图收敛为 `rejected + waiting_for_user`（与固定 Reviewer 路径的既有抛错行为刻意不同，Review 语义未改）。
 
 ### 验证命令与结果
 
+- `pnpm vitest run`（packages/contracts）：33/33 通过。
+- `pnpm vitest run`（apps/worker）：45/45 通过。
+- `TEST_DATABASE_URL=postgres://relayhub:relayhub_dev@127.0.0.1:55432/relayhub_wi_p34_001 pnpm vitest run`（apps/api）：43/43 通过；`relayhub_wi_p34_001` 为本 Work Item 新建的专用隔离库，非正式库。
+- `git diff --check`：无输出（干净）。
+- `pnpm check`：通过（typecheck + 全部单元测试 + Next.js production build）。
+- 浏览器验收结果：**未执行**（用户指示提前收尾；见剩余待办 1）。
+- 真实 CLI 验收结果：**未执行**。只读探测证据（2026-08-12）：`which codex` → not found；`opencode --version` → 1.18.15；`opencode auth list` → 1 个 OpenCode Go 凭证；`opencode models` → 模型目录可用（opencode/* 免费模型与 opencode-go/*）。未记录任何密钥值。
+
 ### 数据、配置与兼容性
 
+- 无 migration、无新表、无新 Task/Run 状态或 trigger；复用 `handoffs.status=rejected`、`runs.trigger_type=handoff`、`handoffs.next_action` 与现有 Event/Outbox。
+- 历史 Handoff v1/v2、固定 Reviewer 主链、changes_requested 返工与 CompletionPolicy 语义未改；旧 CLI 无信封输出时行为与基线一致（Worker 回退路径有回归测试）。
+- 正式 PostgreSQL、Redis、Worktree、用户仓库数据未被删除或覆盖；测试库 `relayhub_wi_p34_001` 保留审计数据，是否清理由 Architect 决定。
+
 ### 已知风险
+
+- 真实模型输出信封的稳定性未实证；已有严格 parser、清晰 Prompt 与旧路径回退兜底，但真实 CLI 冒烟仍必须完成。
+- 浏览器 UX（含窄视口、控制台、页面级溢出）未验收；Dashboard 只改了文案与标签，预期风险低。
+- 通用交接目标 Run 沿用 review/retry 的 Worktree 继承语义，不重复执行 bootstrap；如目标 Agent 需要不同准备步骤需后续切片。
+- Mock 链指令写在任务描述中，仅用于演示与测试，不影响真实 Agent。
 
 ### Git evidence
 
 - Branch: `main`
-- Baseline:
-- Commit range:
-- Commit:
-- Push:
-- Worktree status:
+- Baseline: `3c5d7c0fc5873f0b40802d32756d585506f8df74`
+- Commit range: `3c5d7c0fc..` 见下方最终提交
+- Commit: `0d1eeb899`（start）、`b92c9d8ee`（contracts+worker）、`d235ec9ea`（api+web+集成测试）、最终 docs/状态提交见 `git log`
+- Push: 每个提交均已推送 `origin/main`
+- Worktree status: clean（最终提交后再次确认）
+
+### 剩余待办（供 Architect 决定归属与排期）
+
+1. 浏览器验收：启动完整栈（`pnpm infra:up` + `pnpm dev`），创建两个名称不同的 Mock Agent 与含 `relayhub:handoff-chain=` 指令的专用测试任务，验证 loading、running、handoff pending、目标执行、waiting/terminal、错误态；窄视口无页面级溢出；控制台无新增错误；保留任务 ID 作为审计记录。
+2. 真实 CLI 冒烟：创建两个 OpenCode Agent（不同名称/模型），完成一次真实 A → B 顺序交接，保留 Task/Run/Handoff/Event ID、命令证据与只读数据库核对；若凭证失效，按 WI 规则记录证据并保持 BLOCKED。
+3. Architect 验收后：翻转 `README.md` 与 `docs/05-roadmap.md` 中 P3.4 动态 Handoff 条目为已完成；决定 `relayhub_wi_p34_001` 测试库清理；按流程将本 Work Item 置为 `ACCEPTED`/`DONE`。
+
+### 需要 Architect 决定的问题
+
+- 是否接受「浏览器 + 真实 CLI 验收」由后续会话/下一 Implementer 继续，还是调整本 Work Item 的验收标准后再进入 `VERIFYING`。
 
 ## 14. Acceptance Report
 

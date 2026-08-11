@@ -1,5 +1,26 @@
 # 07. 实现状态
 
+## 2026-08-12：顺序型平台 Agent 动态 Handoff 主链（WI-P3.4-001，待验收）
+
+### 已实现
+
+- Contracts 新增非 Review Agent 结构化结果信封 `<relayhub_result>…</relayhub_result>`（`AgentResultSchema`）：`summary + nextAction + 可选 handoff`；`nextAction=handoff` 必须携带 Handoff 内容，`continue/wait_for_user/complete` 禁止携带；严格 strict 校验，未知字段（含 Agent 试图夹带的 `acceptanceCriteria`、`targetAgentId`）一律拒绝。
+- Contracts 新增最小候选目录 `HandoffTargetView`（仅 `id/name/capabilities`，strict）、顺序交接预算常量 `MAX_SEQUENTIAL_HANDOFFS = 6` 和稳定拒绝原因 `handoff_budget_exhausted / handoff_target_unavailable`；`ClaimedRun.handoffTargets` 为可选最小视图。
+- Worker 统一在 `agent-result.ts` 解析结构化结果并组装终止事件；Codex、OpenCode、Mock 三个 Adapter 共享该路径。无信封时保持旧回退：有 Reviewer 自动 `request_review`，无 Reviewer `wait_for_user`；Malformed 信封使 Run 以 `protocol_error` 失败。
+- Prompt 只向非 Review Run 展示候选目录的 `id/name/capabilities` 与信封格式；通用交接目标 Run 会收到完整 Handoff V2 上下文（objective、摘要、产物/证据引用、决策、待决问题、风险）。Prompt 中的示例信封本身是合法的 `wait_for_user`，避免 Agent 引用说明文本时触发协议错误。
+- Mock Agent 支持确定性路由指令 `relayhub:handoff-chain=<uuid,…>`：链上成员交给下一成员，链尾或无指令时走既有回退；Mock 以 `triggerType` 决定角色，`triggerType=handoff` 的 Run 即使 Agent 有 review capability 也不会提交 Review。
+- API `handoff.requested` 按 `nextAction.type` 分流：`request_review` 保持固定 Reviewer 全部校验不变；`handoff` 校验来源 Run 必须 running、非 review trigger、是 Task 当前 Run、目标存在/启用/同 Workspace/非自身。目标校验失败、历史或非当前 Run 均确定性抛错，不产生 Handoff、Run 或 Outbox。
+- `run.completed` 在单一事务内处理通用交接：预算内且目标可用 → 创建 `triggerType=handoff` 目标 Run（目标 Profile 创建时快照、继承 Worktree、独立 Token/Session）、Handoff `dispatched`、Outbox `run.queued`、Task 保持 `running` 且 `currentRunId` 指向目标；预算耗尽（第 7 次）或目标在 pending 后被禁用 → Handoff `rejected`、不创建 Run/Outbox、Task 转 `waiting_for_user`，并记录 `task.handoff_rejected` 事件与稳定原因。
+- claim 时平台复算 Handoff 摘要（篡改即拒）并返回同 Workspace 启用 Agent 的最小目录；目标 Worker 上报 `handoff.consumed` 后 Handoff 从 `dispatched` 收敛为 `accepted`。
+- `TaskCoordinationView`：通用 Handoff pending 时 Route 为 `handoff` 且指向目标 Agent；`triggerType=handoff` 的 queued Run 投影为 `handoff_waiting_for_dispatch`；非 Review Run 的 allowedActions 增加 `handoff`。Dashboard 文案中性化（不再把所有交接写成 Reviewer），新增 `task.handoff_dispatched / task.handoff_rejected` 展示。
+
+### 验证证据
+
+- Contracts 33/33、Worker 45/45 单元测试通过，覆盖合法/非法信封、目标一致性、旧 RunOutcome 兼容、三个 Adapter 的通用 Handoff 与固定 Reviewer 回退、权限边界和 Mock 链式路由。
+- 专用隔离数据库 `relayhub_wi_p34_001`（非正式库）完成全部 migration 后，API 43/43 通过：A→B、A→B→C、handoff 目标 `request_review`、Review 权限边界、未知/禁用/跨 Workspace/自身目标、历史与非当前 Run、pending 后目标禁用、重复 `handoff.requested`/`run.completed` 幂等、摘要篡改拒绝、第 6 次成功/第 7 次拒绝并转交用户。
+- 全仓 `git diff --check` 与 `pnpm check` 通过（类型检查、全部单元测试、Next.js production build）。
+- 尚未执行的验证（Implementer 按用户指示提前收尾）：浏览器全链路 UX 验收（含窄视口与控制台检查）、真实 CLI 双 Agent 顺序 Handoff 冒烟。只读探测证据：本机无 `codex` CLI；`opencode` 1.18.15 可用，已配置 1 个 OpenCode Go 凭证，`opencode models` 可列出模型目录。正式 PostgreSQL、Redis、Worktree 与用户数据未被修改。
+
 ## 2026-08-10：Agent 编辑与任务筛选一致性
 
 ### 已实现
