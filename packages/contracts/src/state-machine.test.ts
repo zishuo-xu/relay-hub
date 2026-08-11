@@ -16,6 +16,10 @@ describe('task state machine', () => {
     expect(canTransitionTask('waiting_for_user', 'completed')).toBe(true);
   });
 
+  it('returns a queued Task to the user when its claimed Worker is lost', () => {
+    expect(canTransitionTask('queued', 'waiting_for_user')).toBe(true);
+  });
+
   it('keeps terminal states terminal', () => {
     for (const status of ['completed', 'failed', 'cancelled'] as const) {
       for (const target of TASK_STATUSES) {

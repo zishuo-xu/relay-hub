@@ -69,12 +69,12 @@
 5. [x] 固化 Run workspace 快照，并持久化 thread、branch 和 working directory。
 6. [x] 实现显式、可观测、可失败的 Worktree bootstrap policy，并在 Run 创建时固化配置快照。
 7. [x] 区分 Agent 协议完成、命令/测试失败和验收通过；成功 Run 保存 `RunOutcome`，Task 不再自动 completed。
-8. [x] 加入单次 Run token，保护 Worker control/event 内部接口；claim 身份认证随 lease/heartbeat 后续补齐。
+8. [x] 加入单次 Run token，保护 Worker heartbeat/control/event 内部接口；claim 身份认证仍位于本地单用户信任边界。
 9. [x] 实现 OpenCode AgentProfile 配置、运行时目录检测和 Builder/Reviewer Adapter。
 10. [x] 将 Agent 身份与 CLI 配置分层，并在每个 Run 固化不可变 AgentProfile 快照。
-11. [ ] 实现 Worker lease、heartbeat 与重启 reconciliation。
+11. [x] 实现 Worker lease、heartbeat 与 fail-closed 重启 reconciliation；失联 Run 转 `lost` 并交给用户处理。
 
-退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。首次真实运行已通过；lease/reconciliation 作为可靠性增强继续保留在 Phase 4。
+退出条件：真实 Agent 能在隔离 Worktree 完成任务；取消、超时、异常退出和重复队列消息均有确定状态。真实运行和 Lease 失联收敛均已通过；更完整的故障演示继续保留在 Phase 4。
 
 ## Phase 3：多 Agent 交接与 Review
 
@@ -100,7 +100,7 @@
 
 工作项：
 
-1. Worker restart reconciliation。
+1. [x] Worker Lease、Heartbeat 与 restart reconciliation 第一切片：过期 Run 原子转 `lost`、撤销 Token、Task 转交用户；不自动并发重跑同一 Worktree。
 2. WebSocket gap detection 与补拉。
 3. OpenTelemetry trace，关联 taskId/runId。
 4. 运行时指标：队列等待、执行时长、失败率、重试次数。
@@ -140,13 +140,13 @@
 
 Phase 3.3 自动返工主链、OpenCode 可配置 Adapter、Agent 长期提示词和统一执行权限已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，修复后再走 Handoff 并产生新的 Review round；真实 OpenCode Builder → Codex Reviewer 已通过配置快照与权限验收。
 
-Phase 3.4 已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验、`handoff.consumed`、统一责任查询投影和任意已配置平台 AgentProfile 之间的顺序型 Handoff 均已接入。Mock A → B → Reviewer 与真实 OpenCode A → B 已通过浏览器、隔离数据库和真实 CLI 验收；[`WI-P3.4-001`](work-items/WI-P3.4-001-sequential-agent-handoff.md) 已关闭。暂不建设任意 Workflow DAG；下一主阶段进入 Phase 4，优先补 Worker lease、heartbeat 与重启 reconciliation，再评估并行 fan-out 和外部信号等待。
+Phase 3.4 已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验、`handoff.consumed`、统一责任查询投影和任意已配置平台 AgentProfile 之间的顺序型 Handoff 均已接入。Mock A → B → Reviewer 与真实 OpenCode A → B 已通过浏览器、隔离数据库和真实 CLI 验收；[`WI-P3.4-001`](work-items/WI-P3.4-001-sequential-agent-handoff.md) 已关闭。暂不建设任意 Workflow DAG。
+
+Phase 4 第一切片已完成：Worker claim 写入 Lease，执行期间定时 Heartbeat；过期 Lease 使旧 Token 立即失去 control/event 权限，Reconciler 原子将 Run 收敛为 `lost` 并把 Task 转为 `waiting_for_user`。第一版刻意不自动启动第二个 Agent 写同一 Worktree。下一步可补 WebSocket event cursor/gap detection，再做指标与故障演示。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 
-以下能力仍需要后续阶段继续完成：
-
-- Worker 崩溃后的 lease reconciliation 与完整故障演示。
+以下能力仍需要后续阶段继续完成：WebSocket 断线补拉、指标/Tracing 和完整故障演示。
 
 因此里程碑应区分为：
 

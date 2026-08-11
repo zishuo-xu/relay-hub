@@ -21,8 +21,9 @@ import {
   tasks,
   workspaces,
 } from '@relay-hub/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import { issueRunToken, verifyRunToken } from '../run-token.js';
+import { runLeaseExpiration, runLeaseHeartbeatIntervalMs } from '../run-lease.js';
 import { handoffContentDigest } from '../handoff-integrity.js';
 import {
   mapEvent,
@@ -49,8 +50,11 @@ export async function claimRun(
   runId: string,
   workerId: string,
   runTokenTtlMs: number,
+  runLeaseDurationMs: number,
+  now = new Date(),
 ): Promise<MutationResult<ClaimedExecution | null>> {
-  const token = issueRunToken(new Date(), runTokenTtlMs);
+  const token = issueRunToken(now, runTokenTtlMs);
+  const leaseExpiresAt = runLeaseExpiration(now, runLeaseDurationMs);
   const result = await db.transaction(async (tx) => {
     const [claimed] = await tx
       .update(runs)
@@ -61,6 +65,7 @@ export async function claimRun(
         tokenIssuedAt: token.issuedAt,
         tokenExpiresAt: token.expiresAt,
         tokenRevokedAt: null,
+        leaseExpiresAt,
         version: sql`${runs.version} + 1`,
       })
       .where(and(eq(runs.id, runId), eq(runs.status, 'queued')))
@@ -130,11 +135,158 @@ export async function claimRun(
           ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
         } satisfies ClaimedRun,
         executionToken: token.plaintext,
+        lease: {
+          expiresAt: leaseExpiresAt.toISOString(),
+          heartbeatIntervalMs: runLeaseHeartbeatIntervalMs(runLeaseDurationMs),
+        },
       },
       emitted: [mapEvent(eventRow)],
     };
   });
   return { value: result.claimed, emitted: result.emitted };
+}
+
+const leasedRunStatuses: RunStatus[] = ['claimed', 'starting', 'running', 'cancelling'];
+
+export async function heartbeatRun(
+  db: RelayDatabase,
+  runId: string,
+  plaintext: string,
+  runLeaseDurationMs: number,
+  now = new Date(),
+): Promise<{ leaseExpiresAt: string } | null> {
+  const [run] = await db
+    .select({
+      status: runs.status,
+      executionTokenHash: runs.executionTokenHash,
+      tokenExpiresAt: runs.tokenExpiresAt,
+      tokenRevokedAt: runs.tokenRevokedAt,
+      leaseExpiresAt: runs.leaseExpiresAt,
+    })
+    .from(runs)
+    .where(eq(runs.id, runId))
+    .limit(1);
+  if (
+    !run?.executionTokenHash ||
+    !run.tokenExpiresAt ||
+    run.tokenRevokedAt ||
+    run.tokenExpiresAt.getTime() <= now.getTime() ||
+    !run.leaseExpiresAt ||
+    run.leaseExpiresAt.getTime() <= now.getTime() ||
+    !leasedRunStatuses.includes(run.status) ||
+    !verifyRunToken(plaintext, run.executionTokenHash)
+  ) {
+    return null;
+  }
+
+  const leaseExpiresAt = runLeaseExpiration(now, runLeaseDurationMs);
+  const [renewed] = await db
+    .update(runs)
+    .set({ leaseExpiresAt })
+    .where(
+      and(
+        eq(runs.id, runId),
+        inArray(runs.status, leasedRunStatuses),
+        gt(runs.leaseExpiresAt, now),
+        eq(runs.executionTokenHash, run.executionTokenHash),
+      ),
+    )
+    .returning({ id: runs.id });
+  return renewed ? { leaseExpiresAt: leaseExpiresAt.toISOString() } : null;
+}
+
+export async function reconcileExpiredRunLeases(
+  db: RelayDatabase,
+  now = new Date(),
+  runId?: string,
+): Promise<MutationResult<number>> {
+  const candidates = await db
+    .select({
+      id: runs.id,
+      taskId: runs.taskId,
+      status: runs.status,
+      workerId: runs.workerId,
+      leaseExpiresAt: runs.leaseExpiresAt,
+    })
+    .from(runs)
+    .where(
+      and(
+        inArray(runs.status, leasedRunStatuses),
+        lte(runs.leaseExpiresAt, now),
+        runId ? eq(runs.id, runId) : undefined,
+      ),
+    )
+    .limit(50);
+  const emitted: RunEvent[] = [];
+
+  for (const candidate of candidates) {
+    if (!candidate.leaseExpiresAt) continue;
+    const leaseExpiresAt = candidate.leaseExpiresAt;
+    const event = await db.transaction(async (tx) => {
+      assertRunTransition(candidate.status, 'lost');
+      const [lostRun] = await tx
+        .update(runs)
+        .set({
+          status: 'lost',
+          failureCode: 'worker_lost',
+          failureDetail: `Worker lease expired at ${leaseExpiresAt.toISOString()}`,
+          finishedAt: now,
+          tokenRevokedAt: now,
+          version: sql`${runs.version} + 1`,
+        })
+        .where(
+          and(
+            eq(runs.id, candidate.id),
+            eq(runs.status, candidate.status),
+            lte(runs.leaseExpiresAt, now),
+          ),
+        )
+        .returning({ id: runs.id });
+      if (!lostRun) return null;
+
+      const [task] = await tx.select().from(tasks).where(eq(tasks.id, candidate.taskId)).limit(1);
+      let nextTaskStatus: TaskStatus | undefined;
+      if (task?.currentRunId === candidate.id) {
+        if (candidate.status === 'cancelling') {
+          nextTaskStatus = 'cancelled';
+        } else if (task.status === 'queued' || task.status === 'running' || task.status === 'reviewing') {
+          nextTaskStatus = 'waiting_for_user';
+        }
+      }
+      if (task && nextTaskStatus) {
+        assertTaskTransition(task.status, nextTaskStatus);
+        const [updatedTask] = await tx
+          .update(tasks)
+          .set({ status: nextTaskStatus, version: task.version + 1, updatedAt: now })
+          .where(and(eq(tasks.id, task.id), eq(tasks.version, task.version), eq(tasks.currentRunId, candidate.id)))
+          .returning({ id: tasks.id });
+        if (!updatedTask) throw new Error(`Task changed while reconciling lost Run: ${candidate.id}`);
+      }
+
+      const [eventRow] = await tx
+        .insert(runEvents)
+        .values({
+          taskId: candidate.taskId,
+          runId: candidate.id,
+          eventType: 'run.lost',
+          payload: {
+            reason: 'worker_lost',
+            workerId: candidate.workerId,
+            leaseExpiredAt: leaseExpiresAt.toISOString(),
+            taskStatus: nextTaskStatus ?? task?.status,
+          },
+          source: 'api',
+          occurredAt: now,
+          dedupeKey: `run-lost:${candidate.id}`,
+        })
+        .returning();
+      if (!eventRow) throw new Error('Lost Run event insert did not return a row');
+      return mapEvent(eventRow);
+    });
+    if (event) emitted.push(event);
+  }
+
+  return { value: emitted.length, emitted };
 }
 
 export async function authorizeRunToken(
@@ -149,12 +301,19 @@ export async function authorizeRunToken(
       executionTokenHash: runs.executionTokenHash,
       tokenExpiresAt: runs.tokenExpiresAt,
       tokenRevokedAt: runs.tokenRevokedAt,
+      leaseExpiresAt: runs.leaseExpiresAt,
     })
     .from(runs)
     .where(eq(runs.id, runId))
     .limit(1);
   if (!run?.executionTokenHash || !run.tokenExpiresAt || run.tokenRevokedAt) return false;
   if (run.tokenExpiresAt.getTime() <= now.getTime()) return false;
+  if (
+    leasedRunStatuses.includes(run.status) &&
+    (!run.leaseExpiresAt || run.leaseExpiresAt.getTime() <= now.getTime())
+  ) {
+    return false;
+  }
   if (
     run.status === 'queued' ||
     run.status === 'succeeded' ||

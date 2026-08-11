@@ -286,14 +286,15 @@ Phase 2.7 当前实现的最小闭环为：
 
 ```http
 POST /internal/runs/:runId/claim
-  -> { claimed: ClaimedRun, executionToken: string }
+  -> { claimed: ClaimedRun, executionToken: string, lease: { expiresAt, heartbeatIntervalMs } }
 
+POST /internal/runs/:runId/heartbeat
 GET  /internal/runs/:runId/control
 POST /internal/runs/:runId/events
 Authorization: Bearer rht_<opaque-random-token>
 ```
 
-claim 只在 `queued -> claimed` 的原子更新成功时返回一次明文 Token。control/event 根据 URL 中的 Run ID 查询该 Run 的哈希，再校验 Token、过期时间、撤销时间和非终态状态；不接受请求体自报 agentId、taskId 或 workspaceId。缺失、错误、过期、跨 Run 或已撤销凭证统一返回 `401 invalid_run_token`。claim 自身的 Worker 身份认证尚未实现，当前仍位于单机内部信任边界；后续与 Worker lease/heartbeat 一起补齐。
+claim 只在 `queued -> claimed` 的原子更新成功时返回一次明文 Token，并写入默认 30 秒 Lease。Worker 按 claim 响应中的周期调用 Heartbeat；Heartbeat 只延长尚未过期且 Token 匹配的当前执行。heartbeat/control/event 根据 URL 中的 Run ID 查询该 Run 的哈希，再校验 Token、Token TTL、撤销时间、Lease 和非终态状态；不接受请求体自报 agentId、taskId 或 workspaceId。缺失、错误、过期、跨 Run、Lease 丢失或已撤销凭证统一返回 `401 invalid_run_token`。claim 自身的 Worker 身份认证尚未实现，当前仍位于单机内部信任边界。
 
 Phase 3.1 中 `handoff.requested` 继续通过受 Run Token 保护的 event 接口提交，不新增旁路 Handoff API。服务端要求目标 ID 与 Task 的 `reviewer_agent_id` 一致、目标 AgentProfile 启用且具有 `review` capability，并拒绝 Builder 把工作交给自己。Reviewer Run 通过既有 claim 接口获得持久化 Handoff；Queue job 仍只携带 `runId`。
 

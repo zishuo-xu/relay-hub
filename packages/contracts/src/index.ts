@@ -343,7 +343,7 @@ export const EMPTY_BOOTSTRAP_POLICY: BootstrapPolicy = { steps: [] };
 
 const taskTransitions: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
   draft: ['queued', 'cancelled'],
-  queued: ['running', 'cancelled', 'failed'],
+  queued: ['running', 'waiting_for_user', 'cancelled', 'failed'],
   running: ['reviewing', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
   reviewing: ['changes_requested', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
   changes_requested: ['queued', 'cancelled'],
@@ -748,6 +748,7 @@ export interface Run {
   workingDirectory?: string;
   branchName?: string;
   workerId?: string;
+  leaseExpiresAt?: string;
   sessionRef?: string;
   failureCode?: string;
   failureDetail?: string;
@@ -848,6 +849,10 @@ export interface ClaimedRun {
 export interface ClaimedExecution {
   claimed: ClaimedRun;
   executionToken: string;
+  lease: {
+    expiresAt: string;
+    heartbeatIntervalMs: number;
+  };
 }
 
 export interface RealtimeEnvelope {

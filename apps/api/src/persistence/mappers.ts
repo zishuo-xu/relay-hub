@@ -140,6 +140,7 @@ export function mapRun(row: RunRow): Run {
     ...(row.workingDirectory ? { workingDirectory: row.workingDirectory } : {}),
     ...(row.branchName ? { branchName: row.branchName } : {}),
     ...(row.workerId ? { workerId: row.workerId } : {}),
+    ...(row.leaseExpiresAt ? { leaseExpiresAt: toIso(row.leaseExpiresAt) } : {}),
     ...(row.sessionRef ? { sessionRef: row.sessionRef } : {}),
     ...(row.failureCode ? { failureCode: row.failureCode } : {}),
     ...(row.failureDetail ? { failureDetail: row.failureDetail } : {}),

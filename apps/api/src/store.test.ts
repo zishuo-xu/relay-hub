@@ -256,6 +256,87 @@ suite('PostgresStore integration', () => {
     expect(await store.authorizeRunToken(runId, claimed.value?.executionToken ?? '')).toBe(false);
   });
 
+  it('renews an active lease and deterministically returns an expired Run to the user', async () => {
+    const created = await store.createTask({
+      title: 'Recover a lost Worker Run',
+      description: 'A missing heartbeat must revoke stale execution authority and request user attention.',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      acceptanceCriteria: [],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    const runId = created.value.detail.task.currentRunId;
+    const claimed = await store.claimRun(runId, 'lease-worker');
+    if (!claimed.value) throw new Error('Run was not claimed');
+    const initialExpiry = new Date(claimed.value.lease.expiresAt);
+    expect(claimed.value.claimed.run.leaseExpiresAt).toBe(initialExpiry.toISOString());
+    expect(claimed.value.lease.heartbeatIntervalMs).toBe(10_000);
+    expect(
+      await store.authorizeRunToken(
+        runId,
+        claimed.value.executionToken,
+        new Date(initialExpiry.getTime() + 1),
+      ),
+    ).toBe(false);
+    await expect(store.heartbeatRun(runId, 'rht_wrong', initialExpiry)).resolves.toBeNull();
+
+    const heartbeatAt = new Date(initialExpiry.getTime() - 5_000);
+    const renewed = await store.heartbeatRun(runId, claimed.value.executionToken, heartbeatAt);
+    if (!renewed) throw new Error('Run lease was not renewed');
+    const renewedExpiry = new Date(renewed.leaseExpiresAt);
+    expect(renewedExpiry.getTime()).toBeGreaterThan(initialExpiry.getTime());
+    expect((await store.reconcileExpiredRunLeases(new Date(initialExpiry.getTime() + 1), runId)).value).toBe(0);
+    await expect(
+      store.heartbeatRun(runId, claimed.value.executionToken, new Date(renewedExpiry.getTime() + 1)),
+    ).resolves.toBeNull();
+
+    const reconciled = await store.reconcileExpiredRunLeases(new Date(renewedExpiry.getTime() + 1), runId);
+    expect(reconciled.value).toBe(1);
+    expect(reconciled.emitted).toHaveLength(1);
+    expect(reconciled.emitted[0]).toMatchObject({
+      runId,
+      type: 'run.lost',
+      payload: { reason: 'worker_lost', workerId: 'lease-worker', taskStatus: 'waiting_for_user' },
+    });
+    const detail = await store.getTaskDetail(created.value.detail.task.id);
+    expect(detail?.task.status).toBe('waiting_for_user');
+    expect(detail?.runs[0]).toMatchObject({
+      status: 'lost',
+      failureCode: 'worker_lost',
+      workerId: 'lease-worker',
+    });
+    expect(detail?.coordination).toMatchObject({
+      owner: { kind: 'user', reason: 'user_attention_required' },
+      route: { action: 'wait_for_user', reason: 'user_attention_required' },
+    });
+    expect(await store.authorizeRunToken(runId, claimed.value.executionToken)).toBe(false);
+    expect((await store.reconcileExpiredRunLeases(new Date(renewedExpiry.getTime() + 2), runId)).value).toBe(0);
+  });
+
+  it('finishes cancellation when the cancelling Worker lease expires', async () => {
+    const created = await store.createTask({
+      title: 'Converge a lost cancelling Worker',
+      description: 'Cancellation must not remain in progress forever after the Worker disappears.',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      acceptanceCriteria: [],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    const runId = created.value.detail.task.currentRunId;
+    const claimed = await store.claimRun(runId, 'cancelling-lease-worker');
+    if (!claimed.value) throw new Error('Run was not claimed');
+    await store.requestRunCancellation(runId);
+    const reconciled = await store.reconcileExpiredRunLeases(
+      new Date(new Date(claimed.value.lease.expiresAt).getTime() + 1),
+      runId,
+    );
+    expect(reconciled.value).toBe(1);
+    const detail = await store.getTaskDetail(created.value.detail.task.id);
+    expect(detail?.task.status).toBe('cancelled');
+    expect(detail?.runs[0]?.status).toBe('lost');
+    expect(reconciled.emitted[0]?.payload).toMatchObject({ taskStatus: 'cancelled' });
+  });
+
   it('cancels an active run through cancelling before the terminal event', async () => {
     const created = await store.createTask({
       title: 'Cancel active run',

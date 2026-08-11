@@ -11,6 +11,7 @@ import { runWorkspaceBootstrap } from './bootstrap-runner.js';
 import { runCodexAgent } from './codex-adapter.js';
 import { runMockAgent } from './mock-agent.js';
 import { runOpenCodeAgent } from './opencode-adapter.js';
+import { startRunHeartbeat } from './run-heartbeat.js';
 import { handoffConsumedEvent } from './handoff.js';
 import { WorktreeManager } from './worktree-manager.js';
 
@@ -47,13 +48,16 @@ async function getRunControl(runId: string, executionToken: string): Promise<{ s
   return (await response.json()) as { status: string };
 }
 
-async function execute(claimed: ClaimedRun, executionToken: string): Promise<void> {
+async function execute(
+  claimed: ClaimedRun,
+  executionToken: string,
+  executionCancellation: AbortController,
+): Promise<void> {
   let sequence = 0;
   let cancellationPoll: ReturnType<typeof setInterval> | undefined;
   try {
     let events: AsyncGenerator<AgentEvent>;
     let workingDirectory = claimed.run.workspaceRoot;
-    let cancellation: AbortController | undefined;
 
     if (claimed.agent.adapterType !== 'mock') {
       const isReviewer = claimed.run.triggerType === 'review';
@@ -76,8 +80,6 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
         workingDirectory: prepared.workingDirectory,
         branchName: prepared.branchName,
       });
-      const executionCancellation = new AbortController();
-      cancellation = executionCancellation;
       let checkingCancellation = false;
       cancellationPoll = setInterval(() => {
         if (checkingCancellation) return;
@@ -112,9 +114,9 @@ async function execute(claimed: ClaimedRun, executionToken: string): Promise<voi
     }
 
     if (claimed.agent.adapterType === 'codex_cli') {
-      events = runCodexAgent(claimed, workingDirectory, { ...(cancellation ? { signal: cancellation.signal } : {}) });
+      events = runCodexAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
     } else if (claimed.agent.adapterType === 'opencode_cli') {
-      events = runOpenCodeAgent(claimed, workingDirectory, { ...(cancellation ? { signal: cancellation.signal } : {}) });
+      events = runOpenCodeAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
     } else if (claimed.agent.adapterType === 'mock') {
       events = runMockAgent(claimed);
     } else {
@@ -150,7 +152,23 @@ const worker = createRunWorker(async (job) => {
     console.log(`Ignoring duplicate delivery for non-queued run ${runId}`);
     return;
   }
-  await execute(claimed.claimed, claimed.executionToken);
+  const executionCancellation = new AbortController();
+  const stopHeartbeat = startRunHeartbeat({
+    apiUrl,
+    runId,
+    executionToken: claimed.executionToken,
+    intervalMs: claimed.lease.heartbeatIntervalMs,
+    onLeaseLost: () => {
+      console.error(`Run lease lost for ${runId}; aborting local execution`);
+      executionCancellation.abort();
+    },
+    onError: (error) => console.error(`Heartbeat failed for ${runId}`, error),
+  });
+  try {
+    await execute(claimed.claimed, claimed.executionToken, executionCancellation);
+  } finally {
+    stopHeartbeat();
+  }
 });
 
 worker.on('completed', (job) => console.log(`Run job ${job.id ?? job.data.runId} completed`));

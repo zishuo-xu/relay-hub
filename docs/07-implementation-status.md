@@ -1,5 +1,22 @@
 # 07. 实现状态
 
+## 2026-08-12：Worker Lease、Heartbeat 与失联收敛
+
+### 已实现
+
+- Run claim 在现有 `runs.lease_expires_at` 写入默认 30 秒 Lease，并将 `expiresAt + heartbeatIntervalMs` 与单次 Run Token 一起返回；没有新增表或 migration。
+- Worker 每 10 秒通过受 Run Token 保护的 `/internal/runs/:runId/heartbeat` 续约。只有尚未过期、未撤销、状态为 `claimed/starting/running/cancelling` 的当前执行可以续约；401/409 会使本地 Worker 中止 Agent 子进程。
+- heartbeat/control/event 的 Token 授权现在同时校验 Lease。过期 Lease 不能在 Reconciler 扫描间隔内被迟到 Heartbeat 复活，也不能继续提交完成事件。
+- API 内 Reconciler 默认每 5 秒扫描一次，使用条件更新避免与最后一次 Heartbeat 竞争；过期 Run 原子转 `lost`、写入 `worker_lost` failure、撤销 Token 并记录 `run.lost`。当前普通 Run 的 Task 转 `waiting_for_user`，取消中的 Run 则把 Task 收敛为 `cancelled`。
+- 第一版不自动重跑，也不复用同一 Worktree，避免网络分区或迟到进程与新 Agent 并发写代码。Dashboard 将 `waiting_for_user` 中性显示为“等待用户”，Timeline 明确展示 Worker 失联和权限撤销。
+
+### 验证证据
+
+- Contracts 34/34、Worker 49/49 通过；新增 Worker Heartbeat 的成功续约与 Token 撤销测试。
+- 全新隔离数据库 `relayhub_lease_verify2_20260812` 应用全部 migration 后，API 45/45 通过；覆盖续约延长、过期前不收敛、迟到续约拒绝、单次 lost 收敛、Token 失效、用户接管和取消收敛。
+- 全仓 `pnpm check` 与生产构建通过；真实 API 对无效 Heartbeat Token 返回 `401 invalid_run_token`。`http://localhost:3010/` 在 614 × 772 视口无页面级溢出，任务统一显示“等待用户”，浏览器控制台无错误。
+- 无数据库 migration、无新基础设施；正式 PostgreSQL、Redis 和历史 Task/Run 未删除或清空。
+
 ## 2026-08-12：顺序型平台 Agent 动态 Handoff 主链（WI-P3.4-001，已验收）
 
 ### 已实现

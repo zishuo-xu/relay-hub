@@ -47,6 +47,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成任意已配置平台 Agent 之间的顺序型动态 Handoff，并通过真实 OpenCode A → B 验收
 - [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
 - [x] 完成通用 Agent 创建、CLI/模型/长期提示词/权限模板配置与不可变 Run AgentProfile 快照
+- [x] 完成 Worker Lease、Heartbeat、失联权限撤销和 `lost` 状态收敛
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定
@@ -150,7 +151,7 @@ curl -X PATCH http://127.0.0.1:4100/api/workspaces/00000000-0000-4000-8000-00000
 
 不要在 Bootstrap 参数中放入密钥。项目语言或锁文件自动探测目前不会直接执行命令，持久化的显式 Workspace 策略才是运行事实来源。
 
-Worker 领取 Run 时会获得只属于该次执行的临时 Token。API 只保存 SHA-256 哈希，Worker 仅在内存中持有明文，并用它访问 Run control 和 event 接口；Token 不进入 Agent、Prompt、Timeline 或公有 Task/Run API。默认有效期为 2 小时，可通过 `RELAY_HUB_RUN_TOKEN_TTL_MS` 调整，Run 进入终态时会立即撤销。
+Worker 领取 Run 时会获得只属于该次执行的临时 Token 和 30 秒 Lease。API 只保存 Token 的 SHA-256 哈希，Worker 仅在内存中持有明文，并每 10 秒通过受 Token 保护的 Heartbeat 续约；Token 不进入 Agent、Prompt、Timeline 或公有 Task/Run API。默认 Token 有效期为 2 小时，可通过 `RELAY_HUB_RUN_TOKEN_TTL_MS` 调整；Lease 与扫描周期可通过 `RELAY_HUB_RUN_LEASE_DURATION_MS`、`RELAY_HUB_RUN_LEASE_RECONCILE_INTERVAL_MS` 调整。Lease 到期后旧 Token 立即失去上报权限，Reconciler 将 Run 标记为 `lost` 并把 Task 转交用户处理，不会自动启动第二个 Agent 写同一个 Worktree。
 
 如果本地已有 Phase 1A 的 `relay-hub/.data/state.json`，可执行一次无损导入：
 

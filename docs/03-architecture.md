@@ -152,8 +152,10 @@ Worker 原子领取 Run 时，API 生成一个带 `rht_` 前缀的 256-bit 随�
 - Token 只绑定领取到的单个 Run，不能用于另一个 Run。
 - Worker 仅在进程内存中持有明文，并通过 Bearer header 访问该 Run 的 control 和 event 接口。
 - `ClaimedRun` 执行上下文进入 AgentAdapter；`executionToken` 不进入 Agent 子进程、Prompt、Event、日志 payload 或公有 API。
-- 默认有效期为 2 小时，可由 `RELAY_HUB_RUN_TOKEN_TTL_MS` 配置；Run 成功、失败、取消或丢失后必须失效，当前已在成功、失败和取消终态事务中立即撤销。
-- 这是本地优先 MVP 的执行隔离，不是用户登录、RBAC 或多租户认证。claim 接口的 Worker 身份认证和 lease/heartbeat 属于后续可靠性边界。
+- 默认有效期为 2 小时，可由 `RELAY_HUB_RUN_TOKEN_TTL_MS` 配置；Run 成功、失败、取消或 Lease 丢失后在终态事务中立即撤销。
+- claim 同时签发默认 30 秒的 Worker Lease，响应给出由 API 决定的 Heartbeat 周期。Worker 续约只能延长尚未过期的 Lease；过期 Lease 不能被复活，旧 Token 即使尚未达到两小时 TTL 也不能继续访问 control/event。
+- API 内 Reconciler 默认每 5 秒扫描过期 Lease，原子执行 `Run -> lost + Token revoked + run.lost Event`。若它仍是 Task 当前 Run，普通执行转 `waiting_for_user`；正在取消的执行收敛为 Task `cancelled`。
+- 第一版 fail closed，不自动创建第二个 Run 或复用同一 Worktree，避免网络分区时两个 Agent 并发写代码。这是本地优先 MVP 的执行隔离，不是用户登录、RBAC 或多租户认证；claim 接口的 Worker 身份认证仍属于后续安全增强。
 
 ### Workspace Bootstrap
 
@@ -297,7 +299,7 @@ Task 与 Run 带 `version`。更新语句包含旧版本条件，受影响行数
 | 场景 | 处理 |
 |---|---|
 | 队列消息重复 | Worker claim 使用唯一 Run ID 和状态条件，重复消息直接确认 |
-| Worker 在 claim 后崩溃 | lease 到期后由 reconciler 标记 `worker_lost` 并按策略重试 |
+| Worker 在 claim 后崩溃 | Heartbeat 停止；Lease 到期后 Reconciler 标记 Run `lost`、撤销 Token 并把 Task 转交用户，不自动并发重试 |
 | Agent 输出非法 JSON | 记录 `protocol_error`，保留受限原始片段用于诊断 |
 | Agent 长时间无输出 | 结合进程存活和可配置超时判断，不把 stderr 当作有效进度 |
 | WebSocket 断线 | 使用最后 event ID 通过 HTTP 补拉 |
@@ -342,7 +344,7 @@ Phase 2.5 已实现首个确定性 Orchestrator seam：`run.completed` 只把 Ru
 
 Phase 2.6 已实现 Workspace Bootstrap。策略与 Agent provider 解耦并在 Run 创建时固化；Worker 在真实 AgentAdapter 启动前执行准备步骤，失败时记录结构化事件并阻断 Agent。当前显式 API 配置是事实来源，项目语言/锁文件探测尚未实现。
 
-Phase 2.7 已实现轻量单次 Run execution token。Worker 领取时获得一次明文凭证，API 只保存哈希并保护 control/event 回调；终态事务撤销凭证。它防止重复投递、旧 Worker 或错误进程跨 Run 上报，但不替代未来的 Worker 注册、lease 和 heartbeat。
+Phase 2.7 已实现轻量单次 Run execution token；Phase 4 第一切片在同一身份边界上补齐 Lease、Heartbeat 与 Reconciler。Worker 领取时获得一次明文凭证和短 Lease，API 只保存哈希并保护 heartbeat/control/event；终态或 Lease 丢失后撤销凭证。它防止重复投递、过期 Worker 或错误进程跨 Run 上报；Worker 注册和 claim 身份认证仍未引入。
 
 Phase 2.8 已完成 API 持久化职责整理。`PostgresStore` 保留为路由层稳定门面，Task 创建与查询、Run 领取/Token/取消、Agent Event 驱动的 Workflow transaction 以及 Workspace 配置分别由同包模块实现。此拆分只缩短文件和明确依赖，不改变数据库 schema、HTTP 合约、状态机或部署结构。
 

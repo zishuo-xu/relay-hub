@@ -16,6 +16,11 @@ import { z } from 'zod';
 import { checkAgentHealth, checkProviderConnectionHealth, listAgentRuntimes, listOpenCodeModels } from './agent-runtime-health.js';
 import { validateProviderConnectionUpdate } from './provider-connection-policy.js';
 import { OutboxPublisher } from './outbox-publisher.js';
+import { RunLeaseReconciler } from './run-lease-reconciler.js';
+import {
+  DEFAULT_RUN_LEASE_DURATION_MS,
+  DEFAULT_RUN_LEASE_RECONCILE_INTERVAL_MS,
+} from './run-lease.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { PostgresStore } from './store.js';
 import { validateWorkspaceRoot } from './workspace-root.js';
@@ -44,7 +49,25 @@ const runTokenTtlMs = z.coerce
   .int()
   .positive()
   .parse(process.env.RELAY_HUB_RUN_TOKEN_TTL_MS ?? DEFAULT_RUN_TOKEN_TTL_MS);
-const store = new PostgresStore(database.db, runTokenTtlMs);
+const runLeaseDurationMs = z.coerce
+  .number()
+  .int()
+  .min(3_000)
+  .max(10 * 60_000)
+  .parse(process.env.RELAY_HUB_RUN_LEASE_DURATION_MS ?? DEFAULT_RUN_LEASE_DURATION_MS);
+const runLeaseReconcileIntervalMs = z.coerce
+  .number()
+  .int()
+  .min(250)
+  .max(runLeaseDurationMs)
+  .parse(
+    process.env.RELAY_HUB_RUN_LEASE_RECONCILE_INTERVAL_MS ??
+      DEFAULT_RUN_LEASE_RECONCILE_INTERVAL_MS,
+  );
+if (runTokenTtlMs <= runLeaseDurationMs) {
+  throw new Error('Run token TTL must be longer than the Run lease duration');
+}
+const store = new PostgresStore(database.db, runTokenTtlMs, runLeaseDurationMs);
 const publisher = new OutboxPublisher(database.db, process.env.REDIS_URL);
 
 function readBearerToken(request: FastifyRequest): string | null {
@@ -66,6 +89,8 @@ function broadcast(events: RunEvent[]): void {
     });
   }
 }
+
+const leaseReconciler = new RunLeaseReconciler(store, broadcast, runLeaseReconcileIntervalMs);
 
 app.get('/health', async () => {
   await database.client`select 1`;
@@ -243,6 +268,15 @@ app.post('/internal/runs/:runId/claim', async (request, reply) => {
   return result.value;
 });
 
+app.post('/internal/runs/:runId/heartbeat', async (request, reply) => {
+  const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
+  const token = readBearerToken(request);
+  if (!token) return reply.code(401).send({ error: 'invalid_run_token' });
+  const lease = await store.heartbeatRun(runId, token);
+  if (!lease) return reply.code(401).send({ error: 'invalid_run_token' });
+  return lease;
+});
+
 app.get('/internal/runs/:runId/control', async (request, reply) => {
   const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
   const token = readBearerToken(request);
@@ -282,11 +316,13 @@ app.setErrorHandler((error, _request, reply) => {
 
 await app.listen({ host, port });
 publisher.start();
+leaseReconciler.start();
 
 let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  await leaseReconciler.close();
   await publisher.close();
   io.close();
   await app.close();

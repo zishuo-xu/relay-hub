@@ -18,6 +18,8 @@ import {
   authorizeRunToken as authorizeRunTokenInDb,
   claimRun as claimRunInDb,
   getRunStatus as getRunStatusFromDb,
+  heartbeatRun as heartbeatRunInDb,
+  reconcileExpiredRunLeases as reconcileExpiredRunLeasesInDb,
   requestRunCancellation as requestRunCancellationInDb,
 } from './persistence/run-execution-repository.js';
 import {
@@ -42,11 +44,13 @@ import {
 } from './persistence/workspace-repository.js';
 import { recordAgentEvent as recordAgentEventInDb } from './persistence/workflow-repository.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
+import { DEFAULT_RUN_LEASE_DURATION_MS } from './run-lease.js';
 
 export class PostgresStore {
   constructor(
     private readonly db: RelayDatabase,
     private readonly runTokenTtlMs = DEFAULT_RUN_TOKEN_TTL_MS,
+    private readonly runLeaseDurationMs = DEFAULT_RUN_LEASE_DURATION_MS,
   ) {}
 
   listTasks(): Promise<Task[]> {
@@ -122,7 +126,15 @@ export class PostgresStore {
   }
 
   claimRun(runId: string, workerId: string): Promise<MutationResult<ClaimedExecution | null>> {
-    return claimRunInDb(this.db, runId, workerId, this.runTokenTtlMs);
+    return claimRunInDb(this.db, runId, workerId, this.runTokenTtlMs, this.runLeaseDurationMs);
+  }
+
+  heartbeatRun(runId: string, plaintext: string, now = new Date()): Promise<{ leaseExpiresAt: string } | null> {
+    return heartbeatRunInDb(this.db, runId, plaintext, this.runLeaseDurationMs, now);
+  }
+
+  reconcileExpiredRunLeases(now = new Date(), runId?: string): Promise<MutationResult<number>> {
+    return reconcileExpiredRunLeasesInDb(this.db, now, runId);
   }
 
   authorizeRunToken(runId: string, plaintext: string, now = new Date()): Promise<boolean> {

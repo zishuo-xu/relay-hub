@@ -326,7 +326,9 @@ suite('sequential handoff integration', () => {
     });
     const taskId = created.value.detail.task.id;
     const runA = await startCurrentRun(taskId, 'guard-a');
-    const outboxBefore = (await database!.db.select({ id: outboxEvents.id }).from(outboxEvents)).length;
+    const outboxBefore = (
+      await database!.db.select({ id: outboxEvents.id }).from(outboxEvents).where(eq(outboxEvents.aggregateId, runA))
+    ).length;
 
     await expect(
       store.recordAgentEvent(runA, 'guard-unknown', genericHandoff(crypto.randomUUID())),
@@ -345,7 +347,9 @@ suite('sequential handoff integration', () => {
     expect(detail?.handoffs).toHaveLength(0);
     expect(detail?.runs).toHaveLength(1);
     expect(detail?.task.status).toBe('running');
-    const outboxAfter = (await database!.db.select({ id: outboxEvents.id }).from(outboxEvents)).length;
+    const outboxAfter = (
+      await database!.db.select({ id: outboxEvents.id }).from(outboxEvents).where(eq(outboxEvents.aggregateId, runA))
+    ).length;
     expect(outboxAfter).toBe(outboxBefore);
   });
 

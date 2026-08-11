@@ -32,7 +32,7 @@ const statusLabels: Record<Task['status'], string> = {
   running: '执行中',
   reviewing: '审查中',
   changes_requested: '需要修改',
-  waiting_for_user: '等待确认',
+  waiting_for_user: '等待用户',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
@@ -95,6 +95,7 @@ const eventLabels: Record<string, string> = {
   'run.cancellation_requested': '正在取消',
   'run.cancelled': '已取消',
   'run.failed': '执行失败',
+  'run.lost': 'Worker 已失联',
 };
 
 function agentAuditLabel(detail: TaskDetail, agentId: unknown): string {
@@ -177,13 +178,20 @@ function eventText(event: RunEvent, detail: TaskDetail): string {
       return String(event.payload.reason ?? 'Run 已取消');
     case 'run.failed':
       return `执行失败：${String(event.payload.message ?? event.payload.code)}`;
+    case 'run.lost':
+      return `Worker ${String(event.payload.workerId ?? 'unknown')} 未在 Lease 到期前续约，旧执行权限已撤销，任务已转交用户处理。`;
     default:
       return event.type;
   }
 }
 
 function eventTone(event: RunEvent): string {
-  if (event.type === 'run.failed' || event.type === 'run.cancelled' || event.type === 'run.bootstrap_failed') return 'danger';
+  if (
+    event.type === 'run.failed' ||
+    event.type === 'run.cancelled' ||
+    event.type === 'run.lost' ||
+    event.type === 'run.bootstrap_failed'
+  ) return 'danger';
   if (
     event.type === 'run.completed' ||
     event.type === 'run.bootstrap_completed' ||

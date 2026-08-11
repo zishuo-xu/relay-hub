@@ -458,12 +458,14 @@ export async function recordAgentEvent(
         runPatch.finishedAt = now;
         runPatch.outcome = agentEvent.outcome;
         runPatch.tokenRevokedAt = now;
+        runPatch.leaseExpiresAt = null;
         break;
       case 'run.cancelled':
         nextRunStatus = 'cancelled';
         nextTaskStatus = 'cancelled';
         runPatch.finishedAt = now;
         runPatch.tokenRevokedAt = now;
+        runPatch.leaseExpiresAt = null;
         break;
       case 'run.failed':
         nextRunStatus = 'failed';
@@ -481,6 +483,7 @@ export async function recordAgentEvent(
         runPatch.failureDetail = agentEvent.message;
         runPatch.finishedAt = now;
         runPatch.tokenRevokedAt = now;
+        runPatch.leaseExpiresAt = null;
         break;
       default:
         if (run.status !== 'running') throw new Error(`Cannot append ${agentEvent.type} while run is ${run.status}`);
