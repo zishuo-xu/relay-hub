@@ -44,10 +44,11 @@ const coordinationReasonLabels: Record<CoordinationReason, string> = {
   current_run_missing: '当前 Run 缺失，需要平台或用户处理',
   run_waiting_for_dispatch: 'Run 已创建，等待平台派发',
   run_owned_by_agent: 'Agent 正在执行当前 Run',
+  handoff_waiting_for_dispatch: '目标 Agent 的 Run 已创建，等待平台派发',
   review_waiting_for_dispatch: 'Reviewer Run 已创建，等待平台派发',
   review_in_progress: 'Reviewer 正在独立检查并准备裁决',
   repair_in_progress: 'Builder 正在根据 Finding 返工',
-  handoff_pending: 'Builder 已准备交接，等待完成后派发 Reviewer',
+  handoff_pending: '当前 Agent 已准备交接，等待完成后派发目标 Agent',
   workflow_resolution_pending: 'Run 已结束，平台正在收敛下一状态',
   user_confirmation_required: 'Review 已通过，等待用户最终确认',
   user_attention_required: '平台需要用户处理阻塞或异常',
@@ -78,6 +79,8 @@ const eventLabels: Record<string, string> = {
   'run.completed': '执行结束',
   'handoff.requested': '已准备交接',
   'handoff.consumed': '已接收交接',
+  'task.handoff_dispatched': '交接已派发',
+  'task.handoff_rejected': '交接被拒绝',
   'task.waiting_for_review': '等待审查',
   'task.review_requested': '进入审查',
   'task.review_run_completed': 'Reviewer 执行完成',
@@ -126,10 +129,16 @@ function eventText(event: RunEvent): string {
       );
     case 'handoff.requested': {
       const handoff = event.payload.handoff as { targetAgentId?: unknown; summary?: unknown } | undefined;
-      return `Builder 已准备交接给 ${String(handoff?.targetAgentId ?? 'Reviewer')}：${String(handoff?.summary ?? '')}`;
+      return `Agent 已准备交接给 ${String(handoff?.targetAgentId ?? '目标 Agent')}：${String(handoff?.summary ?? '')}`;
     }
     case 'handoff.consumed':
       return `目标 Worker 已校验并加载 Handoff v${String(event.payload.bundleVersion ?? '')}（${String(event.payload.handoffId ?? '').slice(0, 8)}）。`;
+    case 'task.handoff_dispatched':
+      return `交接已派发，目标 Agent 的新 Run ${String(event.payload.targetRunId ?? '').slice(0, 8)} 已排队。`;
+    case 'task.handoff_rejected':
+      return event.payload.reason === 'handoff_budget_exhausted'
+        ? '顺序交接次数已达上限，任务已转交用户处理。'
+        : '交接目标不再可用，任务已转交用户处理。';
     case 'task.waiting_for_review':
       return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
     case 'task.review_requested':
@@ -179,7 +188,8 @@ function eventTone(event: RunEvent): string {
     event.type === 'task.changes_requested' ||
     event.type === 'task.review_blocked' ||
     event.type === 'task.review_failed' ||
-    event.type === 'task.repair_limit_reached'
+    event.type === 'task.repair_limit_reached' ||
+    event.type === 'task.handoff_rejected'
   ) return 'danger';
   if (event.type === 'output.delta') return 'output';
   if (event.type.startsWith('tool.')) return 'tool';

@@ -30,8 +30,8 @@ function agentOwner(run: Run, reason: TaskCoordinationView['owner']['reason']): 
 function allowedActionsForRun(run: Run, task: Task): NextAction['type'][] {
   if (run.triggerType === 'review') return ['continue', 'wait_for_user'];
   return task.reviewerAgentId
-    ? ['continue', 'request_review', 'wait_for_user']
-    : ['continue', 'wait_for_user'];
+    ? ['continue', 'handoff', 'request_review', 'wait_for_user']
+    : ['continue', 'handoff', 'wait_for_user'];
 }
 
 function projectVerdict(source: TaskCoordinationSource, currentRun?: Run): TaskCoordinationView['verdict'] {
@@ -143,11 +143,16 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
 
   if (currentRun.status === 'queued') {
     const waitingForReview = currentRun.triggerType === 'review';
+    const waitingForHandoff = currentRun.triggerType === 'handoff';
     return {
       state,
       owner: {
         kind: 'platform',
-        reason: waitingForReview ? 'review_waiting_for_dispatch' : 'run_waiting_for_dispatch',
+        reason: waitingForReview
+          ? 'review_waiting_for_dispatch'
+          : waitingForHandoff
+            ? 'handoff_waiting_for_dispatch'
+            : 'run_waiting_for_dispatch',
         runId: currentRun.id,
       },
       evidence,
@@ -159,7 +164,14 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
             allowedActions: ['request_review'],
             targetAgentId: currentRun.agentId,
           }
-        : { action: 'continue', reason: 'run_waiting_for_dispatch', allowedActions: ['continue'] },
+        : waitingForHandoff
+          ? {
+              action: 'handoff',
+              reason: 'handoff_waiting_for_dispatch',
+              allowedActions: ['handoff'],
+              targetAgentId: currentRun.agentId,
+            }
+          : { action: 'continue', reason: 'run_waiting_for_dispatch', allowedActions: ['continue'] },
     };
   }
 
@@ -181,10 +193,10 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
       verdict,
       route: handoffPending
         ? {
-            action: 'request_review',
+            action: latestHandoff?.nextAction?.type === 'handoff' ? 'handoff' : 'request_review',
             reason: 'handoff_pending',
             allowedActions: allowedActionsForRun(currentRun, source.task),
-            targetAgentId: latestHandoff.targetAgentId,
+            targetAgentId: latestHandoff?.targetAgentId,
           }
         : {
             action: 'continue',

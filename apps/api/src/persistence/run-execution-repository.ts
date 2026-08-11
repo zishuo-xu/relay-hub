@@ -1,14 +1,17 @@
 import {
+  type AgentCapability,
   canTransitionRun,
   canTransitionTask,
   type ClaimedExecution,
   type ClaimedRun,
+  type HandoffTargetView,
   type RunEvent,
   type RunStatus,
   type TaskDetail,
   type TaskStatus,
 } from '@relay-hub/contracts';
 import {
+  agentProfiles,
   handoffs,
   type RelayDatabase,
   reviewFindings,
@@ -67,6 +70,13 @@ export async function claimRun(
     if (!taskRow) throw new Error(`Task not found for run: ${runId}`);
     const [workspaceRow] = await tx.select().from(workspaces).where(eq(workspaces.id, taskRow.workspaceId)).limit(1);
     if (!workspaceRow) throw new Error(`Workspace not found for run: ${runId}`);
+    const candidateRows = await tx
+      .select({ id: agentProfiles.id, name: agentProfiles.name, capabilities: agentProfiles.capabilities })
+      .from(agentProfiles)
+      .where(and(eq(agentProfiles.workspaceId, taskRow.workspaceId), eq(agentProfiles.enabled, true)));
+    const handoffTargets: HandoffTargetView[] = candidateRows
+      .filter((row) => row.id !== claimed.agentId)
+      .map((row) => ({ id: row.id, name: row.name, capabilities: row.capabilities as AgentCapability[] }));
     const [handoffRow] = await tx.select().from(handoffs).where(eq(handoffs.targetRunId, claimed.id)).limit(1);
     if (handoffRow?.bundleVersion && handoffRow.bundleVersion >= 2) {
       if (!handoffRow.contentDigest || !handoffRow.nextAction) {
@@ -115,6 +125,7 @@ export async function claimRun(
           run: mapRun(claimed),
           workspace: mapWorkspace(workspaceRow),
           agent: claimed.agentProfileSnapshot,
+          handoffTargets,
           ...(handoffRow ? { handoff: mapHandoff(handoffRow) } : {}),
           ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
         } satisfies ClaimedRun,

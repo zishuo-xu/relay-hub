@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { planAfterReview, planAfterSuccessfulBuilderRun } from './workflow-orchestrator.js';
+import {
+  planAfterReview,
+  planAfterSuccessfulBuilderRun,
+  planSequentialHandoffDispatch,
+} from './workflow-orchestrator.js';
 
 describe('workflow orchestrator', () => {
   it('waits for the operator while Reviewer dispatch is unavailable', () => {
@@ -81,5 +85,46 @@ describe('workflow orchestrator', () => {
         repairDispatchAvailable: false,
       }),
     ).toMatchObject({ nextTaskStatus: 'waiting_for_user', eventType: 'task.repair_limit_reached' });
+  });
+});
+
+describe('sequential handoff dispatch planner', () => {
+  it('dispatches an available target while the Task keeps running', () => {
+    expect(planSequentialHandoffDispatch({ genericHandoffOrdinal: 1, targetDispatchAvailable: true })).toEqual({
+      dispatch: true,
+      nextTaskStatus: 'running',
+      eventType: 'task.handoff_dispatched',
+      reason: 'handoff_dispatch_available',
+    });
+  });
+
+  it('still dispatches the sixth sequential Handoff', () => {
+    expect(
+      planSequentialHandoffDispatch({ genericHandoffOrdinal: 6, targetDispatchAvailable: true }).dispatch,
+    ).toBe(true);
+  });
+
+  it('rejects the seventh sequential Handoff and returns the Task to the user', () => {
+    expect(planSequentialHandoffDispatch({ genericHandoffOrdinal: 7, targetDispatchAvailable: true })).toEqual({
+      dispatch: false,
+      nextTaskStatus: 'waiting_for_user',
+      eventType: 'task.handoff_rejected',
+      reason: 'handoff_budget_exhausted',
+    });
+  });
+
+  it('rejects the Handoff when the target became unavailable', () => {
+    expect(planSequentialHandoffDispatch({ genericHandoffOrdinal: 2, targetDispatchAvailable: false })).toEqual({
+      dispatch: false,
+      nextTaskStatus: 'waiting_for_user',
+      eventType: 'task.handoff_rejected',
+      reason: 'handoff_target_unavailable',
+    });
+  });
+
+  it('checks the budget before target availability', () => {
+    expect(
+      planSequentialHandoffDispatch({ genericHandoffOrdinal: 8, targetDispatchAvailable: false }).reason,
+    ).toBe('handoff_budget_exhausted');
   });
 });
