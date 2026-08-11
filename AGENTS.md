@@ -30,7 +30,18 @@ After every RelayHub code or documentation change:
 
 1. Run verification proportional to the change and report the result.
 2. Commit the completed RelayHub change with a focused message.
-3. Push the commit to `origin/main` in `zishuo-xu/relay-hub`.
+3. If acting as Architect/integrator, push the accepted change to `origin/main` in `zishuo-xu/relay-hub`. A delegated Implementer pushes only the assigned topic branch and records that branch in the Work Item.
 4. Report both the commit SHA and push result to the user.
 
-Do not leave completed RelayHub changes only in the local repository.
+Do not leave submitted or completed RelayHub changes only in the local repository.
+
+## Delegated development workflow
+
+All work implemented by a delegated developer follows `docs/10-delegated-development-workflow.md` and must have a registered Work Item under `docs/work-items/`.
+
+- The Architect owns scope, invariants, acceptance criteria, `VERIFYING`, `ACCEPTED`, main-branch integration, and `DONE`.
+- The Implementer owns the topic branch and may mark only `IN_PROGRESS`, `BLOCKED`, and `SUBMITTED` for implementation progress.
+- `SUBMITTED` means ready for independent verification; it never means accepted or complete.
+- Any unresolved P1 or P2 finding requires `CHANGES_REQUESTED`.
+- Only an accepted change that is integrated into `main`, verified, documented, pushed to GitHub, and leaves a clean worktree can be marked `DONE`.
+- Delegated developers push topic branches. The Architect is the only role that integrates accepted delegated work into `origin/main`.

@@ -84,6 +84,8 @@ relay-hub/
 8. [实现状态](docs/07-implementation-status.md)
 9. [讨论沉淀规则](docs/08-documentation-workflow.md)
 10. [整体设计基线草案](docs/09-overall-design-baseline.md)
+11. [委派开发与架构验收工作协议](docs/10-delegated-development-workflow.md)
+12. [Work Item 登记表](docs/work-items/README.md)
 
 ## 独立性原则
 
