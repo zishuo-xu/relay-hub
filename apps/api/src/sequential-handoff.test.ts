@@ -387,6 +387,40 @@ suite('sequential handoff integration', () => {
     await expect(
       store.recordAgentEvent(runB, 'history-b-handoff', genericHandoff(agentB.id)),
     ).rejects.toThrow('Only the current Task Run can request a Handoff');
+
+    const reviewTask = await store.createTask({
+      title: 'A stale Run cannot request formal review',
+      description: 'The current-Run guard applies equally to request_review.',
+      agentId: agentA.id,
+      reviewerAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+      acceptanceCriteria: [],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    const reviewTaskId = reviewTask.value.detail.task.id;
+    const staleReviewRun = await startCurrentRun(reviewTaskId, 'history-review');
+    await database!.db
+      .update(tasks)
+      .set({ currentRunId: null })
+      .where(eq(tasks.id, reviewTaskId));
+    await expect(
+      store.recordAgentEvent(staleReviewRun, 'history-review-handoff', {
+        type: 'handoff.requested',
+        handoff: {
+          targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+          objective: 'Attempt to route a stale Run to review',
+          summary: 'This request must be rejected before a Handoff is persisted.',
+          nextAction: {
+            type: 'request_review',
+            targetAgentId: DEFAULT_MOCK_REVIEWER_AGENT_ID,
+            reason: 'Stale Runs have no routing authority.',
+          },
+        },
+      }),
+    ).rejects.toThrow('Only the current Task Run can request a Handoff');
+    const unchangedReviewTask = await store.getTaskDetail(reviewTaskId);
+    expect(unchangedReviewTask?.handoffs).toHaveLength(0);
+    expect(unchangedReviewTask?.runs).toHaveLength(1);
   });
 
   it('rejects the Handoff and returns the Task to the user when the target is disabled mid-flight', async () => {

@@ -97,10 +97,16 @@ const eventLabels: Record<string, string> = {
   'run.failed': '执行失败',
 };
 
-function eventText(event: RunEvent): string {
+function agentAuditLabel(detail: TaskDetail, agentId: unknown): string {
+  if (typeof agentId !== 'string' || agentId.length === 0) return '目标 Agent';
+  const snapshot = detail.runs.find((run) => run.agentId === agentId)?.agentProfileSnapshot;
+  return snapshot?.name ? `${snapshot.name}（${agentId.slice(0, 8)}）` : agentId;
+}
+
+function eventText(event: RunEvent, detail: TaskDetail): string {
   switch (event.type) {
     case 'task.created':
-      return `任务已分配给 ${String(event.payload.agentId)}`;
+      return `任务已分配给 ${agentAuditLabel(detail, event.payload.agentId)}`;
     case 'run.claimed':
       return `Worker ${String(event.payload.workerId)} 已领取任务`;
     case 'run.prepared':
@@ -129,12 +135,12 @@ function eventText(event: RunEvent): string {
       );
     case 'handoff.requested': {
       const handoff = event.payload.handoff as { targetAgentId?: unknown; summary?: unknown } | undefined;
-      return `Agent 已准备交接给 ${String(handoff?.targetAgentId ?? '目标 Agent')}：${String(handoff?.summary ?? '')}`;
+      return `Agent 已准备交接给 ${agentAuditLabel(detail, handoff?.targetAgentId)}：${String(handoff?.summary ?? '')}`;
     }
     case 'handoff.consumed':
       return `目标 Worker 已校验并加载 Handoff v${String(event.payload.bundleVersion ?? '')}（${String(event.payload.handoffId ?? '').slice(0, 8)}）。`;
     case 'task.handoff_dispatched':
-      return `交接已派发，目标 Agent 的新 Run ${String(event.payload.targetRunId ?? '').slice(0, 8)} 已排队。`;
+      return `交接已派发给 ${agentAuditLabel(detail, event.payload.targetAgentId)}，新 Run ${String(event.payload.targetRunId ?? '').slice(0, 8)} 已排队。`;
     case 'task.handoff_rejected':
       return event.payload.reason === 'handoff_budget_exhausted'
         ? '顺序交接次数已达上限，任务已转交用户处理。'
@@ -142,7 +148,7 @@ function eventText(event: RunEvent): string {
     case 'task.waiting_for_review':
       return 'Builder 已完成执行；Reviewer 工作流尚未启用，等待用户检查。';
     case 'task.review_requested':
-      return `Builder 结果已持久化，并创建 Reviewer Run ${String(event.payload.targetRunId ?? '')}。`;
+      return `Builder 结果已持久化，并为 ${agentAuditLabel(detail, event.payload.targetAgentId)} 创建 Reviewer Run ${String(event.payload.targetRunId ?? '').slice(0, 8)}。`;
     case 'task.review_run_completed':
       return 'Reviewer Run 已完成，正在根据完成策略更新任务状态。';
     case 'review.submitted': {
@@ -558,7 +564,7 @@ export function TimelineWorkspace({
                     {milestoneEvents.map((event) => (
                       <li key={event.id}>
                         <i data-tone={eventTone(event)} />
-                        <div><strong>{eventLabels[event.type] ?? event.type}</strong><span>{eventText(event)}</span></div>
+                        <div><strong>{eventLabels[event.type] ?? event.type}</strong><span>{eventText(event, detail)}</span></div>
                         <time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time>
                       </li>
                     ))}
@@ -596,7 +602,7 @@ export function TimelineWorkspace({
                           </div>
                           <time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time>
                         </div>
-                        <p>{eventText(event)}</p>
+                        <p>{eventText(event, detail)}</p>
                       </div>
                     </li>
                   ))}

@@ -57,7 +57,7 @@ RelayHub 已完成固定的 Builder → Reviewer → 用户确认/返工主链�
 - `TaskCoordinationView` 已作为只读查询投影加入 Task Detail：它只从 Task、current Run、Handoff、Review 和 RunOutcome 推导 State、Owner、Evidence、Verdict、Route，不读取 Event 猜测当前状态，也不写入新的生命周期事实。
 - 非终态 Task 必须得到 Agent、用户或平台责任人；终态 Task 明确返回无责任人和 `terminal` Route。缺失 current Run 等异常会投影为平台责任和等待用户，而不是静默悬空。
 - 尚未把 Reviewer verdict、repair、用户确认全部改造成统一 NextAction 输入；这些仍由现有确定性 Orchestrator 路径执行。
-- 顺序型通用 Handoff 主干已按 WI-P3.4-001 实现（2026-08-12，待验收）：非 Review Agent 以 `<relayhub_result>` 结构化信封提出 `handoff`，Orchestrator 分流 `handoff`/`request_review`，通用交接创建 `triggerType=handoff` 目标 Run 且 Task 保持 running；固定预算 6 次，目标失效或预算耗尽时 Handoff `rejected` 并转交用户。Reviewer 裁决权限仍只认 `triggerType=review` + Task 固定 Reviewer。浏览器与真实 CLI 验收尚未执行。
+- 顺序型通用 Handoff 主干已按 WI-P3.4-001 实现并于 2026-08-12 验收：非 Review Agent 以 `<relayhub_result>` 结构化信封提出 `handoff`，Orchestrator 分流 `handoff`/`request_review`，通用交接创建 `triggerType=handoff` 目标 Run 且 Task 保持 running；固定预算 6 次，目标失效或预算耗尽时 Handoff `rejected` 并转交用户。Reviewer 裁决权限仍只认 `triggerType=review` + Task 固定 Reviewer。Mock 浏览器链与真实 OpenCode A → B 均已通过。
 
 ## 明确不做
 

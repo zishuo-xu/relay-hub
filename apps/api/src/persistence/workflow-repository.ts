@@ -88,6 +88,9 @@ export async function recordAgentEvent(
       case 'handoff.requested': {
         if (run.status !== 'running') throw new Error(`Cannot request handoff while run is ${run.status}`);
         if (run.triggerType === 'review') throw new Error('Review Runs cannot request a Handoff');
+        if (task.currentRunId !== run.id) {
+          throw new Error('Only the current Task Run can request a Handoff');
+        }
         if (agentEvent.handoff.targetAgentId === run.agentId) {
           throw new Error('Handoff target must be a different AgentProfile than the source Run');
         }
@@ -112,9 +115,6 @@ export async function recordAgentEvent(
             throw new Error(`Invalid Reviewer AgentProfile: ${agentEvent.handoff.targetAgentId}`);
           }
         } else if (agentEvent.handoff.nextAction.type === 'handoff') {
-          if (task.currentRunId !== run.id) {
-            throw new Error('Only the current Task Run can request a Handoff');
-          }
           const [targetAgent] = await tx
             .select({
               enabled: agentProfiles.enabled,

@@ -67,6 +67,15 @@ export function agentCompletionEvents(input: {
   const { claimed, workingDirectory, finalMessage, commandEvidence, fallbackSummary } = input;
   const result = parseAgentResult(finalMessage);
   if (result) {
+    if (result.nextAction.type === 'request_review') {
+      const reviewerAgentId = claimed.task.reviewerAgentId;
+      if (!reviewerAgentId) {
+        throw new Error('Agent requested review but the Task has no configured Reviewer');
+      }
+      if (result.nextAction.targetAgentId !== reviewerAgentId) {
+        throw new Error('Agent requested review from an Agent other than the configured Task Reviewer');
+      }
+    }
     const events: AgentEvent[] = [];
     const structuredHandoff = handoffFromAgentResult(claimed, result);
     if (structuredHandoff) {

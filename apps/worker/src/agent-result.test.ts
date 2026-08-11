@@ -156,6 +156,33 @@ describe('agentCompletionEvents', () => {
     });
   });
 
+  it('rejects request_review when the Task has no configured Reviewer', () => {
+    expect(() => agentCompletionEvents({
+      claimed,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'Implementation finished.',
+        nextAction: { type: 'request_review', targetAgentId: reviewerId, reason: 'Review requested.' },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    })).toThrow('Task has no configured Reviewer');
+  });
+
+  it('rejects request_review when the model targets a different Agent than the configured Reviewer', () => {
+    const withReviewer: ClaimedRun = { ...claimed, task: { ...claimed.task, reviewerAgentId: reviewerId } };
+    expect(() => agentCompletionEvents({
+      claimed: withReviewer,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'Implementation finished.',
+        nextAction: { type: 'request_review', targetAgentId: uxAgentId, reason: 'Wrong reviewer selected.' },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    })).toThrow('configured Task Reviewer');
+  });
+
   it('emits only run.completed for a non-routing structured result', () => {
     const events = agentCompletionEvents({
       claimed,

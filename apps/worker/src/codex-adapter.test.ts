@@ -344,6 +344,10 @@ describe('runCodexAgent', () => {
     expect(prompt).toContain('UX Agent');
     expect(prompt).toContain('capabilities: implement');
     expect(prompt).toContain('no configured Reviewer');
+    expect(prompt).toContain('nextAction and handoff are sibling fields');
+    expect(prompt).toContain('"handoff":{"objective":"What the target must do"');
+    expect(prompt).toContain('under 2,000 characters');
+    expect(prompt).toContain('never put a plain string in either array');
   });
 
   it('points request_review at the configured Reviewer in the Builder prompt', () => {

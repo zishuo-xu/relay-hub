@@ -2,14 +2,14 @@
 
 ## Metadata
 
-- Status: `BLOCKED`
+- Status: `DONE`
 - Architect: RelayHub Architect（唯一委派与验收责任人）
 - Implementer: Delegated Developer（唯一实现者）
 - Shared branch: `main`
 - Baseline commit: `3c5d7c0fc5873f0b40802d32756d585506f8df74`
 - Revision: 1
 - Created at: 2026-08-11
-- Updated at: 2026-08-11
+- Updated at: 2026-08-12
 
 ## 1. 用户价值与目标
 
@@ -214,38 +214,38 @@ request_review
 
 ### 功能行为
 
-- [ ] Mock Agent A 能通过结构化 `handoff` 把同一 Task 顺序交给 Mock Agent B；B 获得独立 Run、Profile snapshot、Token 和完整 Handoff V2。
-- [ ] A 完成后只有一个 B Run 被创建，Task 保持 `running`，`currentRunId` 指向 B，A/B 的 parent/trigger/agent identity 可从数据库重建。
-- [ ] B claim 后校验 digest 并提交 `handoff.consumed`；Handoff 从 `dispatched` 变为 `accepted`。
-- [ ] B 可以继续 handoff 给 C，或通过 `request_review` 进入 Task 固定 Reviewer；两种 Route 语义和 triggerType 不混淆。
-- [ ] 通用 Handoff Agent 没有 Review authority；只有正式 Reviewer Run 能提交 Review。
-- [ ] 旧 Builder 未返回新结构化结果时，固定 Reviewer/等待用户行为不回归。
-- [ ] Web 单屏能显示通用目标 Agent、Handoff 状态、当前 Owner 和下一 Route，不把所有交接都写成 Reviewer。
+- [x] Mock Agent A 能通过结构化 `handoff` 把同一 Task 顺序交给 Mock Agent B；B 获得独立 Run、Profile snapshot、Token 和完整 Handoff V2。
+- [x] A 完成后只有一个 B Run 被创建，Task 保持 `running`，`currentRunId` 指向 B，A/B 的 parent/trigger/agent identity 可从数据库重建。
+- [x] B claim 后校验 digest 并提交 `handoff.consumed`；Handoff 从 `dispatched` 变为 `accepted`。
+- [x] B 可以继续 handoff 给 C，或通过 `request_review` 进入 Task 固定 Reviewer；两种 Route 语义和 triggerType 不混淆。
+- [x] 通用 Handoff Agent 没有 Review authority；只有正式 Reviewer Run 能提交 Review。
+- [x] 旧 Builder 未返回新结构化结果时，固定 Reviewer/等待用户行为不回归。
+- [x] Web 单屏能显示通用目标 Agent、Handoff 状态、当前 Owner 和下一 Route，不把所有交接都写成 Reviewer。
 
 ### 越权与异常路径
 
-- [ ] 未知、禁用、跨 Workspace、自身目标、目标不一致和历史/非当前 Run 的 Handoff 均被确定性拒绝，且不创建目标 Run 或 Outbox。
-- [ ] CLI 内部子 Agent 无法伪造平台 AgentProfile；任意字符串名称或内部 session id 不能成为合法 `targetAgentId`。
-- [ ] 目标在 pending 与来源完成之间被禁用时，不派发目标 Run，Task 不悬空并转交用户处理。
-- [ ] 重复 `handoff.requested`、重复 `run.completed`、重复 Outbox publish 不产生第二个目标 Run。
-- [ ] 第 7 次通用 handoff 不创建 Run，Handoff 为 `rejected`，Task 为 `waiting_for_user`，原因可查询。
-- [ ] Handoff digest 被篡改、目标 Run 不匹配或消费元数据不匹配时继续拒绝。
-- [ ] 候选目录和所有公共输出中不存在 credential env value、Provider secret、其他 Agent instructions、SessionRef、Run Token 或隐藏 reasoning。
+- [x] 未知、禁用、跨 Workspace、自身目标、目标不一致和历史/非当前 Run 的 Handoff 均被确定性拒绝，且不创建目标 Run 或 Outbox。
+- [x] CLI 内部子 Agent 无法伪造平台 AgentProfile；任意字符串名称或内部 session id 不能成为合法 `targetAgentId`。
+- [x] 目标在 pending 与来源完成之间被禁用时，不派发目标 Run，Task 不悬空并转交用户处理。
+- [x] 重复 `handoff.requested`、重复 `run.completed`、重复 Outbox publish 不产生第二个目标 Run。
+- [x] 第 7 次通用 handoff 不创建 Run，Handoff 为 `rejected`，Task 为 `waiting_for_user`，原因可查询。
+- [x] Handoff digest 被篡改、目标 Run 不匹配或消费元数据不匹配时继续拒绝。
+- [x] 候选目录和所有公共输出中不存在 credential env value、Provider secret、其他 Agent instructions、SessionRef、Run Token 或隐藏 reasoning。
 
 ### 自动化与集成
 
-- [ ] Contracts 覆盖合法/非法结构化结果、目标一致性和兼容回退。
-- [ ] Worker 覆盖 Codex、OpenCode、Mock 的通用 Handoff、固定 Review 回退、Malformed envelope 和权限边界。
-- [ ] API 使用全新隔离 PostgreSQL 覆盖 A → B → C、A → Reviewer、预算耗尽、目标失效、重复事件和摘要校验。
-- [ ] `TaskCoordinationView` 覆盖 generic handoff pending/dispatched/accepted、目标 Agent owner 和 review route。
-- [ ] `pnpm check` 全部通过。
+- [x] Contracts 覆盖合法/非法结构化结果、目标一致性和兼容回退。
+- [x] Worker 覆盖 Codex、OpenCode、Mock 的通用 Handoff、固定 Review 回退、Malformed envelope 和权限边界。
+- [x] API 使用全新隔离 PostgreSQL 覆盖 A → B → C、A → Reviewer、预算耗尽、目标失效、重复事件和摘要校验。
+- [x] `TaskCoordinationView` 覆盖 generic handoff pending/dispatched/accepted、目标 Agent owner 和 review route。
+- [x] `pnpm check` 全部通过。
 
 ### 真实运行与 UX
 
-- [ ] 从 Web 创建或配置两个名称不同的平台 AgentProfile，能够在 Timeline 区分来源与目标身份。
-- [ ] 浏览器验证 loading、运行中、handoff pending、目标执行、waiting_for_user/Review 和错误状态；窄视口无页面级溢出，控制台无新增错误。
-- [ ] 如果本机已有有效 CLI/Provider 凭证，完成一次真实 Agent A → Agent B 顺序交接，并保留 Task/Run/Handoff/Event ID、命令证据和只读数据库核对。
-- [ ] 如果真实凭证或 CLI 缺失，Work Item 标记 `BLOCKED` 并写明探测证据；不能仅凭 Mock 将真实 CLI 验收写成通过。
+- [x] 从 Web 创建或配置两个名称不同的平台 AgentProfile，能够在 Timeline 区分来源与目标身份。
+- [x] 浏览器验证 loading、运行中、handoff pending、目标执行、waiting_for_user/Review 和错误状态；窄视口无页面级溢出，控制台无新增错误。
+- [x] 本机已有有效 OpenCode CLI/Provider 凭证，已完成真实 Agent A → Agent B 顺序交接，并保留 Task/Run/Handoff ID、命令证据和只读数据库核对。
+- [x] 凭证缺失时必须保持 `BLOCKED` 的条件未触发；本次真实 OpenCode 验收已通过。
 
 ## 11. 必须执行的验证
 
@@ -288,7 +288,7 @@ TEST_DATABASE_URL="$RELAY_HUB_WORK_ITEM_DATABASE_URL" pnpm --filter @relay-hub/a
 
 由 Developer 在标记 `SUBMITTED` 前填写。
 
-> 状态说明（2026-08-12）：本 Work Item 被标记为 `BLOCKED`，**不是架构边界阻塞**。核心实现已完成且全部自动化验证通过；用户指示 Implementer 提前收尾，浏览器验收与真实 CLI 冒烟未执行，因此不能诚实地标记 `SUBMITTED`。剩余待办见文末「剩余待办」。
+> 历史状态说明（2026-08-12）：Implementer 当时因浏览器与真实 CLI 验收尚未执行而诚实地标记为 `BLOCKED`。该状态已由后续 Architect 独立验收、修复和真实运行证据解除；最终结论见第 14、15 节。
 
 ### 实现摘要
 
@@ -349,44 +349,53 @@ TEST_DATABASE_URL="$RELAY_HUB_WORK_ITEM_DATABASE_URL" pnpm --filter @relay-hub/a
 - Push: 每个提交均已推送 `origin/main`
 - Worktree status: clean（最终提交后再次确认）
 
-### 剩余待办（供 Architect 决定归属与排期）
+### Implementer 提交时的剩余事项（现已关闭）
 
-1. 浏览器验收：启动完整栈（`pnpm infra:up` + `pnpm dev`），创建两个名称不同的 Mock Agent 与含 `relayhub:handoff-chain=` 指令的专用测试任务，验证 loading、running、handoff pending、目标执行、waiting/terminal、错误态；窄视口无页面级溢出；控制台无新增错误；保留任务 ID 作为审计记录。
-2. 真实 CLI 冒烟：创建两个 OpenCode Agent（不同名称/模型），完成一次真实 A → B 顺序交接，保留 Task/Run/Handoff/Event ID、命令证据与只读数据库核对；若凭证失效，按 WI 规则记录证据并保持 BLOCKED。
-3. Architect 验收后：翻转 `README.md` 与 `docs/05-roadmap.md` 中 P3.4 动态 Handoff 条目为已完成；决定 `relayhub_wi_p34_001` 测试库清理；按流程将本 Work Item 置为 `ACCEPTED`/`DONE`。
-
-### 需要 Architect 决定的问题
-
-- 是否接受「浏览器 + 真实 CLI 验收」由后续会话/下一 Implementer 继续，还是调整本 Work Item 的验收标准后再进入 `VERIFYING`。
+1. [x] 浏览器验收：专用 Mock A → B → Reviewer Task、窄视口、内部滚动和控制台均已验证。
+2. [x] 真实 CLI 冒烟：两个 OpenCode Luna Agent 已完成真实 A → B，Task/Run/Handoff 与数据库证据见 Acceptance Report。
+3. [x] Architect 验收：P1/P2 Findings 已修复，README、路线图、实现状态和本 Work Item 已同步为完成。
 
 ## 14. Acceptance Report
 
-由 Architect 在 `VERIFYING` 阶段填写。
-
 ### 验收基线
+
+- Implementer submission head: `16315df92`
+- Architect acceptance date: 2026-08-12
+- 验收使用独立数据库 `relayhub_arch_verify_20260812`、专用 Mock Agent/Task 和临时 Git fixture；均与正式数据隔离并保留审计证据。
 
 ### 自动化验证
 
+- `pnpm check` 通过，包含全仓 TypeScript、单元测试与 Next.js production build。
+- API 在 `relayhub_arch_verify_20260812` 上 43/43 通过；Worker 47/47 通过。
+- 新增回归覆盖：历史/非当前 Run 不能发起 `request_review`；模型请求 Review 时必须存在固定 Reviewer 且目标一致；真实 Handoff JSON Prompt 明确 sibling 字段、长度和引用对象约束。
+
 ### 集成 / 浏览器 / 真实运行验证
+
+- Mock Task `46885794-24f7-423a-a1ac-d7eb6ac8adcd` 完成 A → B → Mock Reviewer → `waiting_for_user`；Handoff accepted，完整 Timeline 36 条事件。
+- Web Timeline 现在显示 Agent 名称加短 ID，而不是只显示 UUID。614 × 772 视口无页面级溢出，长 Timeline 区域内滚动，浏览器控制台无 warning/error。
+- 真实 OpenCode Task `93a04c9f-f320-492f-889b-634975e1de6e` 使用两个独立 `opencode-go/gpt-5.6-luna` Agent 完成 A → B：来源 Run `a98df612-74dc-4f6f-a97e-09552eb29282`、目标 Run `6cb5b611-2ad8-46e8-bfa2-90771224ccc6` 均 succeeded；Handoff `034a2b40-c58e-4ee0-ada7-ce63ead19432` 为 accepted；Task 按完成策略进入 `waiting_for_user`。
+- 只读数据库核对确认目标 Run 为 `trigger=handoff`、parent 指向来源 Run、身份快照独立；临时 fixture 工作区干净。
+- DeepSeek Flash 的多次 malformed/越权信封被严格协议守卫拒绝并保留审计记录，证明失败路径没有静默降级或错误派发。
 
 ### Findings
 
 | Severity | Finding | Resolution |
 |---|---|---|
-| | | |
+| P1 | `request_review` 分支缺少 current Run 守卫，历史 Run 理论上可请求正式 Review | 守卫上移到两类 Handoff 的公共入口，并增加 API 集成回归测试 |
+| P1 | Worker 接受模型指定的任意 Review 目标，可能让 outcome 与平台固定 Reviewer 不一致 | Worker 在生成事件前强制存在固定 Reviewer 且 ID 完全匹配，并增加两项测试 |
+| P2 | Timeline 只显示目标 Agent UUID，用户难以理解责任流转 | 从 Run Profile snapshot 解析名称，统一显示“名称（短 ID）” |
+| P2 | 真实模型容易把 `handoff` 嵌套错位或把 refs 输出为字符串 | Prompt 增加完整紧凑示例、长度上限、sibling 规则和引用对象示例；真实 Luna 验收通过 |
 
 ### Verdict
 
-- Status: `CHANGES_REQUESTED` / `ACCEPTED`
-- Reason:
+- Status: `ACCEPTED`
+- Reason: 所有 P1/P2 已修复并复验；自动化、隔离数据库、浏览器、窄视口、控制台和真实双 Agent 顺序 Handoff 全部达到任务包标准。
 
 ## 15. Closure
 
-由 Architect 在集成后填写。
-
 - Final status: `DONE`
-- Main commit:
-- Push result:
-- Final verification:
-- Documentation updated:
-- Closed at:
+- Main commit: 见本次最终提交
+- Push result: 见本次最终推送记录
+- Final verification: `git diff --check`、`pnpm check`、隔离 API 43/43、Worker 47/47、Mock 浏览器链和真实 OpenCode A → B 均通过
+- Documentation updated: Work Item、登记表、实现状态、路线图、自主交付工作流和 README
+- Closed at: 2026-08-12

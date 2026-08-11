@@ -44,6 +44,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成结构化 Review/Finding、CompletionPolicy 与用户确认完成
 - [x] 完成 `changes_requested` 自动返工、Review 多轮复审与轮次预算
 - [x] 完成多 Agent 交接与 Review 主流程
+- [x] 完成任意已配置平台 Agent 之间的顺序型动态 Handoff，并通过真实 OpenCode A → B 验收
 - [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
 - [x] 完成通用 Agent 创建、CLI/模型/长期提示词/权限模板配置与不可变 Run AgentProfile 快照
 - [ ] 完成可观测性、测试和演示部署
@@ -84,7 +85,7 @@ relay-hub/
 8. [实现状态](docs/07-implementation-status.md)
 9. [讨论沉淀规则](docs/08-documentation-workflow.md)
 10. [整体设计基线草案](docs/09-overall-design-baseline.md)
-11. [委派开发与架构验收工作协议](docs/10-delegated-development-workflow.md)
+11. [自主设计与交付工作流](docs/10-autonomous-development-workflow.md)
 12. [Work Item 登记表](docs/work-items/README.md)
 
 ## 独立性原则
