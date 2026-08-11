@@ -2,11 +2,11 @@
 
 ## Metadata
 
-- Status: `READY`
+- Status: `IN_PROGRESS`
 - Architect: RelayHub Architect（唯一委派与验收责任人）
 - Implementer: Delegated Developer（唯一实现者）
 - Shared branch: `main`
-- Baseline commit: Developer 在进入 `IN_PROGRESS` 时记录接手前的 `HEAD`
+- Baseline commit: `3c5d7c0fc5873f0b40802d32756d585506f8df74`
 - Revision: 1
 - Created at: 2026-08-11
 - Updated at: 2026-08-11

@@ -6,7 +6,7 @@
 
 | ID | 标题 | 状态 | Work Item |
 |---|---|---|---|
-| `WI-P3.4-001` | 顺序型平台 Agent 动态 Handoff | `READY` | [`WI-P3.4-001-sequential-agent-handoff.md`](WI-P3.4-001-sequential-agent-handoff.md) |
+| `WI-P3.4-001` | 顺序型平台 Agent 动态 Handoff | `IN_PROGRESS` | [`WI-P3.4-001-sequential-agent-handoff.md`](WI-P3.4-001-sequential-agent-handoff.md) |
 
 ## Recently completed
 
