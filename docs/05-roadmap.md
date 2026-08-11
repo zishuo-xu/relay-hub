@@ -140,7 +140,7 @@
 
 Phase 3.3 自动返工主链、OpenCode 可配置 Adapter、Agent 长期提示词和统一执行权限已完成。`changes_requested` 会创建继承 Worktree 的 Builder repair Run，修复后再走 Handoff 并产生新的 Review round；真实 OpenCode Builder → Codex Reviewer 已通过配置快照与权限验收。
 
-Phase 3.4 的前两个切片已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验、`handoff.consumed` 和统一责任查询投影已接入现有 Builder → Reviewer 主链。下一步先用真实 OpenCode Builder → Codex Reviewer 验收 Handoff V2 与责任投影，再开放方案、UX、安全等专业 Agent 的顺序型动态 Handoff。暂不建设任意 Workflow DAG；Phase 4 的 lease/reconciliation 完成后，才评估并行 fan-out 和外部信号等待。
+Phase 3.4 的前两个切片已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验、`handoff.consumed` 和统一责任查询投影已接入现有 Builder → Reviewer 主链；真实 OpenCode Builder → Codex Reviewer 也已完成 Handoff V2 与责任投影验收。当前唯一活跃计划是 [`WI-P3.4-001`](work-items/WI-P3.4-001-sequential-agent-handoff.md)：开放方案、UX、安全等 AgentProfile 的顺序型平台 Handoff。暂不建设任意 Workflow DAG；Phase 4 的 lease/reconciliation 完成后，才评估并行 fan-out 和外部信号等待。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

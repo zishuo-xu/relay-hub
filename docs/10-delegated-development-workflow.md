@@ -242,4 +242,4 @@ Architect 接收 `SUBMITTED` 后先标记 `VERIFYING`，按以下顺序验收：
 
 ## 10. 第一个采用本协议的工作
 
-下一项 Work Item 应是：真实 OpenCode Builder → Handoff V2 → Codex Reviewer 双路径验收。Architect 为它制定唯一计划并标记为 `READY` 后，开发者才能开始；它关闭前不创建第二项活跃计划。
+首个正式计划是 [`WI-P3.4-001：顺序型平台 Agent 动态 Handoff`](work-items/WI-P3.4-001-sequential-agent-handoff.md)，状态为 `READY`。它关闭前不创建第二项活跃计划。
