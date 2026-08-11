@@ -5,8 +5,8 @@
 - Status: `DRAFT`
 - Architect:
 - Implementer:
-- Baseline commit:
-- Topic branch:
+- Shared branch: `main`
+- Baseline commit: Developer 在进入 `IN_PROGRESS` 时记录接手前的 `HEAD`
 - Revision: 1
 - Created at:
 - Updated at:
@@ -105,7 +105,9 @@ pnpm check
 
 ### Git evidence
 
-- Branch:
+- Branch: `main`
+- Baseline:
+- Commit range:
 - Commit:
 - Push:
 - Worktree status:

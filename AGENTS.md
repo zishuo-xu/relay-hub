@@ -30,7 +30,7 @@ After every RelayHub code or documentation change:
 
 1. Run verification proportional to the change and report the result.
 2. Commit the completed RelayHub change with a focused message.
-3. If acting as Architect/integrator, push the accepted change to `origin/main` in `zishuo-xu/relay-hub`. A delegated Implementer pushes only the assigned topic branch and records that branch in the Work Item.
+3. Architect and Implementer share the same directory and `main` branch. The active role commits focused changes and pushes `origin/main` before handing the workspace to the other role.
 4. Report both the commit SHA and push result to the user.
 
 Do not leave submitted or completed RelayHub changes only in the local repository.
@@ -39,11 +39,13 @@ Do not leave submitted or completed RelayHub changes only in the local repositor
 
 All work implemented by the sole delegated developer follows `docs/10-delegated-development-workflow.md` and must have a registered Work Item under `docs/work-items/`.
 
-- The Architect is the only delegator, acceptance authority, and main-branch integrator. The Architect owns major feature and architecture decisions, scope, invariants, acceptance criteria, `VERIFYING`, `ACCEPTED`, and `DONE`.
+- The Architect is the only delegator, acceptance authority, and task-closing authority. The Architect owns major feature and architecture decisions, scope, invariants, acceptance criteria, `VERIFYING`, `ACCEPTED`, and `DONE`.
 - There may be at most one Active Work Item. Do not start or register the next implementation plan until the current item is `DONE` or `CANCELLED`.
 - The Implementer may choose the internal design, decomposition, algorithms, tests, and in-scope refactors as long as the frozen goal, invariants, contracts, and acceptance criteria remain intact.
-- The Implementer owns the topic branch and may mark only `IN_PROGRESS`, `BLOCKED`, and `SUBMITTED` for implementation progress.
+- Architect and Implementer use the same workspace and `main` branch, strictly serially. Only the role responsible for the current Work Item state may modify files.
+- Every role handoff requires focused commits, a successful push to `origin/main`, `HEAD == origin/main`, and a clean worktree. Never hand off uncommitted files.
+- The Implementer records the starting HEAD as the Work Item baseline, owns `main` while implementing, and may mark only `IN_PROGRESS`, `BLOCKED`, and `SUBMITTED`.
 - `SUBMITTED` means ready for independent verification; it never means accepted or complete.
 - Any unresolved P1 or P2 finding requires `CHANGES_REQUESTED`.
 - Only an accepted change that is integrated into `main`, verified, documented, pushed to GitHub, and leaves a clean worktree can be marked `DONE`.
-- Delegated developers push topic branches. The Architect is the only role that integrates accepted delegated work into `origin/main`.
+- Implementer commits may already be present on `origin/main` when submitted. A push is transport and audit evidence, not acceptance; only the Architect can mark `ACCEPTED` or `DONE`.

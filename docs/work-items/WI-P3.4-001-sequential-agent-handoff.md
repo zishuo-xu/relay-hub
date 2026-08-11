@@ -5,8 +5,8 @@
 - Status: `READY`
 - Architect: RelayHub Architect（唯一委派与验收责任人）
 - Implementer: Delegated Developer（唯一实现者）
-- Baseline commit: `ba458137a79f637d5c931568e6aa06bc7d2dea73`
-- Topic branch: `work/wi-p3.4-001-sequential-agent-handoff`
+- Shared branch: `main`
+- Baseline commit: Developer 在进入 `IN_PROGRESS` 时记录接手前的 `HEAD`
 - Revision: 1
 - Created at: 2026-08-11
 - Updated at: 2026-08-11
@@ -279,7 +279,7 @@ TEST_DATABASE_URL="$RELAY_HUB_WORK_ITEM_DATABASE_URL" pnpm --filter @relay-hub/a
 
 ### Rollback
 
-- 实现应以兼容分支扩展现有 `request_review`，不改写历史数据。
+- 实现应以兼容路径扩展现有 `request_review`，不改写历史数据。
 - 出现问题时可停用通用 `handoff` 路由并保留固定 Builder → Reviewer 路径；已有 Handoff/Run/Event 不删除。
 - 不回滚或删除 migration，因为本 Work Item 不应创建 migration。
 - 回滚后 pending 通用 Handoff 必须可解释地转为 `rejected` 或 `waiting_for_user`，不能遗留无法领取的 queued Run。
@@ -302,7 +302,9 @@ TEST_DATABASE_URL="$RELAY_HUB_WORK_ITEM_DATABASE_URL" pnpm --filter @relay-hub/a
 
 ### Git evidence
 
-- Branch:
+- Branch: `main`
+- Baseline:
+- Commit range:
 - Commit:
 - Push:
 - Worktree status:
