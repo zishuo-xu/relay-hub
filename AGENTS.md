@@ -49,3 +49,4 @@ All work implemented by the sole delegated developer follows `docs/10-delegated-
 - Any unresolved P1 or P2 finding requires `CHANGES_REQUESTED`.
 - Only an accepted change that is integrated into `main`, verified, documented, pushed to GitHub, and leaves a clean worktree can be marked `DONE`.
 - Implementer commits may already be present on `origin/main` when submitted. A push is transport and audit evidence, not acceptance; only the Architect can mark `ACCEPTED` or `DONE`.
+- After publishing a READY Work Item, the Architect gives the user a copyable one-time Implementer prompt in chat. Do not create a prompt file for this handoff. The prompt references the Work Item and cannot override its scope, contracts, invariants, or acceptance criteria.

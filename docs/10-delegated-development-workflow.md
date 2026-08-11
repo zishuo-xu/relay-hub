@@ -148,6 +148,18 @@ Architect 在登记表中登记 Work Item，将共享分支写为 `main`，并�
 
 唯一开发者阅读任务包并确认后，先记录接手时的 `HEAD` 为 Baseline commit，再把状态改为 `IN_PROGRESS`。从此直到 `SUBMITTED` 或 `BLOCKED`，共享目录由 Developer 独占，Architect 不进行文件修改。在目标、边界、接口和验收标准不变的前提下，开发者不需要为每个内部实现选择再次申请批准；如果必须越过边界，则提交现有安全进度、推送并标记 `BLOCKED`，等待 Architect 接管和修订计划。
 
+### 第四步：向用户交付一次性开发提示词
+
+Architect 完成设计并推送后，直接在对话中向用户提供一段可转交给 Developer 的启动提示词，不为该提示词新建文件。提示词必须：
+
+- 指向唯一 Active Work Item、共享目录和 `main` 分支。
+- 要求 Developer 先记录 Baseline、标记 `IN_PROGRESS`，再开始实现。
+- 重申 Architect 冻结的目标、边界和禁止事项，但不复制完整任务包。
+- 明确 Developer 的自主实现空间、必须执行的验证和 `SUBMITTED` 交付格式。
+- 要求 Developer 在 `BLOCKED` 或 `SUBMITTED` 前提交、推送并清理共享工作区。
+
+一次性提示词不是新的真相源，不能修改 Work Item 的范围、合约或验收标准；两者冲突时以已提交的 Work Item 为准。需要改变设计时，Architect 先修订 Work Item revision 并推送，再生成新的提示词。提示词不得包含密钥、Token 或未持久化的隐藏上下文。
+
 ## 5. 开发者如何执行和提交
 
 开发过程遵循以下顺序：
@@ -234,6 +246,7 @@ Architect 接收 `SUBMITTED` 后先标记 `VERIFYING`，按以下顺序验收：
 - 每次角色交接都必须先提交、推送并留下干净工作区，禁止通过未提交文件隐式交接。
 - Developer 可以把 `SUBMITTED` 提交推送到 `origin/main`；推送是传输和审计事实，不等于验收。只有 Architect 可以标记 `ACCEPTED` 和 `DONE`。
 - `VERIFYING` 期间 Developer 不修改工作区；`CHANGES_REQUESTED` 后 Architect 先提交并推送 Findings，再把工作区交还 Developer。
+- Developer 启动提示词只在对话中交付，不保存为项目文件；所有持久设计和验收事实必须回到 Work Item 或正式架构文档。
 
 ## 9. 适用于 RelayHub 的固定质量门槛
 
