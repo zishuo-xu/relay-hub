@@ -5,7 +5,7 @@
 - Status: `READY`
 - Architect: RelayHub Architect（唯一委派与验收责任人）
 - Implementer: Delegated Developer（唯一实现者）
-- Baseline commit: `2f382968cc5eb8592767494254e91c6ca9a45ad6`
+- Baseline commit: `ba458137a79f637d5c931568e6aa06bc7d2dea73`
 - Topic branch: `work/wi-p3.4-001-sequential-agent-handoff`
 - Revision: 1
 - Created at: 2026-08-11
