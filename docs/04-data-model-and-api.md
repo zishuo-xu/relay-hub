@@ -187,6 +187,19 @@ Workspace API 提供连接的列表、创建、完整更新和无计费健康检
 
 用户向 Agent 发送消息时，API 在同一事务写入 User Message、Task、首个 Run、Task Event 与 Outbox；重复 `Idempotency-Key` 不产生第二条消息或第二个 Run。Agent `run.completed` 时把结构化 Outcome 摘要作为 Agent Message 写回同一 Thread。RunEvent 继续只承担技术审计，不作为消息正文或当前状态真相。
 
+#### Proposed：版本化公开 ConversationContext
+
+下一切片按 [ADR-020](decisions/ADR-020-versioned-conversation-context.md) 增加稳定的线程内消息顺序和 Task 上下文边界：
+
+- `threads.message_sequence_high_water`：同一 Thread 已分配的最大消息 sequence；通过事务行锁递增。
+- `thread_messages.sequence`：Thread 内严格递增顺序，并由 `(thread_id, sequence)` 唯一约束。
+- `tasks.conversation_context_before_sequence`：创建该 Task 的 User Message sequence；历史上下文只能选择更早的公开消息。
+- `tasks.conversation_context_policy_version`：固定选择、截断和预算算法的版本。
+
+ConversationContext 不单独建可编辑表，也不复制到每个 Run。API 从不可变 Message、Task 边界和版本化纯选择器推导相同结果；同一 Task 的 Builder、Handoff、Reviewer 和 repair Run 使用同一 digest。当前 User Message 仍由 `Task.description` 表达，避免在历史区重复。
+
+计划增加按需只读接口 `GET /api/runs/:runId/conversation-context`，用于审计“本次 Run 实际注入了哪些公开消息、哪些被截断或省略”。客户端不能提交 context cursor，也不能通过该接口读取其他 Thread 或 Workspace。
+
 ### `runs`
 
 关键字段：

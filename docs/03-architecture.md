@@ -91,6 +91,7 @@ flowchart LR
 
 - 命令校验、身份与 Workspace 边界。
 - Task / Run / Handoff / Review 的事务写入。
+- 从 Task 固定的消息边界推导版本化公开 ConversationContext；不在 Worker 领取时读取无边界的“最新历史”。
 - 状态机守卫和幂等处理。
 - 查询快照、历史事件和健康状态。
 
@@ -120,6 +121,14 @@ flowchart LR
 | Handoff API | 表达 Agent A 要把什么工作、证据和验收要求交给 Agent B | 不直接共享 A 的隐藏推理或 B 的 Session |
 
 因此 PostgreSQL 会是最终存储架构的一部分，但它本身不是 Agent 的聊天协议。它更像持久邮箱和档案库；Queue 是邮递员；Handoff 是信件内容。
+
+### 公开对话上下文与 Agent 隔离
+
+状态：**Proposed，详见 ADR-020。**
+
+Thread Message 是 Agent 之间唯一自动共享的对话信息。用户消息创建 Task 时，Task 固定该消息之前的线程 sequence 和上下文策略版本；所有后续 Run 只能从这个边界推导同一份公开 ConversationContext。AgentProfile、CLI Session、隐藏 reasoning、Token、工具日志和凭证不进入共享上下文。
+
+ConversationContext 只让 Agent 理解此前公开讨论，不迁移 Task 责任，也不共享 Worktree。正式责任和代码产物转交继续使用结构化 Handoff；Reviewer authority 继续由 `triggerType=review` 和 Task Reviewer 身份守卫。
 
 PostgreSQL 和 Redis/BullMQ 都是正式运行架构的基础设施，不是二选一，也不是后期可有可无的优化。Phase 1A 的 HTTP 轮询只用于验证纵向链路；进入真实 Agent 前必须同时完成 PostgreSQL 事实层和 BullMQ 执行层。
 
