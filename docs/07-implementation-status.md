@@ -1,5 +1,23 @@
 # 07. 实现状态
 
+## 2026-08-13：对话优先的多 Agent 协作空间第一切片
+
+### 已实现
+
+- 新增独立 `threads` 与 `thread_messages`，Task 通过可空 `thread_id` 归属持续上下文；历史 Task 无需回填或改写。
+- 用户在线程中选择 Agent 并发送消息时，Message、Task、首个 Run、Task Event 和 Outbox 在同一事务创建；`Idempotency-Key` 防止重试产生重复消息或执行。
+- Agent 完成 Run 后，平台把结构化 `RunOutcome.summary` 以创建时 Agent 名称和身份写回原线程；隐藏推理、Token、Session 和私有配置不进入 Message。
+- API 新增线程列表、创建、详情与消息派发接口。Thread 是对话容器，Task 是一次有状态的正式工作，Run 是一次 Agent 执行，RunEvent 只承担技术审计。
+- Web 主入口改为线程列表、消息流、Agent 选择器和底部输入区；现有 Agent/模型配置继续作为 Hub，Task/Run/Handoff/Review/技术 Timeline 进入右侧按需审计抽屉。
+- 保留现有模块化单体、PostgreSQL canonical truth、BullMQ、Worker、Adapter、Run Token、Lease 和动态 Handoff，不增加工作流 DSL 或新部署单元。
+
+### 验证证据
+
+- Contracts 36/36、全仓非数据库测试通过；全仓 TypeScript typecheck 与 Next.js production build 通过。
+- 专用隔离数据库 `relayhub_thread_test_20260813_0040` 应用全部 migration 后，Thread 集成测试通过：重复请求仅产生一个 User Message/Task，Mock Run 完成后生成一个带 Run/Agent 身份的回复 Message。
+- 正式 PostgreSQL 已无损应用 additive migration `0012_serious_gargoyle.sql`；只新增两张表、一个可空 Task 外键和索引，没有删除或清空 Task、Run、Handoff、Review、Event、Redis 或其他持久数据。
+- 浏览器专用线程完成“新建线程 → 选择 Mock Builder → 发送消息 → Run 执行 → Agent 回复回流 → 打开审计”的闭环。1280 × 720 与 614 × 772 视口均无页面级溢出，消息区与审计区独立滚动。
+
 ## 2026-08-12：Worker Lease、Heartbeat 与失联收敛
 
 ### 已实现

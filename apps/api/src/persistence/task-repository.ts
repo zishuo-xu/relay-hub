@@ -17,6 +17,8 @@ import {
   runEvents,
   runs,
   tasks,
+  threadMessages,
+  threads,
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
@@ -88,6 +90,7 @@ export async function createTask(
   db: RelayDatabase,
   input: CreateTaskInput,
   idempotencyKey?: string,
+  threadContext?: { threadId: string; messageId: string; content: string },
 ): Promise<MutationResult<{ detail: TaskDetail; created: boolean }>> {
   const taskId = randomUUID();
   const runId = randomUUID();
@@ -139,11 +142,20 @@ export async function createTask(
       .where(eq(workspaces.id, DEFAULT_WORKSPACE_ID))
       .limit(1);
     if (!workspace?.rootPath) throw new Error('Default workspace root is not configured');
+    const [thread] = threadContext
+      ? await tx
+          .select()
+          .from(threads)
+          .where(and(eq(threads.id, threadContext.threadId), eq(threads.workspaceId, DEFAULT_WORKSPACE_ID)))
+          .limit(1)
+      : [];
+    if (threadContext && !thread) throw new Error(`Thread not found: ${threadContext.threadId}`);
 
     const now = new Date();
     await tx.insert(tasks).values({
       id: taskId,
       workspaceId: DEFAULT_WORKSPACE_ID,
+      threadId: threadContext?.threadId,
       title: input.title,
       description: input.description,
       acceptanceCriteria: input.acceptanceCriteria,
@@ -167,6 +179,25 @@ export async function createTask(
       createdAt: now,
     });
     await tx.update(tasks).set({ currentRunId: runId }).where(eq(tasks.id, taskId));
+    if (threadContext && thread) {
+      await tx.insert(threadMessages).values({
+        id: threadContext.messageId,
+        threadId: thread.id,
+        taskId,
+        senderType: 'user',
+        senderName: '你',
+        recipientAgentId: input.agentId,
+        content: threadContext.content,
+        createdAt: now,
+      });
+      await tx
+        .update(threads)
+        .set({
+          title: thread.title === '新协作线程' ? input.title : thread.title,
+          updatedAt: now,
+        })
+        .where(eq(threads.id, thread.id));
+    }
     const [eventRow] = await tx
       .insert(runEvents)
       .values({

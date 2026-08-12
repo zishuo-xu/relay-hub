@@ -16,6 +16,8 @@ import type {
   RunEvent,
   Task,
   TaskDetail,
+  ThreadDetail,
+  ThreadSummary,
 } from '@relay-hub/contracts';
 import { type FormEvent, useEffect, useState } from 'react';
 import {
@@ -319,6 +321,144 @@ export function TaskSidebar({ tasks, selectedTaskId, onSelectTask }: TaskSidebar
         <span>Phase 3</span>
       </footer>
     </aside>
+  );
+}
+
+interface ThreadSidebarProps {
+  threads: ThreadSummary[];
+  selectedThreadId: string | null;
+  onSelectThread: (threadId: string) => void;
+  onNewThread: () => void;
+}
+
+export function ThreadSidebar({ threads, selectedThreadId, onSelectThread, onNewThread }: ThreadSidebarProps) {
+  return (
+    <aside className="task-sidebar thread-sidebar">
+      <header className="product-header">
+        <strong>RelayHub</strong>
+        <span>Multi-Agent workspace</span>
+      </header>
+      <div className="sidebar-heading thread-heading">
+        <div><p>协作线程</p><span>{threads.length > 0 ? `${threads.length} 个持续上下文` : '从一次对话开始'}</span></div>
+        <button aria-label="新建线程" onClick={onNewThread} type="button">＋</button>
+      </div>
+      <div className="task-list thread-list">
+        {threads.length === 0 ? <p className="empty">新建一个线程，然后选择 Agent 开始协作。</p> : null}
+        {threads.map((thread) => (
+          <button
+            className={`thread-item ${thread.id === selectedThreadId ? 'selected' : ''}`}
+            key={thread.id}
+            onClick={() => onSelectThread(thread.id)}
+            type="button"
+          >
+            <span className="thread-avatar">#</span>
+            <span className="thread-copy">
+              <strong>{thread.title}</strong>
+              <small>{thread.lastMessage ?? '还没有消息'}</small>
+              <span>{thread.activeTaskCount > 0 ? `${thread.activeTaskCount} 个协作待处理` : `${thread.messageCount} 条消息`}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <footer className="sidebar-footer"><span className="footer-status"><i />Local runtime</span><span>Conversation first</span></footer>
+    </aside>
+  );
+}
+
+interface ConversationWorkspaceProps {
+  threadDetail: ThreadDetail | null;
+  agents: AgentProfile[];
+  selectedAgentId: string;
+  message: string;
+  sending: boolean;
+  error: string | null;
+  auditDetail: TaskDetail | null;
+  canCancel: boolean;
+  canConfirm: boolean;
+  confirming: boolean;
+  onAgentChange: (agentId: string) => void;
+  onMessageChange: (message: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onNewThread: () => void;
+  onConfigureAgents: () => void;
+  onOpenAudit: (taskId: string) => void;
+  onCloseAudit: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+export function ConversationWorkspace({
+  threadDetail,
+  agents,
+  selectedAgentId,
+  message,
+  sending,
+  error,
+  auditDetail,
+  canCancel,
+  canConfirm,
+  confirming,
+  onAgentChange,
+  onMessageChange,
+  onSubmit,
+  onNewThread,
+  onConfigureAgents,
+  onOpenAudit,
+  onCloseAudit,
+  onCancel,
+  onConfirm,
+}: ConversationWorkspaceProps) {
+  const taskForMessage = (taskId?: string) => threadDetail?.tasks.find((task) => task.id === taskId);
+  const agentName = (agentId?: string) => agents.find((agent) => agent.id === agentId)?.name ?? 'Agent';
+  const currentRun = auditDetail?.runs.find((run) => run.id === auditDetail.task.currentRunId);
+  return (
+    <section className="conversation-workspace">
+      <div className="conversation-main">
+        <header className="conversation-header">
+          <div><p>Conversation</p><h1>{threadDetail?.thread.title ?? '多 Agent 协作空间'}</h1><span>{threadDetail ? `${threadDetail.messages.length} 条消息 · ${threadDetail.tasks.length} 次执行` : '在一个上下文中调用不同 Agent'}</span></div>
+          <div><button className="secondary-button" onClick={onConfigureAgents} type="button">Agent 配置</button><button className="new-task-button" onClick={onNewThread} type="button">新建线程</button></div>
+        </header>
+        {error ? <div className="error-banner">{error}</div> : null}
+        {threadDetail ? (
+          <div className="message-stream">
+            {threadDetail.messages.length === 0 ? (
+              <div className="conversation-empty"><span>R</span><h2>开始一次团队对话</h2><p>在下方选择 Agent 并描述目标，RelayHub 会创建独立 Run，回复仍回到这里。</p></div>
+            ) : null}
+            {threadDetail.messages.map((entry) => {
+              const task = taskForMessage(entry.taskId);
+              return (
+                <article className={`message-row ${entry.senderType}`} key={entry.id}>
+                  <span className="message-avatar">{entry.senderType === 'user' ? '你' : entry.senderName.slice(0, 1).toUpperCase()}</span>
+                  <div className="message-content">
+                    <header><strong>{entry.senderName}</strong>{entry.senderType === 'user' && entry.recipientAgentId ? <span>发给 @{agentName(entry.recipientAgentId)}</span> : null}<time>{new Date(entry.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time></header>
+                    <p>{entry.content}</p>
+                    {task && entry.senderType === 'user' ? <button className={`message-task ${task.status}`} onClick={() => onOpenAudit(task.id)} type="button"><span>{statusLabels[task.status]}</span><strong>{agentName(task.agentId)}</strong><small>查看运行与审计 →</small></button> : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="conversation-empty standalone"><span>R</span><h2>还没有协作线程</h2><p>创建第一个线程，把多个 Agent 放进同一个持续上下文。</p><button className="new-task-button" onClick={onNewThread} type="button">新建线程</button></div>
+        )}
+        {threadDetail ? (
+          <form className="message-composer" onSubmit={onSubmit}>
+            <div className="composer-target"><span>@</span><select aria-label="选择 Agent" onChange={(event) => onAgentChange(event.target.value)} value={selectedAgentId}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.modelLabel ?? agent.adapterType}</option>)}</select></div>
+            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="描述目标、问题或需要这个 Agent 处理的工作…" rows={2} value={message} />
+            <button disabled={sending || !message.trim() || !selectedAgentId} type="submit">{sending ? '派发中…' : '发送'}</button>
+          </form>
+        ) : null}
+      </div>
+      {auditDetail ? (
+        <aside className="audit-panel">
+          <header><div><p>Execution audit</p><h2>运行详情</h2></div><button aria-label="关闭审计" onClick={onCloseAudit} type="button">×</button></header>
+          <section className="audit-summary"><span className={`status-pill ${auditDetail.task.status}`}>{statusLabels[auditDetail.task.status]}</span><h3>{auditDetail.task.title}</h3><p>{auditDetail.task.description}</p></section>
+          <dl className="audit-facts"><div><dt>Agent</dt><dd>{currentRun?.agentProfileSnapshot?.name ?? agentName(auditDetail.task.agentId)}</dd></div><div><dt>Run</dt><dd><code>{currentRun?.id.slice(0, 8) ?? '—'}</code></dd></div><div><dt>状态</dt><dd>{currentRun?.status ?? '等待中'}</dd></div><div><dt>Route</dt><dd>{routeActionLabels[auditDetail.coordination.route.action]}</dd></div></dl>
+          <div className="audit-actions">{canCancel ? <button className="cancel-button" onClick={onCancel} type="button">取消 Run</button> : null}{canConfirm ? <button className="confirm-button" disabled={confirming} onClick={onConfirm} type="button">{confirming ? '确认中…' : '确认完成'}</button> : null}</div>
+          <div className="audit-events"><header><strong>技术时间线</strong><span>{auditDetail.events.length} events</span></header><ol>{auditDetail.events.slice().reverse().map((event) => <li key={event.id}><i data-tone={eventTone(event)} /><div><strong>{eventLabels[event.type] ?? event.type}</strong><p>{eventText(event, auditDetail)}</p><time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time></div></li>)}</ol></div>
+        </aside>
+      ) : null}
+    </section>
   );
 }
 

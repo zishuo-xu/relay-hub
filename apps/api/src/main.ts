@@ -4,6 +4,8 @@ import {
   AgentProfileInputSchema,
   BootstrapPolicySchema,
   CreateTaskInputSchema,
+  CreateThreadInputSchema,
+  CreateThreadMessageInputSchema,
   ProviderConnectionHealthCheckInputSchema,
   ProviderConnectionInputSchema,
   type RunEvent,
@@ -98,6 +100,30 @@ app.get('/health', async () => {
 });
 
 app.get('/api/tasks', async () => ({ tasks: await store.listTasks() }));
+
+app.get('/api/threads', async () => ({ threads: await store.listThreads() }));
+
+app.post('/api/threads', async (request, reply) => {
+  const input = CreateThreadInputSchema.parse(request.body ?? {});
+  return reply.code(201).send(await store.createThread(input));
+});
+
+app.get('/api/threads/:threadId', async (request, reply) => {
+  const { threadId } = z.object({ threadId: z.string().uuid() }).parse(request.params);
+  const detail = await store.getThreadDetail(threadId);
+  if (!detail) return reply.code(404).send({ error: 'thread_not_found' });
+  return detail;
+});
+
+app.post('/api/threads/:threadId/messages', async (request, reply) => {
+  const { threadId } = z.object({ threadId: z.string().uuid() }).parse(request.params);
+  const input = CreateThreadMessageInputSchema.parse(request.body);
+  const idempotencyHeader = request.headers['idempotency-key'];
+  const idempotencyKey = Array.isArray(idempotencyHeader) ? idempotencyHeader[0] : idempotencyHeader;
+  const result = await store.createThreadMessage(threadId, input, idempotencyKey);
+  broadcast(result.emitted);
+  return reply.code(201).send(result.value);
+});
 
 app.get('/api/workspaces', async () => ({ workspaces: await store.listWorkspaces() }));
 

@@ -98,15 +98,16 @@
 
 目标：把已经可运行的多 Agent 底座变成与参考项目愿景一致的用户体验，让用户在一个线程中自然地与 Agent 团队协作，而不是把技术 Timeline 当成产品主体。
 
-当前状态：**Proposed（2026-08-13）。** 产品方向已确认；`Thread`、`Message` 与现有 `Task` 的数据关系必须先完成整体设计，再进入 migration 和 UI 实现。
+当前状态：**第一纵向切片已实现（2026-08-13）。** 独立 Thread 包含零到多个 Task；Message 保存公开对话，Task/Run 保存一次正式执行，RunEvent 保持技术审计。自然语言 mention 解析、Agent 主动 mention 和 multi-mention 尚未实现。
 
 建议纵向切片：
 
-1. 定义协作线程、用户/Agent/平台消息、`@mention` 和 Run 触发之间的唯一真相源与权限边界。
-2. 明确普通协调消息与正式 Handoff 的区别：讨论不改变责任；结构化 Handoff 才迁移当前责任并创建目标 Run。
-3. 将固定应用壳层的中心区域改为多 Agent 对话流，支持用户选择或 `@` 已配置 Agent；技术 Timeline、工具调用和平台事件降为按需审计抽屉。
-4. 先完成用户 `@Agent` → 独立 Run → Agent 消息回到同一线程的闭环，再扩展 Agent `@Agent`、multi-mention 和并行回流。
-5. 复用现有 AgentProfile snapshot、Run Token、Queue、Handoff、Review、Lease 和 Coordination projection，不新增通用 Workflow Engine。
+1. [x] 定义协作线程、用户/Agent/平台消息、目标 Agent 和 Run 触发之间的唯一真相源与权限边界。
+2. [x] 明确普通对话与正式 Handoff 的区别：Message 不迁移责任；结构化 Handoff 才改变 Task Route。
+3. [x] 将中心区域改为多 Agent 对话流；技术 Timeline、工具调用和平台事件进入按需审计抽屉。
+4. [x] 完成用户选择 `@Agent` → 独立 Task/Run → Agent 消息回到同一线程的闭环。
+5. [ ] 增加 Agent 主动 `@Agent`、multi-mention、并行回流与消息级失败提示。
+6. [x] 复用现有 AgentProfile snapshot、Run Token、Queue、Handoff、Review、Lease 和 Coordination projection，没有引入通用 Workflow Engine。
 
 退出条件：用户可以在一个线程里连续与至少两个独立 Agent 协作；消息、Run、结构化交接和审计事实边界清楚，刷新后完整恢复，用户不需要在多个 Agent 页面之间搬运上下文。
 

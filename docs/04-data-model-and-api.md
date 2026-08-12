@@ -157,6 +157,7 @@ Workspace API 提供连接的列表、创建、完整更新和无计费健康检
 
 除基本字段外保存：
 
+- `thread_id`: 可选所属协作线程；旧任务保持为空
 - `acceptance_criteria jsonb`
 - `requested_by`
 - `current_run_id`
@@ -167,6 +168,24 @@ Workspace API 提供连接的列表、创建、完整更新和无计费健康检
 - `completed_at`
 
 状态由数据库 check constraint 限制在枚举集合内。
+
+### `threads` 与 `thread_messages`
+
+`threads` 是持续协作上下文，不拥有 Task 状态机。一个 Thread 可以没有 Task，也可以包含多次独立 Task：
+
+- `workspace_id`：线程所属 Workspace。
+- `title`：首条消息可替换默认标题。
+- `created_at`, `updated_at`：用于线程列表排序。
+
+`thread_messages` 保存用户、Agent 或平台可见消息：
+
+- `thread_id`：消息所属上下文。
+- `task_id`, `run_id`：可选执行来源；普通消息不需要伪造 Run。
+- `sender_type`, `sender_name`, `sender_agent_id`：消息身份与创建时名称。
+- `recipient_agent_id`：用户消息的路由目标。
+- `content`：公开协作内容，不保存隐藏推理。
+
+用户向 Agent 发送消息时，API 在同一事务写入 User Message、Task、首个 Run、Task Event 与 Outbox；重复 `Idempotency-Key` 不产生第二条消息或第二个 Run。Agent `run.completed` 时把结构化 Outcome 摘要作为 Agent Message 写回同一 Thread。RunEvent 继续只承担技术审计，不作为消息正文或当前状态真相。
 
 ### `runs`
 
@@ -232,6 +251,17 @@ Review 保存总体结论和摘要；Finding 保存：
 - `title`, `detail`, `suggestion`
 
 ## HTTP API
+
+### 协作线程
+
+```http
+GET    /api/threads
+POST   /api/threads
+GET    /api/threads/:threadId
+POST   /api/threads/:threadId/messages
+```
+
+第一切片的 `POST /messages` 显式携带 `agentId`，等价于 UI 中选择 `@Agent`。自然语言 mention 解析、Agent 主动 mention 和 multi-mention 留给后续切片；平台不会直接用未经校验的文本修改 Task 状态。
 
 ### Workspace 与 Agent
 

@@ -7,6 +7,8 @@ import type {
   Run,
   RunEvent,
   Task,
+  ThreadMessage,
+  ThreadSummary,
   Workspace,
   ProviderConnection,
 } from '@relay-hub/contracts';
@@ -20,10 +22,14 @@ import {
   runEvents,
   runs,
   tasks,
+  threadMessages,
+  threads,
   workspaces,
 } from '@relay-hub/db';
 
 type TaskRow = typeof tasks.$inferSelect;
+type ThreadRow = typeof threads.$inferSelect;
+type ThreadMessageRow = typeof threadMessages.$inferSelect;
 type RunRow = typeof runs.$inferSelect;
 type RunEventRow = typeof runEvents.$inferSelect;
 type WorkspaceRow = typeof workspaces.$inferSelect;
@@ -41,6 +47,7 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
+    ...(row.threadId ? { threadId: row.threadId } : {}),
     title: row.title,
     description: row.description,
     agentId: row.builderAgentId ?? fallbackAgentId,
@@ -53,6 +60,37 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
     version: row.version,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
+  };
+}
+
+export function mapThreadSummary(
+  row: ThreadRow,
+  aggregate: { messageCount: number; activeTaskCount: number; lastMessage?: string },
+): ThreadSummary {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    title: row.title,
+    messageCount: aggregate.messageCount,
+    activeTaskCount: aggregate.activeTaskCount,
+    ...(aggregate.lastMessage ? { lastMessage: aggregate.lastMessage } : {}),
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+  };
+}
+
+export function mapThreadMessage(row: ThreadMessageRow): ThreadMessage {
+  return {
+    id: row.id,
+    threadId: row.threadId,
+    senderType: row.senderType,
+    senderName: row.senderName,
+    content: row.content,
+    createdAt: toIso(row.createdAt),
+    ...(row.taskId ? { taskId: row.taskId } : {}),
+    ...(row.runId ? { runId: row.runId } : {}),
+    ...(row.senderAgentId ? { senderAgentId: row.senderAgentId } : {}),
+    ...(row.recipientAgentId ? { recipientAgentId: row.recipientAgentId } : {}),
   };
 }
 

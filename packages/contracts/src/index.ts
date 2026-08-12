@@ -385,6 +385,22 @@ export const CreateTaskInputSchema = z.object({
 
 export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
 
+export const CreateThreadInputSchema = z.object({
+  title: z.string().trim().min(1).max(120).default('新协作线程'),
+});
+
+export type CreateThreadInput = z.infer<typeof CreateThreadInputSchema>;
+
+export const CreateThreadMessageInputSchema = z.object({
+  content: z.string().trim().min(1).max(10_000),
+  agentId: z.string().uuid(),
+  reviewerAgentId: z.string().uuid().optional(),
+  completionPolicy: z.enum(COMPLETION_POLICIES).default('require_user_confirmation'),
+  maxReviewRounds: z.number().int().min(1).max(10).default(3),
+});
+
+export type CreateThreadMessageInput = z.infer<typeof CreateThreadMessageInputSchema>;
+
 export const CommandEvidenceSchema = z.object({
   command: z.string().min(1).max(4_000),
   status: z.enum(['succeeded', 'failed', 'unknown']),
@@ -615,6 +631,7 @@ export type AgentEvent = z.infer<typeof AgentEventSchema>;
 export interface Task {
   id: string;
   workspaceId: string;
+  threadId?: string;
   title: string;
   description: string;
   agentId: string;
@@ -627,6 +644,36 @@ export interface Task {
   version: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ThreadSummary {
+  id: string;
+  workspaceId: string;
+  title: string;
+  messageCount: number;
+  activeTaskCount: number;
+  lastMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ThreadMessage {
+  id: string;
+  threadId: string;
+  taskId?: string;
+  runId?: string;
+  senderType: 'user' | 'agent' | 'system';
+  senderName: string;
+  senderAgentId?: string;
+  recipientAgentId?: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ThreadDetail {
+  thread: ThreadSummary;
+  messages: ThreadMessage[];
+  tasks: Task[];
 }
 
 export interface Handoff {

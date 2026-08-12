@@ -7,10 +7,14 @@ import type {
   ProviderConnectionInput,
   ClaimedExecution,
   CreateTaskInput,
+  CreateThreadInput,
+  CreateThreadMessageInput,
   RunEvent,
   RunStatus,
   Task,
   TaskDetail,
+  ThreadDetail,
+  ThreadSummary,
   Workspace,
 } from '@relay-hub/contracts';
 import type { RelayDatabase } from '@relay-hub/db';
@@ -30,6 +34,12 @@ import {
   listTasks as listTasksFromDb,
 } from './persistence/task-repository.js';
 import type { MutationResult } from './persistence/types.js';
+import {
+  createThread as createThreadInDb,
+  createThreadMessage as createThreadMessageInDb,
+  getThreadDetail as getThreadDetailFromDb,
+  listThreads as listThreadsFromDb,
+} from './persistence/thread-repository.js';
 import {
   createAgentProfile as createAgentProfileInDb,
   getAgentProfile as getAgentProfileFromDb,
@@ -55,6 +65,26 @@ export class PostgresStore {
 
   listTasks(): Promise<Task[]> {
     return listTasksFromDb(this.db);
+  }
+
+  listThreads(): Promise<ThreadSummary[]> {
+    return listThreadsFromDb(this.db);
+  }
+
+  getThreadDetail(threadId: string): Promise<ThreadDetail | null> {
+    return getThreadDetailFromDb(this.db, threadId);
+  }
+
+  createThread(input: CreateThreadInput): Promise<ThreadDetail> {
+    return createThreadInDb(this.db, input);
+  }
+
+  createThreadMessage(
+    threadId: string,
+    input: CreateThreadMessageInput,
+    idempotencyKey?: string,
+  ): Promise<MutationResult<ThreadDetail>> {
+    return createThreadMessageInDb(this.db, threadId, input, idempotencyKey);
   }
 
   listWorkspaces(): Promise<Workspace[]> {

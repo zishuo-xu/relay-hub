@@ -51,6 +51,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
 - [x] 完成通用 Agent 创建、CLI/模型/长期提示词/权限模板配置与不可变 Run AgentProfile 快照
 - [x] 完成 Worker Lease、Heartbeat、失联权限撤销和 `lost` 状态收敛
+- [x] 完成对话优先第一切片：持久 Thread/Message、线程内 Agent Run、Agent 回复回流与按需审计抽屉
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定

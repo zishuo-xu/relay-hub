@@ -128,6 +128,19 @@ export const agentProfiles = pgTable(
   (table) => [uniqueIndex('agent_profiles_workspace_name_uidx').on(table.workspaceId, table.name)],
 );
 
+export const threads = pgTable(
+  'threads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    title: text('title').notNull(),
+    ...timestamps,
+  },
+  (table) => [index('threads_workspace_updated_idx').on(table.workspaceId, table.updatedAt)],
+);
+
 export const tasks = pgTable(
   'tasks',
   {
@@ -135,6 +148,7 @@ export const tasks = pgTable(
     workspaceId: uuid('workspace_id')
       .notNull()
       .references(() => workspaces.id),
+    threadId: uuid('thread_id').references(() => threads.id),
     title: text('title').notNull(),
     description: text('description').notNull(),
     acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
@@ -152,7 +166,10 @@ export const tasks = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     ...timestamps,
   },
-  (table) => [index('tasks_workspace_created_idx').on(table.workspaceId, table.createdAt)],
+  (table) => [
+    index('tasks_workspace_created_idx').on(table.workspaceId, table.createdAt),
+    index('tasks_thread_created_idx').on(table.threadId, table.createdAt),
+  ],
 );
 
 export const runs = pgTable(
@@ -220,6 +237,28 @@ export const runEvents = pgTable(
   (table) => [
     uniqueIndex('run_events_run_dedupe_uidx').on(table.runId, table.dedupeKey),
     index('run_events_task_id_idx').on(table.taskId, table.id),
+  ],
+);
+
+export const threadMessages = pgTable(
+  'thread_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    threadId: uuid('thread_id')
+      .notNull()
+      .references(() => threads.id),
+    taskId: uuid('task_id').references(() => tasks.id),
+    runId: uuid('run_id').references(() => runs.id),
+    senderType: text('sender_type').$type<'user' | 'agent' | 'system'>().notNull(),
+    senderName: text('sender_name').notNull(),
+    senderAgentId: uuid('sender_agent_id').references(() => agentProfiles.id),
+    recipientAgentId: uuid('recipient_agent_id').references(() => agentProfiles.id),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('thread_messages_thread_created_idx').on(table.threadId, table.createdAt),
+    uniqueIndex('thread_messages_run_uidx').on(table.runId),
   ],
 );
 

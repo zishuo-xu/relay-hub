@@ -19,6 +19,8 @@ import {
   type ExecutionPolicy,
   type Task,
   type TaskDetail,
+  type ThreadDetail,
+  type ThreadSummary,
   type Workspace,
 } from '@relay-hub/contracts';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,12 +29,11 @@ import { createAgentEditorDraft, isLatestAgentEditorRequest } from './agent-edit
 import {
   AgentConfigDrawer,
   AppRail,
-  CreateTaskDrawer,
+  ConversationWorkspace,
   ProviderConnectionDrawer,
   SettingsSidebar,
   SettingsWorkspace,
-  TaskSidebar,
-  TimelineWorkspace,
+  ThreadSidebar,
 } from './dashboard';
 
 const apiUrl = process.env.NEXT_PUBLIC_RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
@@ -89,14 +90,32 @@ export default function HomePage() {
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
   const [connectionEnabled, setConnectionEnabled] = useState(true);
   const [connectionLiveConsent, setConnectionLiveConsent] = useState(false);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
+  const [messageContent, setMessageContent] = useState('');
+  const [messageSending, setMessageSending] = useState(false);
   const agentEditorRequestId = useRef(0);
+
+  const loadThreads = useCallback(async () => {
+    const response = await fetch(`${apiUrl}/api/threads`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('无法读取协作线程');
+    const payload = (await response.json()) as { threads: ThreadSummary[] };
+    setThreads(payload.threads);
+    setSelectedThreadId((current) => current ?? payload.threads[0]?.id ?? null);
+  }, []);
+
+  const loadThreadDetail = useCallback(async (threadId: string) => {
+    const response = await fetch(`${apiUrl}/api/threads/${threadId}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('无法读取线程消息');
+    setThreadDetail((await response.json()) as ThreadDetail);
+  }, []);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch(`${apiUrl}/api/tasks`, { cache: 'no-store' });
     if (!response.ok) throw new Error('无法读取任务列表');
     const payload = (await response.json()) as { tasks: Task[] };
     setTasks(payload.tasks);
-    setSelectedTaskId((current) => current ?? payload.tasks.find((task) => !['completed', 'cancelled'].includes(task.status))?.id ?? payload.tasks[0]?.id ?? null);
   }, []);
 
   const loadDetail = useCallback(async (taskId: string) => {
@@ -139,8 +158,17 @@ export default function HomePage() {
 
   useEffect(() => {
     loadTasks().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+    loadThreads().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
     loadRuntimeConfiguration().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
-  }, [loadRuntimeConfiguration, loadTasks]);
+  }, [loadRuntimeConfiguration, loadTasks, loadThreads]);
+
+  useEffect(() => {
+    if (!selectedThreadId) {
+      setThreadDetail(null);
+      return;
+    }
+    loadThreadDetail(selectedThreadId).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  }, [loadThreadDetail, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -176,6 +204,81 @@ export default function HomePage() {
       socket.disconnect();
     };
   }, [loadDetail, loadTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (!selectedThreadId || !threadDetail) return;
+    const taskIds = new Set(threadDetail.tasks.map((task) => task.id));
+    const socket = io(apiUrl, { transports: ['websocket', 'polling'] });
+    const subscribe = () => {
+      for (const taskId of taskIds) socket.emit('task.subscribe', taskId);
+    };
+    const onTaskEvent = (event: RealtimeEnvelope) => {
+      if (!taskIds.has(event.taskId)) return;
+      void Promise.all([
+        loadThreadDetail(selectedThreadId),
+        loadThreads(),
+        selectedTaskId === event.taskId ? loadDetail(event.taskId) : Promise.resolve(),
+      ]).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+    };
+    socket.on('connect', subscribe);
+    socket.on('task.event', onTaskEvent);
+    return () => {
+      for (const taskId of taskIds) socket.emit('task.unsubscribe', taskId);
+      socket.off('connect', subscribe);
+      socket.off('task.event', onTaskEvent);
+      socket.disconnect();
+    };
+  }, [loadDetail, loadThreadDetail, loadThreads, selectedTaskId, selectedThreadId, threadDetail]);
+
+  async function createConversationThread() {
+    setError(null);
+    const response = await fetch(`${apiUrl}/api/threads`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '新协作线程' }),
+    });
+    if (!response.ok) throw new Error(`创建线程失败：${response.status} ${await response.text()}`);
+    const created = (await response.json()) as ThreadDetail;
+    setSelectedThreadId(created.thread.id);
+    setThreadDetail(created);
+    setSelectedTaskId(null);
+    setDetail(null);
+    await loadThreads();
+  }
+
+  async function sendThreadMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedThreadId || !messageContent.trim() || !selectedAgentId) return;
+    setMessageSending(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiUrl}/api/threads/${selectedThreadId}/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          content: messageContent,
+          agentId: selectedAgentId,
+          completionPolicy: 'require_user_confirmation',
+          maxReviewRounds: 3,
+        }),
+      });
+      if (!response.ok) throw new Error(`发送消息失败：${response.status} ${await response.text()}`);
+      const updated = (await response.json()) as ThreadDetail;
+      const createdTask = updated.tasks.at(-1);
+      setThreadDetail(updated);
+      setMessageContent('');
+      if (createdTask) {
+        setSelectedTaskId(createdTask.id);
+        await loadDetail(createdTask.id);
+      }
+      await loadThreads();
+    } finally {
+      setMessageSending(false);
+    }
+  }
 
   async function createTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -492,50 +595,44 @@ export default function HomePage() {
           view={settingsView}
         />
       </> : <>
-        <TaskSidebar tasks={tasks} selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId} />
-        <TimelineWorkspace
-        key={selectedTaskId ?? 'empty'}
-        canCancel={canCancel}
-        canConfirm={canConfirm}
-        confirming={confirming}
-        currentRun={currentRun}
-        detail={detail}
-        error={error}
-        onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
-        onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
-        onConfigureAgents={() => openSettings('agents')}
-        onNewTask={() => {
-          closeAgentConfiguration();
-          setCreateOpen(true);
-        }}
+        <ThreadSidebar
+          onNewThread={() => void createConversationThread().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onSelectThread={(threadId) => {
+            setSelectedThreadId(threadId);
+            setSelectedTaskId(null);
+            setDetail(null);
+          }}
+          selectedThreadId={selectedThreadId}
+          threads={threads}
+        />
+        <ConversationWorkspace
+          agents={agents.filter((agent) => agent.enabled && agent.capabilities.includes('implement'))}
+          auditDetail={detail}
+          canCancel={canCancel}
+          canConfirm={canConfirm}
+          confirming={confirming}
+          error={error}
+          message={messageContent}
+          onAgentChange={setSelectedAgentId}
+          onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onCloseAudit={() => {
+            setSelectedTaskId(null);
+            setDetail(null);
+          }}
+          onConfigureAgents={() => openSettings('agents')}
+          onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onMessageChange={setMessageContent}
+          onNewThread={() => void createConversationThread().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onOpenAudit={(taskId) => {
+            setSelectedTaskId(taskId);
+            void loadDetail(taskId).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+          }}
+          onSubmit={sendThreadMessage}
+          selectedAgentId={selectedAgentId}
+          sending={messageSending}
+          threadDetail={threadDetail}
         />
       </>}
-      <CreateTaskDrawer
-        agents={agents.filter((agent) => agent.enabled && agent.capabilities.includes('implement'))}
-        criterion={criterion}
-        completionPolicy={completionPolicy}
-        maxReviewRounds={maxReviewRounds}
-        description={description}
-        onAgentChange={setSelectedAgentId}
-        onReviewerChange={setSelectedReviewerAgentId}
-        onClose={() => setCreateOpen(false)}
-        onCriterionChange={setCriterion}
-        onCompletionPolicyChange={setCompletionPolicy}
-        onMaxReviewRoundsChange={setMaxReviewRounds}
-        onDescriptionChange={setDescription}
-        onSubmit={createTask}
-        onTitleChange={setTitle}
-        onWorkspaceRootChange={setWorkspaceRoot}
-        open={createOpen}
-        selectedAgent={selectedAgent}
-        selectedAgentId={selectedAgentId}
-        reviewerAgents={agents.filter((agent) => agent.enabled && agent.capabilities.includes('review'))}
-        selectedReviewer={selectedReviewer}
-        selectedReviewerAgentId={selectedReviewerAgentId}
-        submitting={submitting}
-        title={title}
-        workspaceRoot={workspaceRoot}
-      />
       <AgentConfigDrawer
         adapterType={agentConfigAdapter}
         agentName={agentConfigAgentName}

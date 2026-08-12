@@ -18,6 +18,8 @@ import {
   runEvents,
   runs,
   tasks,
+  threadMessages,
+  threads,
 } from '@relay-hub/db';
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -515,6 +517,23 @@ export async function recordAgentEvent(
           updatedAt: now,
         })
         .where(and(eq(tasks.id, task.id), eq(tasks.version, task.version + 1), eq(tasks.status, 'changes_requested')));
+    }
+
+    if (agentEvent.type === 'run.completed' && task.threadId) {
+      await tx
+        .insert(threadMessages)
+        .values({
+          threadId: task.threadId,
+          taskId: task.id,
+          runId: run.id,
+          senderType: 'agent',
+          senderName: run.agentProfileSnapshot.name,
+          senderAgentId: run.agentId,
+          content: agentEvent.outcome.summary,
+          createdAt: now,
+        })
+        .onConflictDoNothing();
+      await tx.update(threads).set({ updatedAt: now }).where(eq(threads.id, task.threadId));
     }
 
     const { type: eventType, ...payload } = agentEvent;

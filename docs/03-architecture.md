@@ -81,8 +81,9 @@ flowchart LR
 
 ### Web Console
 
-- Workspace、Agent 和 Task 管理。
-- Task Timeline 与流式输出。
+- 线程列表、多 Agent 消息流和 `@Agent` 目标选择。
+- Workspace、Agent 和模型连接管理。
+- Task/Run 状态卡与按需展开的技术 Timeline。
 - 取消、重试、人工裁决。
 - 不自行推断最终状态；以服务端快照为准。
 
@@ -221,6 +222,8 @@ ReviewPolicy 可以配置：
 control-plane/
 ├── workspace
 ├── agents
+├── threads
+├── messages
 ├── tasks
 ├── runs
 ├── handoffs
