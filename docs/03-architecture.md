@@ -130,6 +130,12 @@ Thread Message 是 Agent 之间唯一自动共享的对话信息。用户消息�
 
 ConversationContext 只让 Agent 理解此前公开讨论，不迁移 Task 责任，也不共享 Worktree。正式责任和代码产物转交继续使用结构化 Handoff；Reviewer authority 继续由 `triggerType=review` 和 Task Reviewer 身份守卫。
 
+### 多 Agent 消息派发
+
+状态：**Accepted / Implemented，详见 ADR-021。**
+
+一条 User Message 可以通过不可变 `MessageDispatch` 原子映射到多个独立 Task。Message 是公开表达，Dispatch 是初始收件关系，Task 是单个 Agent 的责任，Run 是一次执行；四者不能合并。所有兄弟 Task 使用同一个 Message sequence 作为 ConversationContext 边界，但各自持有 AgentProfile snapshot、Token、Lease、Session、Worktree 和 Route。回复按完成顺序追加回 Thread，后续 Handoff/Review 只作用于自己的 Task。
+
 PostgreSQL 和 Redis/BullMQ 都是正式运行架构的基础设施，不是二选一，也不是后期可有可无的优化。Phase 1A 的 HTTP 轮询只用于验证纵向链路；进入真实 Agent 前必须同时完成 PostgreSQL 事实层和 BullMQ 执行层。
 
 Handoff 的目标写入顺序：

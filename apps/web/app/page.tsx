@@ -97,6 +97,7 @@ export default function HomePage() {
   const [auditContext, setAuditContext] = useState<ConversationContextView | null>(null);
   const [messageContent, setMessageContent] = useState('');
   const [messageSending, setMessageSending] = useState(false);
+  const [selectedConversationAgentIds, setSelectedConversationAgentIds] = useState<string[]>([DEFAULT_MOCK_AGENT_ID]);
   const agentEditorRequestId = useRef(0);
 
   const loadThreads = useCallback(async () => {
@@ -149,12 +150,19 @@ export default function HomePage() {
     if (!agentResponse.ok) throw new Error('无法读取 AgentProfile');
     const agentPayload = (await agentResponse.json()) as { agents: AgentProfile[] };
     const enabledAgents = agentPayload.agents.filter((agent) => agent.enabled);
+    const fallbackBuilderId = enabledAgents.find((agent) => agent.capabilities.includes('implement'))?.id ?? '';
     setAgents(agentPayload.agents);
     setSelectedAgentId((current) =>
       enabledAgents.some((agent) => agent.id === current && agent.capabilities.includes('implement'))
         ? current
-        : enabledAgents.find((agent) => agent.capabilities.includes('implement'))?.id ?? '',
+        : fallbackBuilderId,
     );
+    setSelectedConversationAgentIds((current) => {
+      const valid = current.filter((agentId) =>
+        enabledAgents.some((agent) => agent.id === agentId && agent.capabilities.includes('implement')),
+      );
+      return valid.length > 0 ? valid : fallbackBuilderId ? [fallbackBuilderId] : [];
+    });
     setSelectedReviewerAgentId((current) =>
       enabledAgents.some((agent) => agent.id === current && agent.capabilities.includes('review'))
         ? current
@@ -259,7 +267,7 @@ export default function HomePage() {
 
   async function sendThreadMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedThreadId || !messageContent.trim() || !selectedAgentId) return;
+    if (!selectedThreadId || !messageContent.trim() || selectedConversationAgentIds.length === 0) return;
     setMessageSending(true);
     setError(null);
     try {
@@ -271,7 +279,7 @@ export default function HomePage() {
         },
         body: JSON.stringify({
           content: messageContent,
-          agentId: selectedAgentId,
+          agentIds: selectedConversationAgentIds,
           completionPolicy: 'require_user_confirmation',
           maxReviewRounds: 3,
         }),
@@ -625,7 +633,11 @@ export default function HomePage() {
           confirming={confirming}
           error={error}
           message={messageContent}
-          onAgentChange={setSelectedAgentId}
+          onAgentToggle={(agentId) => setSelectedConversationAgentIds((current) =>
+            current.includes(agentId)
+              ? current.filter((candidate) => candidate !== agentId)
+              : current.length < 4 ? [...current, agentId] : current,
+          )}
           onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onCloseAudit={() => {
             setSelectedTaskId(null);
@@ -641,7 +653,7 @@ export default function HomePage() {
             void loadDetail(taskId).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
           }}
           onSubmit={sendThreadMessage}
-          selectedAgentId={selectedAgentId}
+          selectedAgentIds={selectedConversationAgentIds}
           sending={messageSending}
           threadDetail={threadDetail}
         />

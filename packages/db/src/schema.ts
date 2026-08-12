@@ -266,6 +266,28 @@ export const threadMessages = pgTable(
   ],
 );
 
+export const messageDispatches = pgTable(
+  'message_dispatches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => threadMessages.id),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agentProfiles.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('message_dispatches_message_agent_uidx').on(table.messageId, table.agentId),
+    uniqueIndex('message_dispatches_task_uidx').on(table.taskId),
+    index('message_dispatches_message_idx').on(table.messageId),
+  ],
+);
+
 export const idempotencyKeys = pgTable(
   'idempotency_keys',
   {

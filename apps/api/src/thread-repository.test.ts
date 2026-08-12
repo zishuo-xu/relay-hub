@@ -1,4 +1,4 @@
-import { DEFAULT_MOCK_AGENT_ID } from '@relay-hub/contracts';
+import { DEFAULT_CODEX_AGENT_ID, DEFAULT_MOCK_AGENT_ID } from '@relay-hub/contracts';
 import { createDatabase } from '@relay-hub/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresStore } from './store.js';
@@ -23,13 +23,13 @@ suite('conversation thread integration', () => {
     const idempotencyKey = crypto.randomUUID();
     const first = await store.createThreadMessage(thread.thread.id, {
       content: '请用一句话说明这个协作线程的价值。',
-      agentId: DEFAULT_MOCK_AGENT_ID,
+      agentIds: [DEFAULT_MOCK_AGENT_ID],
       completionPolicy: 'require_user_confirmation',
       maxReviewRounds: 3,
     }, idempotencyKey);
     const duplicate = await store.createThreadMessage(thread.thread.id, {
       content: '请用一句话说明这个协作线程的价值。',
-      agentId: DEFAULT_MOCK_AGENT_ID,
+      agentIds: [DEFAULT_MOCK_AGENT_ID],
       completionPolicy: 'require_user_confirmation',
       maxReviewRounds: 3,
     }, idempotencyKey);
@@ -37,8 +37,14 @@ suite('conversation thread integration', () => {
     expect(first.value.thread.title).toBe('请用一句话说明这个协作线程的价值。');
     expect(duplicate.value.messages).toHaveLength(1);
     expect(duplicate.value.tasks).toHaveLength(1);
+    expect(duplicate.value.dispatches).toHaveLength(1);
     const task = duplicate.value.tasks[0];
     expect(task).toMatchObject({ threadId: thread.thread.id, agentId: DEFAULT_MOCK_AGENT_ID, status: 'queued' });
+    expect(duplicate.value.dispatches[0]).toMatchObject({
+      messageId: duplicate.value.messages[0]?.id,
+      taskId: task?.id,
+      agentId: DEFAULT_MOCK_AGENT_ID,
+    });
     if (!task) throw new Error('Thread message did not create a Task');
 
     const claimed = await store.claimRun(task.currentRunId, 'thread-test-worker');
@@ -81,7 +87,7 @@ suite('conversation thread integration', () => {
     const thread = await store.createThread({ title: '上下文边界测试' });
     const first = await store.createThreadMessage(thread.thread.id, {
       content: '请先提出一个公开方案。',
-      agentId: DEFAULT_MOCK_AGENT_ID,
+      agentIds: [DEFAULT_MOCK_AGENT_ID],
       completionPolicy: 'require_user_confirmation',
       maxReviewRounds: 3,
     }, crypto.randomUUID());
@@ -100,7 +106,7 @@ suite('conversation thread integration', () => {
 
     const second = await store.createThreadMessage(thread.thread.id, {
       content: '请基于前面的公开结论继续分析。',
-      agentId: DEFAULT_MOCK_AGENT_ID,
+      agentIds: [DEFAULT_MOCK_AGENT_ID],
       completionPolicy: 'require_user_confirmation',
       maxReviewRounds: 3,
     }, crypto.randomUUID());
@@ -108,7 +114,7 @@ suite('conversation thread integration', () => {
     if (!secondTask) throw new Error('Second Thread Task was not created');
     await store.createThreadMessage(thread.thread.id, {
       content: '这是一条在第二个 Task 边界之后才到达的消息。',
-      agentId: DEFAULT_MOCK_AGENT_ID,
+      agentIds: [DEFAULT_MOCK_AGENT_ID],
       completionPolicy: 'require_user_confirmation',
       maxReviewRounds: 3,
     }, crypto.randomUUID());
@@ -129,5 +135,41 @@ suite('conversation thread integration', () => {
     expect(claimed.value?.claimed.conversationContext?.digest).toMatch(/^[0-9a-f]{64}$/);
     expect((await store.getRunConversationContext(secondTask.currentRunId)).context)
       .toEqual(claimed.value?.claimed.conversationContext);
+  });
+
+  it('fans one public message out to independent Tasks with one shared context boundary', async () => {
+    const thread = await store.createThread({ title: '并行派发测试' });
+    const result = await store.createThreadMessage(thread.thread.id, {
+      content: '请分别给出架构与实现建议。',
+      agentIds: [DEFAULT_MOCK_AGENT_ID, DEFAULT_CODEX_AGENT_ID],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    }, crypto.randomUUID());
+
+    expect(result.value.messages).toHaveLength(1);
+    expect(result.value.tasks).toHaveLength(2);
+    expect(result.value.dispatches).toHaveLength(2);
+    const boundaries = new Set(result.value.tasks.map((task) => task.conversationContextBeforeSequence));
+    expect([...boundaries]).toEqual([1]);
+    expect(new Set(result.value.dispatches.map((dispatch) => dispatch.messageId))).toEqual(
+      new Set([result.value.messages[0]?.id]),
+    );
+    expect(new Set(result.value.dispatches.map((dispatch) => dispatch.agentId))).toEqual(
+      new Set([DEFAULT_MOCK_AGENT_ID, DEFAULT_CODEX_AGENT_ID]),
+    );
+    expect(result.emitted).toHaveLength(2);
+  });
+
+  it('rejects the whole fan-out before writing when any target is unavailable', async () => {
+    const thread = await store.createThread({ title: '原子派发测试' });
+    await expect(store.createThreadMessage(thread.thread.id, {
+      content: '这条消息不能被部分派发。',
+      agentIds: [DEFAULT_MOCK_AGENT_ID, crypto.randomUUID()],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    }, crypto.randomUUID())).rejects.toThrow('Builder is missing');
+
+    const unchanged = await store.getThreadDetail(thread.thread.id);
+    expect(unchanged).toMatchObject({ messages: [], dispatches: [], tasks: [] });
   });
 });

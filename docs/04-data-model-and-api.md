@@ -200,6 +200,19 @@ ConversationContext 不单独建可编辑表，也不复制到每个 Run。API �
 
 按需只读接口 `GET /api/runs/:runId/conversation-context` 用于审计“本次 Run 实际注入了哪些公开消息、哪些被截断或省略”。客户端不能提交 context cursor，也不能通过该接口读取其他 Thread 或 Workspace。
 
+### `message_dispatches`
+
+`message_dispatches` 是 User Message 到初始 Agent Task 的不可变关系：
+
+- `message_id`：同一公开用户消息只保存一次。
+- `task_id`：每个 Dispatch 对应一个独立 Task，并有唯一约束。
+- `agent_id`：创建 Task 时已通过 Workspace、启用状态与 Builder capability admission。
+- `created_at`：用于稳定展示派发卡片；运行状态不复制到本表。
+
+唯一约束 `(message_id, agent_id)` 防止同一消息重复派给同一 Agent。API 输入使用 `agentIds`（1–4 个、不重复）；服务端原子写 Message、多个 Task/Run/Event/Outbox 与 Dispatch。任一目标无效则整体回滚。所有兄弟 Task 的 `conversation_context_before_sequence` 都等于该 User Message 的 sequence，当前请求各自由 `Task.description` 提供。
+
+Thread detail 返回 `dispatches[]`，前端据此把一条 User Message 与多个 Task 状态卡关联。旧单 Agent Message 的 `task_id/recipient_agent_id` 仍可读取，并由 migration 回填一条 Dispatch；新消息不再把单一目标写进 Message。
+
 ### `runs`
 
 关键字段：

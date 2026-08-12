@@ -99,6 +99,13 @@
       "when": 1786554555549,
       "tag": "0013_giant_the_fallen",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786556151111,
+      "tag": "0014_fair_ultimo",
+      "breakpoints": true
     }
   ]
 }

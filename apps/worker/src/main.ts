@@ -14,6 +14,7 @@ import { runOpenCodeAgent } from './opencode-adapter.js';
 import { startRunHeartbeat } from './run-heartbeat.js';
 import { handoffConsumedEvent } from './handoff.js';
 import { WorktreeManager } from './worktree-manager.js';
+import { workerConcurrency } from './worker-config.js';
 
 const apiUrl = process.env.RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
 const workerId = process.env.RELAY_HUB_WORKER_ID ?? `${hostname()}-${process.pid}`;
@@ -145,6 +146,7 @@ async function execute(
   }
 }
 
+const concurrency = workerConcurrency();
 const worker = createRunWorker(async (job) => {
   const { runId } = RunQueueJobSchema.parse(job.data);
   const claimed = await claimRun(runId);
@@ -169,13 +171,13 @@ const worker = createRunWorker(async (job) => {
   } finally {
     stopHeartbeat();
   }
-});
+}, { concurrency });
 
 worker.on('completed', (job) => console.log(`Run job ${job.id ?? job.data.runId} completed`));
 worker.on('failed', (job, error) => console.error(`Run job ${job?.id ?? 'unknown'} failed`, error));
 worker.on('error', (error) => console.error('BullMQ worker error', error));
 
-console.log(`RelayHub worker ${workerId} consuming BullMQ and reporting to ${apiUrl}`);
+console.log(`RelayHub worker ${workerId} consuming BullMQ with concurrency ${concurrency} and reporting to ${apiUrl}`);
 
 let shuttingDown = false;
 async function shutdown(): Promise<void> {

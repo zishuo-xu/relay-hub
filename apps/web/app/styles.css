@@ -163,6 +163,8 @@ textarea:focus-visible {
 .message-task.failed > span, .message-task.cancelled > span { color: var(--danger); background: var(--danger-soft); }
 .message-task strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .message-task small { color: var(--muted); font-size: 8px; }
+.message-dispatches { display: grid; width: min(430px, 100%); margin-top: 10px; gap: 6px; }
+.message-dispatches .message-task { width: 100%; margin-top: 0; }
 .conversation-empty { display: flex; min-height: 280px; align-items: center; justify-content: center; flex-direction: column; color: var(--muted); text-align: center; }
 .conversation-empty.standalone { min-height: 0; flex: 1; }
 .conversation-empty > span { display: grid; width: 44px; height: 44px; place-items: center; color: var(--accent); border-radius: 12px; background: var(--accent-soft); font-weight: 900; }
@@ -172,7 +174,11 @@ textarea:focus-visible {
 .message-composer { display: grid; width: min(860px, calc(100% - 36px)); min-height: 92px; margin: 0 auto 18px; padding: 10px 10px 9px; flex: none; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface); box-shadow: 0 10px 30px rgba(24, 39, 32, 0.08); }
 .composer-target { display: flex; min-width: 0; grid-column: 1 / -1; align-items: center; gap: 5px; color: var(--accent); }
 .composer-target > span { font-size: 12px; font-weight: 850; }
-.composer-target select { max-width: 100%; padding: 2px 20px 2px 0; color: var(--text-secondary); border: 0; outline: 0; background: transparent; font-size: 9px; font-weight: 700; }
+.composer-target select { max-width: 150px; padding: 2px 18px 2px 4px; color: var(--muted); border: 0; outline: 0; background: transparent; font-size: 9px; font-weight: 700; }
+.target-chips { display: flex; min-width: 0; align-items: center; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+.target-chips::-webkit-scrollbar { display: none; }
+.target-chips button { display: inline-flex; min-width: 0; max-width: 190px; padding: 4px 7px; align-items: center; gap: 6px; color: var(--accent); border: 1px solid #cfe3d9; border-radius: 999px; background: var(--accent-soft); font-size: 8px; font-weight: 750; white-space: nowrap; cursor: pointer; }
+.target-chips button i { color: var(--muted); font-style: normal; }
 .message-composer textarea { min-width: 0; min-height: 44px; padding: 8px 6px 2px 0; color: var(--text); border: 0; outline: 0; resize: none; background: transparent; font-size: 12px; line-height: 1.5; }
 .message-composer > button { align-self: end; min-width: 58px; height: 32px; color: white; border: 0; border-radius: 8px; background: var(--accent); font-size: 10px; font-weight: 760; cursor: pointer; }
 .message-composer > button:disabled { opacity: 0.45; cursor: not-allowed; }

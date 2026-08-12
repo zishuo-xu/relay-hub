@@ -369,7 +369,7 @@ export function ThreadSidebar({ threads, selectedThreadId, onSelectThread, onNew
 interface ConversationWorkspaceProps {
   threadDetail: ThreadDetail | null;
   agents: AgentProfile[];
-  selectedAgentId: string;
+  selectedAgentIds: string[];
   message: string;
   sending: boolean;
   error: string | null;
@@ -378,7 +378,7 @@ interface ConversationWorkspaceProps {
   canCancel: boolean;
   canConfirm: boolean;
   confirming: boolean;
-  onAgentChange: (agentId: string) => void;
+  onAgentToggle: (agentId: string) => void;
   onMessageChange: (message: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onNewThread: () => void;
@@ -392,7 +392,7 @@ interface ConversationWorkspaceProps {
 export function ConversationWorkspace({
   threadDetail,
   agents,
-  selectedAgentId,
+  selectedAgentIds,
   message,
   sending,
   error,
@@ -401,7 +401,7 @@ export function ConversationWorkspace({
   canCancel,
   canConfirm,
   confirming,
-  onAgentChange,
+  onAgentToggle,
   onMessageChange,
   onSubmit,
   onNewThread,
@@ -412,6 +412,7 @@ export function ConversationWorkspace({
   onConfirm,
 }: ConversationWorkspaceProps) {
   const taskForMessage = (taskId?: string) => threadDetail?.tasks.find((task) => task.id === taskId);
+  const dispatchesForMessage = (messageId: string) => threadDetail?.dispatches.filter((dispatch) => dispatch.messageId === messageId) ?? [];
   const agentName = (agentId?: string) => agents.find((agent) => agent.id === agentId)?.name ?? 'Agent';
   const currentRun = auditDetail?.runs.find((run) => run.id === auditDetail.task.currentRunId);
   return (
@@ -429,13 +430,21 @@ export function ConversationWorkspace({
             ) : null}
             {threadDetail.messages.map((entry) => {
               const task = taskForMessage(entry.taskId);
+              const dispatches = entry.senderType === 'user' ? dispatchesForMessage(entry.id) : [];
+              const recipientIds = dispatches.length > 0
+                ? dispatches.map((dispatch) => dispatch.agentId)
+                : entry.recipientAgentId ? [entry.recipientAgentId] : [];
               return (
                 <article className={`message-row ${entry.senderType}`} key={entry.id}>
                   <span className="message-avatar">{entry.senderType === 'user' ? '你' : entry.senderName.slice(0, 1).toUpperCase()}</span>
                   <div className="message-content">
-                    <header><strong>{entry.senderName}</strong>{entry.senderType === 'user' && entry.recipientAgentId ? <span>发给 @{agentName(entry.recipientAgentId)}</span> : null}<time>{new Date(entry.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time></header>
+                    <header><strong>{entry.senderName}</strong>{entry.senderType === 'user' && recipientIds.length > 0 ? <span>发给 {recipientIds.map((agentId) => `@${agentName(agentId)}`).join('、')}</span> : null}<time>{new Date(entry.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time></header>
                     <p>{entry.content}</p>
-                    {task && entry.senderType === 'user' ? <button className={`message-task ${task.status}`} onClick={() => onOpenAudit(task.id)} type="button"><span>{statusLabels[task.status]}</span><strong>{agentName(task.agentId)}</strong><small>查看运行与审计 →</small></button> : null}
+                    {entry.senderType === 'user' && dispatches.length > 0 ? <div className="message-dispatches">{dispatches.map((dispatch) => {
+                      const dispatchTask = taskForMessage(dispatch.taskId);
+                      if (!dispatchTask) return null;
+                      return <button className={`message-task ${dispatchTask.status}`} key={dispatch.id} onClick={() => onOpenAudit(dispatchTask.id)} type="button"><span>{statusLabels[dispatchTask.status]}</span><strong>{agentName(dispatch.agentId)}</strong><small>{dispatchTask.status === 'failed' ? '查看失败原因 →' : '查看运行与审计 →'}</small></button>;
+                    })}</div> : task && entry.senderType === 'user' ? <button className={`message-task ${task.status}`} onClick={() => onOpenAudit(task.id)} type="button"><span>{statusLabels[task.status]}</span><strong>{agentName(task.agentId)}</strong><small>查看运行与审计 →</small></button> : null}
                   </div>
                 </article>
               );
@@ -446,9 +455,9 @@ export function ConversationWorkspace({
         )}
         {threadDetail ? (
           <form className="message-composer" onSubmit={onSubmit}>
-            <div className="composer-target"><span>@</span><select aria-label="选择 Agent" onChange={(event) => onAgentChange(event.target.value)} value={selectedAgentId}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.modelLabel ?? agent.adapterType}</option>)}</select></div>
-            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="描述目标、问题或需要这个 Agent 处理的工作…" rows={2} value={message} />
-            <button disabled={sending || !message.trim() || !selectedAgentId} type="submit">{sending ? '派发中…' : '发送'}</button>
+            <div className="composer-target"><span>@</span><div className="target-chips">{selectedAgentIds.map((agentId) => <button aria-label={`移除 ${agentName(agentId)}`} key={agentId} onClick={() => onAgentToggle(agentId)} type="button">{agentName(agentId)}<i>×</i></button>)}</div><select aria-label="添加 Agent" disabled={selectedAgentIds.length >= 4} onChange={(event) => { if (event.target.value) onAgentToggle(event.target.value); event.target.value = ''; }} value=""><option value="">＋ 添加 Agent</option>{agents.filter((agent) => !selectedAgentIds.includes(agent.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.modelLabel ?? agent.adapterType}</option>)}</select></div>
+            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="描述目标，让选中的 Agent 分别处理并回到同一线程…" rows={2} value={message} />
+            <button disabled={sending || !message.trim() || selectedAgentIds.length === 0} type="submit">{sending ? '派发中…' : selectedAgentIds.length > 1 ? `并行发送 ${selectedAgentIds.length}` : '发送'}</button>
           </form>
         ) : null}
       </div>

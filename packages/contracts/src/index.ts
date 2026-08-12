@@ -393,7 +393,10 @@ export type CreateThreadInput = z.infer<typeof CreateThreadInputSchema>;
 
 export const CreateThreadMessageInputSchema = z.object({
   content: z.string().trim().min(1).max(10_000),
-  agentId: z.string().uuid(),
+  agentIds: z.array(z.string().uuid()).min(1).max(4).refine(
+    (agentIds) => new Set(agentIds).size === agentIds.length,
+    'Agent targets must be unique',
+  ),
   reviewerAgentId: z.string().uuid().optional(),
   completionPolicy: z.enum(COMPLETION_POLICIES).default('require_user_confirmation'),
   maxReviewRounds: z.number().int().min(1).max(10).default(3),
@@ -707,9 +710,18 @@ export interface ThreadMessage {
   createdAt: string;
 }
 
+export interface MessageDispatch {
+  id: string;
+  messageId: string;
+  taskId: string;
+  agentId: string;
+  createdAt: string;
+}
+
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: ThreadMessage[];
+  dispatches: MessageDispatch[];
   tasks: Task[];
 }
 

@@ -1,5 +1,23 @@
 # 07. 实现状态
 
+## 2026-08-13：用户显式多 Agent 原子派发与并行回流
+
+### 已实现
+
+- 新增不可变 `message_dispatches`，把一条 User Message 映射到多个独立 Task/Run；Dispatch 不复制运行状态，UI 直接投影各 Task 当前事实。
+- Thread message API 接收 1–4 个不重复 `agentIds`，在一个事务中完成全部目标 admission、单 Message sequence、多个 Task/Run/Event/Outbox 与 Dispatch。任一目标无效整体回滚，Idempotency-Key 防止重复 fan-out。
+- 所有兄弟 Task 固定同一个 ConversationContext 边界，当前请求各自注入一次；每个 Run 继续持有独立 AgentProfile snapshot、Token、Lease、Session 与 Worktree。
+- Worker 并发度新增受限配置 `RELAY_HUB_WORKER_CONCURRENCY`，默认 4、允许 1–8；回复按实际完成顺序追加 Thread，不伪造选择顺序。
+- Web 输入区支持紧凑 Agent chips 多选与移除，发送按钮显示目标数；一条用户消息下分别展示每个 Agent 的状态卡和失败原因入口，审计仍按单 Task 打开。
+
+### 验证证据
+
+- Contracts 覆盖空目标、重复目标与默认字段；Worker concurrency 覆盖默认值、边界与非法配置。
+- 全新隔离数据库 `relayhub_multi_dispatch_20260813_0136` 应用全部 migration 后，Thread 集成测试验证一条 Message 生成多个 Dispatch/Task/Run、共享边界、幂等与原子失败。
+- 历史库 `relayhub_dispatch_history_20260813_0137` 先应用 migration 0000–0013 并写入 legacy User Message，再应用 0014，验证原 message/task/agent 精确回填为 Dispatch。测试库保留，未删除任何正式数据。
+- 正式 RelayHub PostgreSQL 已无损应用 `0014_fair_ultimo.sql`；只新增关系表、索引和历史回填，没有删除或清空 PostgreSQL、Redis、Thread、Message、Task、Run 或 Event。
+- 浏览器三 Mock Agent 验收中三条 Run 同秒领取并分别回流；真实 OpenCode Architect 与 UX Agent 从同一 Message 产生两个初始 Task 并返回独立公开建议。一个 Task 随后自主 Handoff，没有影响另一个兄弟 Task。
+
 ## 2026-08-13：Task 级版本化公开 ConversationContext
 
 ### 已实现

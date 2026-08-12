@@ -2,6 +2,7 @@ import type {
   AgentAdapterType,
   AgentProfile,
   Handoff,
+  MessageDispatch,
   Review,
   ReviewFinding,
   Run,
@@ -16,6 +17,7 @@ import { defaultExecutionPolicy, effectiveExecutionPolicyForAdapter, ExecutionPo
 import {
   agentProfiles,
   handoffs,
+  messageDispatches,
   providerConnections,
   reviewFindings,
   reviews,
@@ -30,6 +32,7 @@ import {
 type TaskRow = typeof tasks.$inferSelect;
 type ThreadRow = typeof threads.$inferSelect;
 type ThreadMessageRow = typeof threadMessages.$inferSelect;
+type MessageDispatchRow = typeof messageDispatches.$inferSelect;
 type RunRow = typeof runs.$inferSelect;
 type RunEventRow = typeof runEvents.$inferSelect;
 type WorkspaceRow = typeof workspaces.$inferSelect;
@@ -98,6 +101,16 @@ export function mapThreadMessage(row: ThreadMessageRow): ThreadMessage {
     ...(row.runId ? { runId: row.runId } : {}),
     ...(row.senderAgentId ? { senderAgentId: row.senderAgentId } : {}),
     ...(row.recipientAgentId ? { recipientAgentId: row.recipientAgentId } : {}),
+  };
+}
+
+export function mapMessageDispatch(row: MessageDispatchRow): MessageDispatch {
+  return {
+    id: row.id,
+    messageId: row.messageId,
+    taskId: row.taskId,
+    agentId: row.agentId,
+    createdAt: toIso(row.createdAt),
   };
 }
 
