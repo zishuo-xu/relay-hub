@@ -2,20 +2,23 @@
 
 > 一个面向个人开发者的多 Agent 协作与任务编排平台。
 
-RelayHub 是一个独立的公开简历项目。它参考 Clowder AI 的产品问题和架构经验，但不复制其源码，也不追求复刻全部功能。项目重点是从零实现一条可解释、可测试、可演示的多 Agent 协作主链路。
+RelayHub 是一个独立的公开简历项目。它参考 Clowder AI 的产品问题和架构经验，但不复制其源码，也不追求复刻全部功能。项目重点是从零实现一个以对话线程为主入口、可解释、可测试、可演示的多 Agent 协作控制平面。
 
 GitHub：<https://github.com/zishuo-xu/relay-hub>
 
 ## 项目目标
 
-让用户在一个任务空间中调用不同 Agent，由平台负责任务路由、异步执行、Agent 间交接、实时事件展示、失败恢复和审计追踪。
+让用户在一个对话线程中与多个具名 Agent 协作，由平台负责身份、消息路由、异步执行、Agent 间交接、审查、失败恢复和审计追踪，使用户不再充当 Agent 之间的人工路由器。
 
 第一版完整演示链路：
 
 ```text
-创建任务 -> 选择 Agent -> 排队执行 -> 实时输出
-        -> Agent 交接 -> Reviewer 审查 -> 汇总结果 -> 查看审计记录
+进入协作线程 -> @Agent 发起讨论或执行 -> Agent 独立 Run
+        -> Agent 消息回到线程 -> 必要时结构化交接/审查 -> 用户处理关键决策
+        -> Task/Run/Handoff/Review 在后台留下可恢复审计事实
 ```
+
+产品北极星是“Chat 主入口 + Agent/模型配置 Hub + Task/Run 治理与审计”。Git worktree、commit、push 和合并策略是 Agent 工具能力或开发 SOP，不是产品中心。当前可靠执行底座已经完成，下一阶段将补齐 Thread、Message 和 `@mention` 的整体设计与最小纵向闭环，详见 [ADR-018](docs/decisions/ADR-018-conversation-first-product-north-star.md)。
 
 ## 为什么适合作为简历项目
 

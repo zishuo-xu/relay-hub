@@ -94,6 +94,22 @@
 
 退出条件：标准演示场景端到端通过，且交接链可以由数据库查询重建。
 
+## Phase 3.5：对话优先的多 Agent 协作空间
+
+目标：把已经可运行的多 Agent 底座变成与参考项目愿景一致的用户体验，让用户在一个线程中自然地与 Agent 团队协作，而不是把技术 Timeline 当成产品主体。
+
+当前状态：**Proposed（2026-08-13）。** 产品方向已确认；`Thread`、`Message` 与现有 `Task` 的数据关系必须先完成整体设计，再进入 migration 和 UI 实现。
+
+建议纵向切片：
+
+1. 定义协作线程、用户/Agent/平台消息、`@mention` 和 Run 触发之间的唯一真相源与权限边界。
+2. 明确普通协调消息与正式 Handoff 的区别：讨论不改变责任；结构化 Handoff 才迁移当前责任并创建目标 Run。
+3. 将固定应用壳层的中心区域改为多 Agent 对话流，支持用户选择或 `@` 已配置 Agent；技术 Timeline、工具调用和平台事件降为按需审计抽屉。
+4. 先完成用户 `@Agent` → 独立 Run → Agent 消息回到同一线程的闭环，再扩展 Agent `@Agent`、multi-mention 和并行回流。
+5. 复用现有 AgentProfile snapshot、Run Token、Queue、Handoff、Review、Lease 和 Coordination projection，不新增通用 Workflow Engine。
+
+退出条件：用户可以在一个线程里连续与至少两个独立 Agent 协作；消息、Run、结构化交接和审计事实边界清楚，刷新后完整恢复，用户不需要在多个 Agent 页面之间搬运上下文。
+
 ## Phase 4：可靠性与可观测性
 
 目标：把“能跑”升级为“可解释地可靠”。
@@ -142,7 +158,9 @@ Phase 3.3 自动返工主链、OpenCode 可配置 Adapter、Agent 长期提示�
 
 Phase 3.4 已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要校验、`handoff.consumed`、统一责任查询投影和任意已配置平台 AgentProfile 之间的顺序型 Handoff 均已接入。Mock A → B → Reviewer 与真实 OpenCode A → B 已通过浏览器、隔离数据库和真实 CLI 验收；[`WI-P3.4-001`](work-items/WI-P3.4-001-sequential-agent-handoff.md) 已关闭。暂不建设任意 Workflow DAG。
 
-Phase 4 第一切片已完成：Worker claim 写入 Lease，执行期间定时 Heartbeat；过期 Lease 使旧 Token 立即失去 control/event 权限，Reconciler 原子将 Run 收敛为 `lost` 并把 Task 转为 `waiting_for_user`。第一版刻意不自动启动第二个 Agent 写同一 Worktree。下一步可补 WebSocket event cursor/gap detection，再做指标与故障演示。
+Phase 4 第一切片已完成：Worker claim 写入 Lease，执行期间定时 Heartbeat；过期 Lease 使旧 Token 立即失去 control/event 权限，Reconciler 原子将 Run 收敛为 `lost` 并把 Task 转为 `waiting_for_user`。第一版刻意不自动启动第二个 Agent 写同一 Worktree。
+
+**产品优先级已于 2026-08-13 校准。** 下一步不继续扩展 Git 交付中心或通用工作流，而是先为 Phase 3.5 完成 Thread/Message/Task/Run 的整体领域设计，并实现最小“线程内 `@Agent` → 独立 Run → 回到同一对话”的纵向闭环。WebSocket cursor/gap detection 作为该实时消息闭环的可靠性要求一起设计；指标、Tracing 和完整故障演示随后继续。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 
@@ -153,5 +171,6 @@ Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub �
 ```text
 Phase 2：真实单 Agent 可运行
 -> Phase 3：真实多 Agent 协作可运行
+-> Phase 3.5：对话优先的多 Agent 团队可使用
 -> Phase 4：具备完整恢复与演示可靠性
 ```
