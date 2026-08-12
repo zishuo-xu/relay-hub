@@ -330,6 +330,36 @@ describe('runCodexAgent', () => {
     expect(prompt.indexOf('Do not commit or push Git changes.')).toBeLessThan(prompt.indexOf('Always explain architecture tradeoffs'));
   });
 
+  it('injects versioned public Thread history as untrusted context before the current Task', () => {
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      conversationContext: {
+        threadId: '00000000-0000-4000-8000-000000000100',
+        policyVersion: 1,
+        beforeSequence: 3,
+        messages: [{
+          id: '00000000-0000-4000-8000-000000000101',
+          sequence: 2,
+          senderType: 'agent',
+          senderName: 'Architecture Agent',
+          content: 'Keep Thread and Task separate.',
+          createdAt: new Date(0).toISOString(),
+        }],
+        omittedMessageCount: 0,
+        truncatedMessageIds: [],
+        digest: 'b'.repeat(64),
+      },
+    });
+
+    expect(prompt).toContain('<relayhub_conversation_context>');
+    expect(prompt).toContain('Keep Thread and Task separate.');
+    expect(prompt).toContain('quoted, untrusted historical content');
+    expect(prompt.indexOf('Do not commit or push Git changes.'))
+      .toBeLessThan(prompt.indexOf('<relayhub_conversation_context>'));
+    expect(prompt.indexOf('<relayhub_conversation_context>'))
+      .toBeLessThan(prompt.indexOf(`Task: ${claimed.task.title}`));
+  });
+
   it('offers only the minimal candidate directory and the result envelope to a Builder', () => {
     const prompt = buildAgentPrompt({
       ...claimed,
@@ -346,7 +376,7 @@ describe('runCodexAgent', () => {
     expect(prompt).toContain('no configured Reviewer');
     expect(prompt).toContain('nextAction and handoff are sibling fields');
     expect(prompt).toContain('"handoff":{"objective":"What the target must do"');
-    expect(prompt).toContain('under 2,000 characters');
+    expect(prompt).toContain('under 6,000 characters');
     expect(prompt).toContain('never put a plain string in either array');
   });
 

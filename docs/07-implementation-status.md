@@ -1,12 +1,30 @@
 # 07. 实现状态
 
+## 2026-08-13：Task 级版本化公开 ConversationContext
+
+### 已实现
+
+- Thread Message 获得持久、严格递增的 `sequence`，Thread 使用事务 high-water allocator 排序；Task 在创建 User Message 的同一事务中固定 `conversationContextBeforeSequence` 与策略版本。
+- `policyVersion=1` 以纯函数从边界前的公开 user/agent Message 选择最多 20 条、单条 1,500 字符、合计 8,000 字符的上下文，并返回省略数、截断 ID 和 SHA-256 digest。system、RunEvent、Session、Token、凭证、工具日志和 Agent 长期提示词均不进入上下文。
+- API 在 claim 事务内组装 `ConversationContextView`，同一 Task 的 Builder、Handoff、Review 与 repair Run 复用同一边界；新增 `GET /api/runs/:runId/conversation-context` 作为按需审计接口。
+- Worker 在权限和 AgentProfile 之后、当前 Task 之前注入结构化且明确标记为不可信历史资料的上下文；Codex、OpenCode 共用 Prompt 规则，Mock 可确定性报告收到的消息。
+- `RunOutcome` 区分 `publicMessage` 与 `summary`：公开答案写回 Thread 并成为后续 Agent 的共享事实，摘要只服务执行审计；旧结果仍兼容摘要回退。
+- Web 审计抽屉按需展示实际消息、sequence 边界、省略/截断信息和 digest，主对话页面保持单屏布局。
+
+### 验证证据
+
+- Contracts 38/38；Worker 上下文、结构化结果、Codex Prompt 与 Mock 定向测试 35/35；ConversationContext 纯选择器 3/3；隔离 PostgreSQL Thread 集成测试 2/2。
+- migration `0013_giant_the_fallen.sql` 在带历史同时间戳消息的专用数据库完成确定性回填，再在全新隔离数据库应用全部 migration；正式 RelayHub PostgreSQL 已无损迁移。没有删除、清空或重建任何正式 PostgreSQL、Redis 或历史记录。
+- 浏览器 Mock 闭环验证 Agent B 收到边界前 2 条公开消息。真实 OpenCode Architect → OpenCode UX 闭环中，第二个 Agent 不读取文件，仅凭 3 条公开 Thread Message 逐字复述第一个 Agent 的架构原则；审计显示截止 `#4` 与 digest。
+- 1280 × 720 浏览器视口的页面宽高均等于 viewport，无页面级溢出；控制台无应用错误。
+
 ## 2026-08-13：对话优先的多 Agent 协作空间第一切片
 
 ### 已实现
 
 - 新增独立 `threads` 与 `thread_messages`，Task 通过可空 `thread_id` 归属持续上下文；历史 Task 无需回填或改写。
 - 用户在线程中选择 Agent 并发送消息时，Message、Task、首个 Run、Task Event 和 Outbox 在同一事务创建；`Idempotency-Key` 防止重试产生重复消息或执行。
-- Agent 完成 Run 后，平台把结构化 `RunOutcome.summary` 以创建时 Agent 名称和身份写回原线程；隐藏推理、Token、Session 和私有配置不进入 Message。
+- Agent 完成 Run 后，平台把结构化公开结果以创建时 Agent 名称和身份写回原线程；后续切片已进一步将公开答案固化为 `RunOutcome.publicMessage`，避免审计摘要丢失用户可见结论。隐藏推理、Token、Session 和私有配置不进入 Message。
 - API 新增线程列表、创建、详情与消息派发接口。Thread 是对话容器，Task 是一次有状态的正式工作，Run 是一次 Agent 执行，RunEvent 只承担技术审计。
 - Web 主入口改为线程列表、消息流、Agent 选择器和底部输入区；现有 Agent/模型配置继续作为 Hub，Task/Run/Handoff/Review/技术 Timeline 进入右侧按需审计抽屉。
 - 保留现有模块化单体、PostgreSQL canonical truth、BullMQ、Worker、Adapter、Run Token、Lease 和动态 Handoff，不增加工作流 DSL 或新部署单元。

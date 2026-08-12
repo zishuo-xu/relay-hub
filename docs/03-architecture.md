@@ -124,7 +124,7 @@ flowchart LR
 
 ### 公开对话上下文与 Agent 隔离
 
-状态：**Proposed，详见 ADR-020。**
+状态：**Accepted / Implemented，详见 ADR-020。**
 
 Thread Message 是 Agent 之间唯一自动共享的对话信息。用户消息创建 Task 时，Task 固定该消息之前的线程 sequence 和上下文策略版本；所有后续 Run 只能从这个边界推导同一份公开 ConversationContext。AgentProfile、CLI Session、隐藏 reasoning、Token、工具日志和凭证不进入共享上下文。
 

@@ -136,6 +136,7 @@ export const threads = pgTable(
       .notNull()
       .references(() => workspaces.id),
     title: text('title').notNull(),
+    messageSequenceHighWater: bigint('message_sequence_high_water', { mode: 'number' }).default(0).notNull(),
     ...timestamps,
   },
   (table) => [index('threads_workspace_updated_idx').on(table.workspaceId, table.updatedAt)],
@@ -149,6 +150,8 @@ export const tasks = pgTable(
       .notNull()
       .references(() => workspaces.id),
     threadId: uuid('thread_id').references(() => threads.id),
+    conversationContextBeforeSequence: bigint('conversation_context_before_sequence', { mode: 'number' }),
+    conversationContextPolicyVersion: integer('conversation_context_policy_version'),
     title: text('title').notNull(),
     description: text('description').notNull(),
     acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
@@ -247,6 +250,7 @@ export const threadMessages = pgTable(
     threadId: uuid('thread_id')
       .notNull()
       .references(() => threads.id),
+    sequence: bigint('sequence', { mode: 'number' }).notNull(),
     taskId: uuid('task_id').references(() => tasks.id),
     runId: uuid('run_id').references(() => runs.id),
     senderType: text('sender_type').$type<'user' | 'agent' | 'system'>().notNull(),
@@ -257,7 +261,7 @@ export const threadMessages = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('thread_messages_thread_created_idx').on(table.threadId, table.createdAt),
+    uniqueIndex('thread_messages_thread_sequence_uidx').on(table.threadId, table.sequence),
     uniqueIndex('thread_messages_run_uidx').on(table.runId),
   ],
 );

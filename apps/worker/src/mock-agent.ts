@@ -7,6 +7,7 @@ import {
 import { agentCompletionEvents } from './agent-result.js';
 
 const HANDOFF_CHAIN_PATTERN = /^relayhub:handoff-chain=([0-9a-fA-F-]+(?:,[0-9a-fA-F-]+)*)\s*$/m;
+const REPORT_CONTEXT_PATTERN = /^relayhub:report-context\s*$/m;
 
 /**
  * Deterministic mock routing: a Task description line
@@ -83,6 +84,7 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
       type: 'run.completed',
       outcome: {
         summary: 'Mock review execution completed successfully.',
+        publicMessage: 'Mock Reviewer verified the Handoff and acceptance criteria without actionable findings.',
         commandEvidence: [],
       },
     };
@@ -92,12 +94,16 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
   const chainNext = claimed.run.triggerType === 'user' || claimed.run.triggerType === 'handoff'
     ? mockHandoffChainNext(claimed.task.description, claimed.agent.id)
     : undefined;
+  const contextReport = REPORT_CONTEXT_PATTERN.test(claimed.task.description)
+    ? `Mock Agent 已读取 ${claimed.conversationContext?.messages.length ?? 0} 条公开线程上下文。最近发言：${claimed.conversationContext?.messages.at(-1)?.senderName ?? '无'}。`
+    : undefined;
   const finalMessage = chainNext
     ? [
         'Mock Agent 已完成本次任务，执行记录已持久化。',
         AGENT_RESULT_ENVELOPE_START,
         JSON.stringify({
           summary: `Mock Agent completed its deterministic step for: ${claimed.task.title}`,
+          publicMessage: 'Mock Agent 已完成本次任务，执行记录已持久化。',
           nextAction: {
             type: 'handoff',
             targetAgentId: chainNext,
@@ -111,7 +117,7 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
         }),
         AGENT_RESULT_ENVELOPE_END,
       ].join('\n')
-    : 'Mock Agent 已完成本次任务，执行记录已持久化。';
+    : contextReport ?? 'Mock Agent 已完成本次任务，执行记录已持久化。';
 
   for (const event of agentCompletionEvents({
     claimed,

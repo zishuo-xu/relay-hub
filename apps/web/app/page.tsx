@@ -13,6 +13,7 @@ import {
   type AgentProfile,
   type AgentRuntimeDescriptor,
   type CompletionPolicy,
+  type ConversationContextView,
   type ProviderConnection,
   type ProviderProtocol,
   type RealtimeEnvelope,
@@ -93,6 +94,7 @@ export default function HomePage() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
+  const [auditContext, setAuditContext] = useState<ConversationContextView | null>(null);
   const [messageContent, setMessageContent] = useState('');
   const [messageSending, setMessageSending] = useState(false);
   const agentEditorRequestId = useRef(0);
@@ -121,7 +123,15 @@ export default function HomePage() {
   const loadDetail = useCallback(async (taskId: string) => {
     const response = await fetch(`${apiUrl}/api/tasks/${taskId}`, { cache: 'no-store' });
     if (!response.ok) throw new Error('无法读取任务详情');
-    setDetail((await response.json()) as TaskDetail);
+    const nextDetail = (await response.json()) as TaskDetail;
+    const contextResponse = await fetch(
+      `${apiUrl}/api/runs/${nextDetail.task.currentRunId}/conversation-context`,
+      { cache: 'no-store' },
+    );
+    if (!contextResponse.ok) throw new Error('无法读取本次运行的公开上下文');
+    const contextPayload = (await contextResponse.json()) as { conversationContext: ConversationContextView | null };
+    setDetail(nextDetail);
+    setAuditContext(contextPayload.conversationContext);
   }, []);
 
   const loadRuntimeConfiguration = useCallback(async () => {
@@ -173,6 +183,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!selectedTaskId) {
       setDetail(null);
+      setAuditContext(null);
       return;
     }
     loadDetail(selectedTaskId).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
@@ -607,6 +618,7 @@ export default function HomePage() {
         />
         <ConversationWorkspace
           agents={agents.filter((agent) => agent.enabled && agent.capabilities.includes('implement'))}
+          auditContext={auditContext}
           auditDetail={detail}
           canCancel={canCancel}
           canConfirm={canConfirm}
@@ -618,6 +630,7 @@ export default function HomePage() {
           onCloseAudit={() => {
             setSelectedTaskId(null);
             setDetail(null);
+            setAuditContext(null);
           }}
           onConfigureAgents={() => openSettings('agents')}
           onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}

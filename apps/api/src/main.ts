@@ -278,6 +278,13 @@ app.get('/api/tasks/:taskId/events', async (request) => {
   return { events: await store.getTaskEvents(taskId, after) };
 });
 
+app.get('/api/runs/:runId/conversation-context', async (request, reply) => {
+  const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
+  const result = await store.getRunConversationContext(runId);
+  if (!result.found) return reply.code(404).send({ error: 'run_not_found' });
+  return { conversationContext: result.context ?? null };
+});
+
 app.post('/api/runs/:runId/cancel', async (request) => {
   const { runId } = z.object({ runId: z.string().uuid() }).parse(request.params);
   const result = await store.requestRunCancellation(runId);

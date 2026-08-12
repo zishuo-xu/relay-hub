@@ -24,6 +24,7 @@ import {
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
 import { mapAgentProfile, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
+import { allocateThreadMessageSequence } from './thread-message-repository.js';
 import { projectTaskCoordination } from '../task-coordination.js';
 
 export async function listTasks(db: RelayDatabase): Promise<Task[]> {
@@ -152,10 +153,15 @@ export async function createTask(
     if (threadContext && !thread) throw new Error(`Thread not found: ${threadContext.threadId}`);
 
     const now = new Date();
+    const conversationContextBeforeSequence = threadContext
+      ? await allocateThreadMessageSequence(tx, threadContext.threadId, DEFAULT_WORKSPACE_ID, now)
+      : undefined;
     await tx.insert(tasks).values({
       id: taskId,
       workspaceId: DEFAULT_WORKSPACE_ID,
       threadId: threadContext?.threadId,
+      conversationContextBeforeSequence,
+      conversationContextPolicyVersion: threadContext ? 1 : undefined,
       title: input.title,
       description: input.description,
       acceptanceCriteria: input.acceptanceCriteria,
@@ -180,9 +186,13 @@ export async function createTask(
     });
     await tx.update(tasks).set({ currentRunId: runId }).where(eq(tasks.id, taskId));
     if (threadContext && thread) {
+      if (conversationContextBeforeSequence === undefined) {
+        throw new Error(`Thread Task is missing its conversation context boundary: ${taskId}`);
+      }
       await tx.insert(threadMessages).values({
         id: threadContext.messageId,
         threadId: thread.id,
+        sequence: conversationContextBeforeSequence,
         taskId,
         senderType: 'user',
         senderName: '你',
@@ -194,7 +204,6 @@ export async function createTask(
         .update(threads)
         .set({
           title: thread.title === '新协作线程' ? input.title : thread.title,
-          updatedAt: now,
         })
         .where(eq(threads.id, thread.id));
     }

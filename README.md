@@ -18,7 +18,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
         -> Task/Run/Handoff/Review 在后台留下可恢复审计事实
 ```
 
-产品北极星是“Chat 主入口 + Agent/模型配置 Hub + Task/Run 治理与审计”。Git worktree、commit、push 和合并策略是 Agent 工具能力或开发 SOP，不是产品中心。Thread/Message 第一纵向切片已经完成；下一阶段将为每个 Task 固定版本化公开对话上下文，让同一线程中的后续 Agent 真正理解此前公开讨论，详见 [ADR-020](docs/decisions/ADR-020-versioned-conversation-context.md)。
+产品北极星是“Chat 主入口 + Agent/模型配置 Hub + Task/Run 治理与审计”。Git worktree、commit、push 和合并策略是 Agent 工具能力或开发 SOP，不是产品中心。Thread/Message 与 Task 级版本化公开上下文均已完成：同一线程中的后续 Agent 可以在固定、可审计的消息边界内理解此前公开讨论，详见 [ADR-020](docs/decisions/ADR-020-versioned-conversation-context.md)。
 
 ## 为什么适合作为简历项目
 
@@ -52,6 +52,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成通用 Agent 创建、CLI/模型/长期提示词/权限模板配置与不可变 Run AgentProfile 快照
 - [x] 完成 Worker Lease、Heartbeat、失联权限撤销和 `lost` 状态收敛
 - [x] 完成对话优先第一切片：持久 Thread/Message、线程内 Agent Run、Agent 回复回流与按需审计抽屉
+- [x] 完成 Task 级版本化公开 ConversationContext、跨 Agent 连续对话与上下文审计
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定

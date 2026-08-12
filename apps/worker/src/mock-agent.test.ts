@@ -72,6 +72,34 @@ async function collect(input: ClaimedRun) {
 }
 
 describe('runMockAgent sequential handoff', () => {
+  it('can deterministically report the public Thread context it received', async () => {
+    const events = await collect(claimed({
+      task: { ...claimed().task, description: 'Continue the discussion.\nrelayhub:report-context' },
+      conversationContext: {
+        threadId: '00000000-0000-4000-8000-000000000100',
+        policyVersion: 1,
+        beforeSequence: 3,
+        messages: [{
+          id: '00000000-0000-4000-8000-000000000101',
+          sequence: 2,
+          senderType: 'agent',
+          senderName: 'Architecture Agent',
+          senderAgentId: uxAgentId,
+          content: 'Keep the domain model small.',
+          createdAt: new Date(0).toISOString(),
+        }],
+        omittedMessageCount: 0,
+        truncatedMessageIds: [],
+        digest: 'a'.repeat(64),
+      },
+    }));
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.completed',
+      outcome: { summary: 'Mock Agent 已读取 1 条公开线程上下文。最近发言：Architecture Agent。' },
+    });
+  });
+
   it('follows a deterministic handoff chain directive with a structured generic Handoff', async () => {
     const events = await collect(claimed({
       task: {

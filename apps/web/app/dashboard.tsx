@@ -5,6 +5,7 @@ import type {
   AgentCapability,
   AgentHealth,
   AgentProfile,
+  ConversationContextView,
   AgentRuntimeDescriptor,
   AgentPermissionPreset,
   CompletionPolicy,
@@ -373,6 +374,7 @@ interface ConversationWorkspaceProps {
   sending: boolean;
   error: string | null;
   auditDetail: TaskDetail | null;
+  auditContext: ConversationContextView | null;
   canCancel: boolean;
   canConfirm: boolean;
   confirming: boolean;
@@ -395,6 +397,7 @@ export function ConversationWorkspace({
   sending,
   error,
   auditDetail,
+  auditContext,
   canCancel,
   canConfirm,
   confirming,
@@ -454,6 +457,7 @@ export function ConversationWorkspace({
           <header><div><p>Execution audit</p><h2>运行详情</h2></div><button aria-label="关闭审计" onClick={onCloseAudit} type="button">×</button></header>
           <section className="audit-summary"><span className={`status-pill ${auditDetail.task.status}`}>{statusLabels[auditDetail.task.status]}</span><h3>{auditDetail.task.title}</h3><p>{auditDetail.task.description}</p></section>
           <dl className="audit-facts"><div><dt>Agent</dt><dd>{currentRun?.agentProfileSnapshot?.name ?? agentName(auditDetail.task.agentId)}</dd></div><div><dt>Run</dt><dd><code>{currentRun?.id.slice(0, 8) ?? '—'}</code></dd></div><div><dt>状态</dt><dd>{currentRun?.status ?? '等待中'}</dd></div><div><dt>Route</dt><dd>{routeActionLabels[auditDetail.coordination.route.action]}</dd></div></dl>
+          {auditContext ? <details className="audit-context"><summary><span>公开上下文 {auditContext.messages.length} 条</span><small>截止 #{auditContext.beforeSequence}{auditContext.omittedMessageCount > 0 ? ` · 省略 ${auditContext.omittedMessageCount} 条` : ''}</small></summary><div><p>只包含本线程在 Task 创建前公开的用户与 Agent 消息；不包含隐藏推理、Session、Token 或技术日志。</p>{auditContext.messages.length > 0 ? <ol>{auditContext.messages.map((entry) => <li key={entry.id}><header><strong>{entry.senderName}</strong><code>#{entry.sequence}</code></header><p>{entry.content}</p></li>)}</ol> : <p>这是线程中的第一项工作，因此没有更早的公开消息。</p>}<footer>digest <code>{auditContext.digest.slice(0, 12)}</code>{auditContext.truncatedMessageIds.length > 0 ? ` · ${auditContext.truncatedMessageIds.length} 条已截断` : ''}</footer></div></details> : null}
           <div className="audit-actions">{canCancel ? <button className="cancel-button" onClick={onCancel} type="button">取消 Run</button> : null}{canConfirm ? <button className="confirm-button" disabled={confirming} onClick={onConfirm} type="button">{confirming ? '确认中…' : '确认完成'}</button> : null}</div>
           <div className="audit-events"><header><strong>技术时间线</strong><span>{auditDetail.events.length} events</span></header><ol>{auditDetail.events.slice().reverse().map((event) => <li key={event.id}><i data-tone={eventTone(event)} /><div><strong>{eventLabels[event.type] ?? event.type}</strong><p>{eventText(event, auditDetail)}</p><time>{new Date(event.occurredAt).toLocaleTimeString('zh-CN')}</time></div></li>)}</ol></div>
         </aside>

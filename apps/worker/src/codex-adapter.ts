@@ -195,8 +195,10 @@ export async function* runCodexAgent(
       case 'turn.completed':
         terminalEventSent = true;
         if (isReviewer) {
+          let review: ReturnType<typeof parseReviewDraft>;
           try {
-            yield { type: 'review.submitted', review: parseReviewDraft(finalMessage) };
+            review = parseReviewDraft(finalMessage);
+            yield { type: 'review.submitted', review };
           } catch (error) {
             yield {
               type: 'run.failed',
@@ -209,6 +211,7 @@ export async function* runCodexAgent(
             type: 'run.completed',
             outcome: {
               summary: truncate(finalMessage || 'Codex completed the task.'),
+              publicMessage: review.summary,
               commandEvidence,
             },
           };

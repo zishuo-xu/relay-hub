@@ -36,6 +36,7 @@ import {
 } from './mappers.js';
 import { getTaskDetail } from './task-repository.js';
 import type { MutationResult } from './types.js';
+import { buildConversationContextForTask } from './conversation-context-repository.js';
 
 function assertTaskTransition(from: TaskStatus, to: TaskStatus): void {
   if (!canTransitionTask(from, to)) throw new Error(`Illegal task transition: ${from} -> ${to}`);
@@ -75,6 +76,7 @@ export async function claimRun(
     if (!taskRow) throw new Error(`Task not found for run: ${runId}`);
     const [workspaceRow] = await tx.select().from(workspaces).where(eq(workspaces.id, taskRow.workspaceId)).limit(1);
     if (!workspaceRow) throw new Error(`Workspace not found for run: ${runId}`);
+    const conversationContext = await buildConversationContextForTask(tx, taskRow);
     const candidateRows = await tx
       .select({ id: agentProfiles.id, name: agentProfiles.name, capabilities: agentProfiles.capabilities })
       .from(agentProfiles)
@@ -117,7 +119,21 @@ export async function claimRun(
         taskId: claimed.taskId,
         runId: claimed.id,
         eventType: 'run.claimed',
-        payload: { workerId },
+        payload: {
+          workerId,
+          ...(conversationContext
+            ? {
+                conversationContext: {
+                  policyVersion: conversationContext.policyVersion,
+                  beforeSequence: conversationContext.beforeSequence,
+                  messageCount: conversationContext.messages.length,
+                  omittedMessageCount: conversationContext.omittedMessageCount,
+                  truncatedMessageCount: conversationContext.truncatedMessageIds.length,
+                  digest: conversationContext.digest,
+                },
+              }
+            : {}),
+        },
         source: 'worker',
         dedupeKey: `run-claimed:${claimed.id}`,
       })
@@ -131,6 +147,7 @@ export async function claimRun(
           workspace: mapWorkspace(workspaceRow),
           agent: claimed.agentProfileSnapshot,
           handoffTargets,
+          ...(conversationContext ? { conversationContext } : {}),
           ...(handoffRow ? { handoff: mapHandoff(handoffRow) } : {}),
           ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
         } satisfies ClaimedRun,

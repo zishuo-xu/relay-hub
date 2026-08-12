@@ -92,6 +92,13 @@
       "when": 1786552568635,
       "tag": "0012_serious_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786554555549,
+      "tag": "0013_giant_the_fallen",
+      "breakpoints": true
     }
   ]
 }

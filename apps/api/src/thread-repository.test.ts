@@ -43,11 +43,17 @@ suite('conversation thread integration', () => {
 
     const claimed = await store.claimRun(task.currentRunId, 'thread-test-worker');
     expect(claimed.value?.claimed.task.threadId).toBe(thread.thread.id);
+    expect(claimed.value?.claimed.conversationContext).toMatchObject({
+      beforeSequence: 1,
+      messages: [],
+      omittedMessageCount: 0,
+    });
     await store.recordAgentEvent(task.currentRunId, 'thread-started', { type: 'run.started' });
     await store.recordAgentEvent(task.currentRunId, 'thread-completed', {
       type: 'run.completed',
       outcome: {
-        summary: '线程把多 Agent 协作内容保存在一个连续上下文中。',
+        summary: '已完成线程价值说明。',
+        publicMessage: '线程把多 Agent 协作内容保存在一个连续上下文中。',
         commandEvidence: [],
         nextAction: { type: 'wait_for_user', reason: '已回答用户问题。' },
       },
@@ -55,6 +61,7 @@ suite('conversation thread integration', () => {
 
     const completed = await store.getThreadDetail(thread.thread.id);
     expect(completed?.messages).toHaveLength(2);
+    expect(completed?.messages.map((message) => message.sequence)).toEqual([1, 2]);
     expect(completed?.messages[1]).toMatchObject({
       senderType: 'agent',
       senderAgentId: DEFAULT_MOCK_AGENT_ID,
@@ -68,5 +75,59 @@ suite('conversation thread integration', () => {
       messageCount: 2,
       activeTaskCount: 1,
     });
+  });
+
+  it('freezes prior public Thread messages for a later Agent without leaking newer messages', async () => {
+    const thread = await store.createThread({ title: '上下文边界测试' });
+    const first = await store.createThreadMessage(thread.thread.id, {
+      content: '请先提出一个公开方案。',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    }, crypto.randomUUID());
+    const firstTask = first.value.tasks[0];
+    if (!firstTask) throw new Error('First Thread Task was not created');
+    await store.claimRun(firstTask.currentRunId, 'context-first-worker');
+    await store.recordAgentEvent(firstTask.currentRunId, 'context-first-started', { type: 'run.started' });
+    await store.recordAgentEvent(firstTask.currentRunId, 'context-first-completed', {
+      type: 'run.completed',
+      outcome: {
+        summary: 'Agent A 的公开结论：保持 Thread、Task 与 Run 分离。',
+        commandEvidence: [],
+        nextAction: { type: 'wait_for_user', reason: '等待下一位 Agent。' },
+      },
+    });
+
+    const second = await store.createThreadMessage(thread.thread.id, {
+      content: '请基于前面的公开结论继续分析。',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    }, crypto.randomUUID());
+    const secondTask = second.value.tasks.at(-1);
+    if (!secondTask) throw new Error('Second Thread Task was not created');
+    await store.createThreadMessage(thread.thread.id, {
+      content: '这是一条在第二个 Task 边界之后才到达的消息。',
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    }, crypto.randomUUID());
+
+    const claimed = await store.claimRun(secondTask.currentRunId, 'context-second-worker');
+    expect(claimed.value?.claimed.task).toMatchObject({
+      conversationContextBeforeSequence: 3,
+      conversationContextPolicyVersion: 1,
+    });
+    expect(claimed.value?.claimed.conversationContext?.messages.map((message) => ({
+      sequence: message.sequence,
+      senderType: message.senderType,
+      content: message.content,
+    }))).toEqual([
+      { sequence: 1, senderType: 'user', content: '请先提出一个公开方案。' },
+      { sequence: 2, senderType: 'agent', content: 'Agent A 的公开结论：保持 Thread、Task 与 Run 分离。' },
+    ]);
+    expect(claimed.value?.claimed.conversationContext?.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect((await store.getRunConversationContext(secondTask.currentRunId)).context)
+      .toEqual(claimed.value?.claimed.conversationContext);
   });
 });

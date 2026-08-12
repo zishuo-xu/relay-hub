@@ -3,6 +3,7 @@ import type {
   AgentProfileInput,
   AgentProfile,
   BootstrapPolicy,
+  ConversationContextView,
   ProviderConnection,
   ProviderConnectionInput,
   ClaimedExecution,
@@ -55,6 +56,7 @@ import {
 import { recordAgentEvent as recordAgentEventInDb } from './persistence/workflow-repository.js';
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { DEFAULT_RUN_LEASE_DURATION_MS } from './run-lease.js';
+import { getRunConversationContext as getRunConversationContextFromDb } from './persistence/conversation-context-repository.js';
 
 export class PostgresStore {
   constructor(
@@ -142,6 +144,12 @@ export class PostgresStore {
 
   getTaskEvents(taskId: string, afterEventId: number): Promise<RunEvent[]> {
     return getTaskEventsFromDb(this.db, taskId, afterEventId);
+  }
+
+  getRunConversationContext(
+    runId: string,
+  ): Promise<{ found: boolean; context?: ConversationContextView }> {
+    return getRunConversationContextFromDb(this.db, runId);
   }
 
   createTask(

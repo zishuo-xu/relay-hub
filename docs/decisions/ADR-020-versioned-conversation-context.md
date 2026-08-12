@@ -1,6 +1,6 @@
 # ADR-020：为 Task 固定版本化的公开对话上下文
 
-- 状态：Proposed
+- 状态：Accepted / Implemented
 - 日期：2026-08-13
 
 ## 背景
@@ -231,4 +231,6 @@ WebSocket cursor/gap detection、自然语言 mention、multi-mention 和并行�
 
 正向结果是：同一线程首次成为真正的共享协作空间，同时保留 Agent 独立身份、Task 责任和 Run 可审计性。主要代价是一次无损 schema 演进、同一 Thread append 的短事务串行化，以及版本化选择器的长期兼容责任。
 
-本 ADR 获得确认后再进入实现；实现完成并通过真实双 Agent 验收后，将状态改为 `Accepted`，并在实现状态文档记录 `Implemented` 事实。
+实现已于 2026-08-13 完成。除上述上下文边界外，运行结果进一步区分 `RunOutcome.summary` 与 `RunOutcome.publicMessage`：前者是简洁的执行审计摘要，后者是写回 Thread、供用户和后续 Agent 阅读的公开答案。旧结果未提供 `publicMessage` 时保持向后兼容，并回退到摘要；新 Prompt 要求真实 Agent 显式返回公开答案，Worker 也会保留结构化信封外的可见文本作为兼容回退。
+
+自动化验证覆盖顺序回填、固定边界、预算与 digest、Prompt 优先级、公开消息持久化和上下文读取。真实浏览器闭环中，OpenCode Architect Agent 给出一句架构原则，OpenCode UX Agent 在不读取文件的前提下仅凭 Thread 上下文逐字复述；Run 审计显示 3 条实际注入消息、截止 sequence `#4` 与稳定 digest。

@@ -189,6 +189,22 @@ textarea:focus-visible {
 .audit-facts > div { min-width: 0; padding: 8px; border-radius: 7px; background: var(--surface-soft); }
 .audit-facts dt { color: var(--muted); font-size: 7px; }
 .audit-facts dd { overflow: hidden; margin: 4px 0 0; color: var(--text-secondary); font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.audit-context { border-bottom: 1px solid var(--border); }
+.audit-context > summary { display: flex; min-height: 38px; padding: 9px 14px; align-items: center; justify-content: space-between; color: var(--text-secondary); font-size: 9px; font-weight: 750; cursor: pointer; list-style: none; }
+.audit-context > summary::-webkit-details-marker { display: none; }
+.audit-context > summary::before { margin-right: 7px; color: var(--accent); content: '›'; transition: transform 120ms ease; }
+.audit-context[open] > summary::before { transform: rotate(90deg); }
+.audit-context > summary span { flex: 1; }
+.audit-context > summary small { color: var(--muted); font-size: 7px; font-weight: 600; }
+.audit-context > div { max-height: 210px; padding: 0 14px 11px; overflow-y: auto; }
+.audit-context > div > p { margin: 0 0 8px; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.audit-context ol { margin: 0; padding: 0; list-style: none; }
+.audit-context li { padding: 7px 0; border-top: 1px solid var(--border); }
+.audit-context li header { display: flex; align-items: center; justify-content: space-between; }
+.audit-context li strong { font-size: 8px; }
+.audit-context li code, .audit-context footer code { color: var(--accent); font-size: 7px; }
+.audit-context li p { margin: 4px 0 0; color: var(--text-secondary); font-size: 8px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.audit-context footer { padding-top: 8px; color: var(--muted); font-size: 7px; }
 .audit-actions { display: flex; padding: 10px 14px; gap: 8px; border-bottom: 1px solid var(--border); }
 .audit-actions button { margin: 0; }
 .audit-events { display: flex; min-height: 0; flex: 1; flex-direction: column; }

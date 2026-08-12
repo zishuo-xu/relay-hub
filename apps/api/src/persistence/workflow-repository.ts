@@ -31,6 +31,7 @@ import { handoffContentDigest } from '../handoff-integrity.js';
 import { mapAgentProfile, mapEvent } from './mappers.js';
 import { getTaskDetail } from './task-repository.js';
 import type { MutationResult } from './types.js';
+import { allocateThreadMessageSequence } from './thread-message-repository.js';
 
 function assertTaskTransition(from: TaskStatus, to: TaskStatus): void {
   if (!canTransitionTask(from, to)) throw new Error(`Illegal task transition: ${from} -> ${to}`);
@@ -520,20 +521,21 @@ export async function recordAgentEvent(
     }
 
     if (agentEvent.type === 'run.completed' && task.threadId) {
+      const sequence = await allocateThreadMessageSequence(tx, task.threadId, task.workspaceId, now);
       await tx
         .insert(threadMessages)
         .values({
           threadId: task.threadId,
+          sequence,
           taskId: task.id,
           runId: run.id,
           senderType: 'agent',
           senderName: run.agentProfileSnapshot.name,
           senderAgentId: run.agentId,
-          content: agentEvent.outcome.summary,
+          content: agentEvent.outcome.publicMessage ?? agentEvent.outcome.summary,
           createdAt: now,
         })
         .onConflictDoNothing();
-      await tx.update(threads).set({ updatedAt: now }).where(eq(threads.id, task.threadId));
     }
 
     const { type: eventType, ...payload } = agentEvent;

@@ -98,6 +98,7 @@ describe('agentCompletionEvents', () => {
       workingDirectory: '/tmp/relayhub-worktree',
       finalMessage: envelope({
         summary: 'Design is ready for implementation.',
+        publicMessage: 'Use the single-column layout because it keeps the workflow legible.',
         nextAction: { type: 'handoff', targetAgentId: uxAgentId, reason: 'UX Agent owns the flow.' },
         handoff: {
           objective: 'Produce the UX flow',
@@ -127,7 +128,28 @@ describe('agentCompletionEvents', () => {
       type: 'run.completed',
       outcome: {
         summary: 'Design is ready for implementation.',
+        publicMessage: 'Use the single-column layout because it keeps the workflow legible.',
         nextAction: { type: 'handoff', targetAgentId: uxAgentId },
+      },
+    });
+  });
+
+  it('preserves visible text outside the envelope as the public Thread message', () => {
+    const events = agentCompletionEvents({
+      claimed,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'Architecture analysis completed.',
+        nextAction: { type: 'wait_for_user', reason: 'The conclusion is ready.' },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    });
+    expect(events[0]).toMatchObject({
+      type: 'run.completed',
+      outcome: {
+        summary: 'Architecture analysis completed.',
+        publicMessage: 'Natural language summary first.',
       },
     });
   });
@@ -217,7 +239,11 @@ describe('agentCompletionEvents', () => {
     });
     expect(events[1]).toMatchObject({
       type: 'run.completed',
-      outcome: { summary: 'Legacy builder output without an envelope.', nextAction: { type: 'request_review' } },
+      outcome: {
+        summary: 'Legacy builder output without an envelope.',
+        publicMessage: 'Legacy builder output without an envelope.',
+        nextAction: { type: 'request_review' },
+      },
     });
   });
 

@@ -122,8 +122,10 @@ export async function* runOpenCodeAgent(
         yield { type: 'run.failed', code: 'protocol_error', message: 'OpenCode produced no JSON events' };
       } else {
         if (isReviewer) {
+          let review: ReturnType<typeof parseReviewDraft>;
           try {
-            yield { type: 'review.submitted', review: parseReviewDraft(finalMessage) };
+            review = parseReviewDraft(finalMessage);
+            yield { type: 'review.submitted', review };
           } catch (error) {
             yield {
               type: 'run.failed',
@@ -136,6 +138,7 @@ export async function* runOpenCodeAgent(
             type: 'run.completed',
             outcome: {
               summary: truncate(finalMessage || 'OpenCode completed the task.'),
+              publicMessage: review.summary,
               commandEvidence,
             },
           };

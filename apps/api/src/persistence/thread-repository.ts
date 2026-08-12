@@ -41,7 +41,10 @@ export async function listThreads(db: RelayDatabase): Promise<ThreadSummary[]> {
     .from(threads)
     .where(eq(threads.workspaceId, DEFAULT_WORKSPACE_ID))
     .orderBy(desc(threads.updatedAt));
-  const messageRows = await db.select().from(threadMessages).orderBy(asc(threadMessages.createdAt));
+  const messageRows = await db
+    .select()
+    .from(threadMessages)
+    .orderBy(asc(threadMessages.threadId), asc(threadMessages.sequence));
   const taskRows = await db
     .select({ task: tasks, agentId: runs.agentId })
     .from(tasks)
@@ -56,7 +59,7 @@ export async function getThreadDetail(db: RelayDatabase, threadId: string): Prom
     .select()
     .from(threadMessages)
     .where(eq(threadMessages.threadId, threadId))
-    .orderBy(asc(threadMessages.createdAt));
+    .orderBy(asc(threadMessages.sequence));
   const taskRows = await db
     .select({ task: tasks, agentId: runs.agentId })
     .from(tasks)

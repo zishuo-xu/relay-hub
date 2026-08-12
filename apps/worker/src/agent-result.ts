@@ -12,6 +12,7 @@ import { truncateText } from './bounded-text.js';
 import { buildReviewHandoff, nextActionAfterBuilder } from './handoff.js';
 
 const MAX_OUTCOME_SUMMARY = 4_000;
+const MAX_PUBLIC_MESSAGE = 10_000;
 
 /**
  * Extracts the optional RelayHub structured result from a non-Review Agent's
@@ -31,6 +32,15 @@ export function parseAgentResult(message: string): AgentResult | undefined {
       `Agent returned an invalid structured result: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+function publicTextOutsideResultEnvelope(message: string): string | undefined {
+  const start = message.lastIndexOf(AGENT_RESULT_ENVELOPE_START);
+  if (start < 0) return undefined;
+  const end = message.indexOf(AGENT_RESULT_ENVELOPE_END, start + AGENT_RESULT_ENVELOPE_START.length);
+  if (end < 0) return undefined;
+  const visible = `${message.slice(0, start)}\n${message.slice(end + AGENT_RESULT_ENVELOPE_END.length)}`.trim();
+  return visible ? truncateText(visible, MAX_PUBLIC_MESSAGE) : undefined;
 }
 
 function handoffFromAgentResult(claimed: ClaimedRun, result: AgentResult): HandoffDraft | undefined {
@@ -90,6 +100,7 @@ export function agentCompletionEvents(input: {
       type: 'run.completed',
       outcome: {
         summary: result.summary,
+        publicMessage: result.publicMessage ?? publicTextOutsideResultEnvelope(finalMessage) ?? result.summary,
         commandEvidence,
         nextAction: result.nextAction,
       },
@@ -109,6 +120,7 @@ export function agentCompletionEvents(input: {
     type: 'run.completed',
     outcome: {
       summary,
+      publicMessage: summary,
       commandEvidence,
       nextAction: nextActionAfterBuilder(claimed),
     },

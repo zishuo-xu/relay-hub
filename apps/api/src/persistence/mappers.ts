@@ -48,6 +48,12 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
     id: row.id,
     workspaceId: row.workspaceId,
     ...(row.threadId ? { threadId: row.threadId } : {}),
+    ...(row.conversationContextBeforeSequence !== null
+      ? { conversationContextBeforeSequence: row.conversationContextBeforeSequence }
+      : {}),
+    ...(row.conversationContextPolicyVersion !== null
+      ? { conversationContextPolicyVersion: row.conversationContextPolicyVersion }
+      : {}),
     title: row.title,
     description: row.description,
     agentId: row.builderAgentId ?? fallbackAgentId,
@@ -83,6 +89,7 @@ export function mapThreadMessage(row: ThreadMessageRow): ThreadMessage {
   return {
     id: row.id,
     threadId: row.threadId,
+    sequence: row.sequence,
     senderType: row.senderType,
     senderName: row.senderName,
     content: row.content,

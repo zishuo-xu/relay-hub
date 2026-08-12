@@ -98,7 +98,7 @@
 
 目标：把已经可运行的多 Agent 底座变成与参考项目愿景一致的用户体验，让用户在一个线程中自然地与 Agent 团队协作，而不是把技术 Timeline 当成产品主体。
 
-当前状态：**第一纵向切片已实现（2026-08-13）；共享上下文切片已完成方案设计。** 独立 Thread 包含零到多个 Task；Message 保存公开对话，Task/Run 保存一次正式执行，RunEvent 保持技术审计。下一切片将按 [ADR-020](decisions/ADR-020-versioned-conversation-context.md) 为每个 Task 固定版本化的公开 ConversationContext，使后一个 Agent 真正理解此前公开讨论。自然语言 mention 解析、Agent 主动 mention 和 multi-mention 尚未实现。
+当前状态：**Thread/Message 与共享上下文两个纵向切片均已实现（2026-08-13）。** 独立 Thread 包含零到多个 Task；Message 保存公开对话，Task/Run 保存一次正式执行，RunEvent 保持技术审计。每个 Task 按 [ADR-020](decisions/ADR-020-versioned-conversation-context.md) 固定版本化公开 ConversationContext，后一个 Agent 已能在真实 CLI 验收中读取并复述前一个 Agent 的公开结论。自然语言 mention 解析、Agent 主动 mention 和 multi-mention 尚未实现。
 
 建议纵向切片：
 
@@ -106,7 +106,7 @@
 2. [x] 明确普通对话与正式 Handoff 的区别：Message 不迁移责任；结构化 Handoff 才改变 Task Route。
 3. [x] 将中心区域改为多 Agent 对话流；技术 Timeline、工具调用和平台事件进入按需审计抽屉。
 4. [x] 完成用户选择 `@Agent` → 独立 Task/Run → Agent 消息回到同一线程的闭环。
-5. [ ] 为 Task 固定版本化公开 ConversationContext，完成 Agent A 公开结论 → Agent B 读取并继续协作的闭环。
+5. [x] 为 Task 固定版本化公开 ConversationContext，完成 Agent A 公开结论 → Agent B 读取并继续协作的闭环。
 6. [ ] 增加 Agent 主动 `@Agent`、multi-mention、并行回流与消息级失败提示。
 7. [x] 复用现有 AgentProfile snapshot、Run Token、Queue、Handoff、Review、Lease 和 Coordination projection，没有引入通用 Workflow Engine。
 
@@ -162,7 +162,7 @@ Phase 3.4 已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要�
 
 Phase 4 第一切片已完成：Worker claim 写入 Lease，执行期间定时 Heartbeat；过期 Lease 使旧 Token 立即失去 control/event 权限，Reconciler 原子将 Run 收敛为 `lost` 并把 Task 转为 `waiting_for_user`。第一版刻意不自动启动第二个 Agent 写同一 Worktree。
 
-**产品优先级已于 2026-08-13 校准。** Thread/Message 第一纵向切片已经完成。下一步按 ADR-020 实现 Task 级固定对话边界、版本化公开上下文选择和双 Agent 连续协作；完成后再做 WebSocket cursor/gap detection、自然语言 mention 和 multi-mention。指标、Tracing 和完整故障演示随后继续。
+**产品优先级已于 2026-08-13 校准。** Thread/Message 与 ADR-020 的 Task 级固定对话边界、版本化公开上下文选择和真实双 Agent 连续协作均已完成。下一步继续对话主干：先设计并实现显式 `@Agent`/multi-mention 的统一派发与并行回流语义，再补 WebSocket cursor/gap detection；指标、Tracing 和完整故障演示随后继续。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

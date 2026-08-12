@@ -16,6 +16,7 @@ describe('Agent result contract', () => {
     expect(
       AgentResultSchema.parse({
         summary: 'Design notes are ready for implementation.',
+        publicMessage: 'The approved design uses one focused workflow column.',
         nextAction: { type: 'handoff', targetAgentId: targetId, reason: 'Builder owns the next step.' },
         handoff: {
           objective: 'Implement the approved design',
@@ -25,6 +26,7 @@ describe('Agent result contract', () => {
       }),
     ).toEqual({
       summary: 'Design notes are ready for implementation.',
+      publicMessage: 'The approved design uses one focused workflow column.',
       nextAction: { type: 'handoff', targetAgentId: targetId, reason: 'Builder owns the next step.' },
       handoff: {
         objective: 'Implement the approved design',
@@ -118,6 +120,17 @@ describe('Agent result contract', () => {
   it('keeps legacy RunOutcome without nextAction compatible', () => {
     expect(RunOutcomeSchema.parse({ summary: 'Legacy builder output.' })).toEqual({
       summary: 'Legacy builder output.',
+      commandEvidence: [],
+    });
+  });
+
+  it('keeps the public Thread message separate from the audit summary', () => {
+    expect(RunOutcomeSchema.parse({
+      summary: 'Architecture Run completed.',
+      publicMessage: 'Use a versioned public context boundary for every new Task.',
+    })).toEqual({
+      summary: 'Architecture Run completed.',
+      publicMessage: 'Use a versioned public context boundary for every new Task.',
       commandEvidence: [],
     });
   });

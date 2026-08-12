@@ -401,6 +401,38 @@ export const CreateThreadMessageInputSchema = z.object({
 
 export type CreateThreadMessageInput = z.infer<typeof CreateThreadMessageInputSchema>;
 
+export const CONVERSATION_CONTEXT_POLICY_V1 = {
+  version: 1,
+  maxMessages: 20,
+  maxContentCharsPerMessage: 1_500,
+  maxTotalContentChars: 8_000,
+} as const;
+
+export const ConversationContextMessageSchema = z.object({
+  id: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  senderType: z.enum(['user', 'agent']),
+  senderName: z.string().min(1),
+  senderAgentId: z.string().uuid().optional(),
+  recipientAgentId: z.string().uuid().optional(),
+  content: z.string(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export type ConversationContextMessage = z.infer<typeof ConversationContextMessageSchema>;
+
+export const ConversationContextViewSchema = z.object({
+  threadId: z.string().uuid(),
+  policyVersion: z.literal(1),
+  beforeSequence: z.number().int().positive(),
+  messages: z.array(ConversationContextMessageSchema).max(CONVERSATION_CONTEXT_POLICY_V1.maxMessages),
+  omittedMessageCount: z.number().int().nonnegative(),
+  truncatedMessageIds: z.array(z.string().uuid()),
+  digest: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+
+export type ConversationContextView = z.infer<typeof ConversationContextViewSchema>;
+
 export const CommandEvidenceSchema = z.object({
   command: z.string().min(1).max(4_000),
   status: z.enum(['succeeded', 'failed', 'unknown']),
@@ -430,6 +462,7 @@ export type NextAction = z.infer<typeof NextActionSchema>;
 
 export const RunOutcomeSchema = z.object({
   summary: z.string().min(1).max(10_000),
+  publicMessage: z.string().min(1).max(10_000).optional(),
   commandEvidence: z.array(CommandEvidenceSchema).max(100).default([]),
   nextAction: NextActionSchema.optional(),
 });
@@ -499,6 +532,7 @@ export type AgentResultHandoff = z.infer<typeof AgentResultHandoffSchema>;
 export const AgentResultSchema = z
   .object({
     summary: z.string().min(1).max(10_000),
+    publicMessage: z.string().min(1).max(10_000).optional(),
     nextAction: NextActionSchema,
     handoff: AgentResultHandoffSchema.optional(),
   })
@@ -632,6 +666,8 @@ export interface Task {
   id: string;
   workspaceId: string;
   threadId?: string;
+  conversationContextBeforeSequence?: number;
+  conversationContextPolicyVersion?: number;
   title: string;
   description: string;
   agentId: string;
@@ -660,6 +696,7 @@ export interface ThreadSummary {
 export interface ThreadMessage {
   id: string;
   threadId: string;
+  sequence: number;
   taskId?: string;
   runId?: string;
   senderType: 'user' | 'agent' | 'system';
@@ -891,6 +928,7 @@ export interface ClaimedRun {
   handoff?: Handoff;
   review?: Review;
   handoffTargets?: HandoffTargetView[];
+  conversationContext?: ConversationContextView;
 }
 
 export interface ClaimedExecution {
