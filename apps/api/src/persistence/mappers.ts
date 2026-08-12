@@ -1,6 +1,7 @@
 import type {
   AgentAdapterType,
   AgentProfile,
+  Consultation,
   Handoff,
   MessageDispatch,
   Review,
@@ -16,6 +17,7 @@ import type {
 import { defaultExecutionPolicy, effectiveExecutionPolicyForAdapter, ExecutionPolicySchema } from '@relay-hub/contracts';
 import {
   agentProfiles,
+  consultations,
   handoffs,
   messageDispatches,
   providerConnections,
@@ -30,6 +32,7 @@ import {
 } from '@relay-hub/db';
 
 type TaskRow = typeof tasks.$inferSelect;
+type ConsultationRow = typeof consultations.$inferSelect;
 type ThreadRow = typeof threads.$inferSelect;
 type ThreadMessageRow = typeof threadMessages.$inferSelect;
 type MessageDispatchRow = typeof messageDispatches.$inferSelect;
@@ -111,6 +114,24 @@ export function mapMessageDispatch(row: MessageDispatchRow): MessageDispatch {
     taskId: row.taskId,
     agentId: row.agentId,
     createdAt: toIso(row.createdAt),
+  };
+}
+
+export function mapConsultation(row: ConsultationRow): Consultation {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    sourceRunId: row.sourceRunId,
+    sourceAgentId: row.sourceAgentId,
+    targetAgentId: row.targetAgentId,
+    question: row.question,
+    contextSummary: row.contextSummary,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+    ...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
+    ...(row.continuationRunId ? { continuationRunId: row.continuationRunId } : {}),
+    ...(row.response ? { response: row.response } : {}),
   };
 }
 

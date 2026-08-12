@@ -3,6 +3,7 @@ import { access, mkdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import type { Run } from '@relay-hub/contracts';
 
 const execFileAsync = promisify(execFile);
 
@@ -11,6 +12,13 @@ export interface PreparedWorktree {
   worktreePath: string;
   workingDirectory: string;
   branchName: string;
+}
+
+export function shouldReusePreparedWorktree(
+  run: Pick<Run, 'triggerType' | 'worktreePath' | 'workingDirectory' | 'branchName'>,
+): boolean {
+  const inheritsWorktree = ['review', 'retry', 'consult', 'continuation'].includes(run.triggerType);
+  return inheritsWorktree && Boolean(run.worktreePath && run.workingDirectory && run.branchName);
 }
 
 export class WorktreeManager {

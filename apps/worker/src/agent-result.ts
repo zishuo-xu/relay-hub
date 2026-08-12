@@ -77,6 +77,9 @@ export function agentCompletionEvents(input: {
   const { claimed, workingDirectory, finalMessage, commandEvidence, fallbackSummary } = input;
   const result = parseAgentResult(finalMessage);
   if (result) {
+    if (claimed.run.triggerType === 'consult' && result.nextAction.type !== 'complete') {
+      throw new Error('Consultation Runs may only return a complete nextAction');
+    }
     if (result.nextAction.type === 'request_review') {
       const reviewerAgentId = claimed.task.reviewerAgentId;
       if (!reviewerAgentId) {
@@ -96,6 +99,16 @@ export function agentCompletionEvents(input: {
         handoff: buildReviewHandoff(claimed, workingDirectory, result.summary, commandEvidence),
       });
     }
+    if (result.nextAction.type === 'consult' && result.consultation) {
+      events.push({
+        type: 'consultation.requested',
+        consultation: {
+          targetAgentId: result.nextAction.targetAgentId,
+          question: result.consultation.question,
+          contextSummary: result.consultation.contextSummary,
+        },
+      });
+    }
     events.push({
       type: 'run.completed',
       outcome: {
@@ -110,7 +123,7 @@ export function agentCompletionEvents(input: {
 
   const summary = truncateText(finalMessage || fallbackSummary, MAX_OUTCOME_SUMMARY);
   const events: AgentEvent[] = [];
-  if (claimed.task.reviewerAgentId) {
+  if (claimed.run.triggerType !== 'consult' && claimed.task.reviewerAgentId) {
     events.push({
       type: 'handoff.requested',
       handoff: buildReviewHandoff(claimed, workingDirectory, summary, commandEvidence),
@@ -122,7 +135,9 @@ export function agentCompletionEvents(input: {
       summary,
       publicMessage: summary,
       commandEvidence,
-      nextAction: nextActionAfterBuilder(claimed),
+      nextAction: claimed.run.triggerType === 'consult'
+        ? { type: 'complete', reason: 'The requested consultation answer is complete.' }
+        : nextActionAfterBuilder(claimed),
     },
   });
   return events;

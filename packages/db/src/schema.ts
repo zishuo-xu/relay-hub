@@ -16,6 +16,7 @@ import type {
   AgentProfile,
   BootstrapPolicy,
   CompletionPolicy,
+  Consultation,
   HandoffArtifactRef,
   NextAction,
   RunOutcome,
@@ -56,7 +57,7 @@ const COMPLETION_POLICY_VALUES = [
 export const taskStatusEnum = pgEnum('task_status', TASK_STATUS_VALUES);
 export const runStatusEnum = pgEnum('run_status', RUN_STATUS_VALUES);
 export const completionPolicyEnum = pgEnum('completion_policy', COMPLETION_POLICY_VALUES);
-export const runTriggerEnum = pgEnum('run_trigger', ['user', 'handoff', 'review', 'retry']);
+export const runTriggerEnum = pgEnum('run_trigger', ['user', 'handoff', 'review', 'retry', 'consult', 'continuation']);
 export const eventSourceEnum = pgEnum('event_source', ['api', 'worker', 'agent', 'user']);
 export const handoffStatusEnum = pgEnum('handoff_status', [
   'pending',
@@ -69,6 +70,7 @@ export const handoffStatusEnum = pgEnum('handoff_status', [
 export const reviewVerdictEnum = pgEnum('review_verdict', ['approved', 'changes_requested', 'blocked']);
 export const findingSeverityEnum = pgEnum('finding_severity', ['blocking', 'should_fix', 'suggestion']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published']);
+export const consultationStatusEnum = pgEnum('consultation_status', ['pending', 'dispatched', 'answered', 'resumed', 'failed']);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -263,6 +265,30 @@ export const threadMessages = pgTable(
   (table) => [
     uniqueIndex('thread_messages_thread_sequence_uidx').on(table.threadId, table.sequence),
     uniqueIndex('thread_messages_run_uidx').on(table.runId),
+  ],
+);
+
+export const consultations = pgTable(
+  'consultations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id').notNull().references(() => tasks.id),
+    sourceRunId: uuid('source_run_id').notNull().references(() => runs.id),
+    sourceAgentId: uuid('source_agent_id').notNull().references(() => agentProfiles.id),
+    targetAgentId: uuid('target_agent_id').notNull().references(() => agentProfiles.id),
+    targetRunId: uuid('target_run_id').references(() => runs.id),
+    continuationRunId: uuid('continuation_run_id').references(() => runs.id),
+    question: text('question').notNull(),
+    contextSummary: text('context_summary').notNull(),
+    response: text('response'),
+    status: consultationStatusEnum('status').$type<Consultation['status']>().default('pending').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('consultations_source_run_uidx').on(table.sourceRunId),
+    uniqueIndex('consultations_target_run_uidx').on(table.targetRunId),
+    uniqueIndex('consultations_continuation_run_uidx').on(table.continuationRunId),
+    index('consultations_task_created_idx').on(table.taskId, table.createdAt),
   ],
 );
 

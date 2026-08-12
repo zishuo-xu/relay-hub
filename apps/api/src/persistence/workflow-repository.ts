@@ -3,6 +3,7 @@ import {
   type AgentEvent,
   canTransitionRun,
   canTransitionTask,
+  MAX_CONSULTATIONS_PER_TASK,
   type RunEvent,
   type RunStatus,
   type TaskDetail,
@@ -10,6 +11,7 @@ import {
 } from '@relay-hub/contracts';
 import {
   agentProfiles,
+  consultations,
   handoffs,
   outboxEvents,
   type RelayDatabase,
@@ -90,7 +92,9 @@ export async function recordAgentEvent(
         break;
       case 'handoff.requested': {
         if (run.status !== 'running') throw new Error(`Cannot request handoff while run is ${run.status}`);
-        if (run.triggerType === 'review') throw new Error('Review Runs cannot request a Handoff');
+        if (run.triggerType === 'review' || run.triggerType === 'consult') {
+          throw new Error(`${run.triggerType} Runs cannot request a Handoff`);
+        }
         if (task.currentRunId !== run.id) {
           throw new Error('Only the current Task Run can request a Handoff');
         }
@@ -174,6 +178,49 @@ export async function recordAgentEvent(
         });
         break;
       }
+      case 'consultation.requested': {
+        if (run.status !== 'running') throw new Error(`Cannot request consultation while run is ${run.status}`);
+        if (run.triggerType === 'review' || run.triggerType === 'consult') {
+          throw new Error(`${run.triggerType} Runs cannot request a Consultation`);
+        }
+        if (task.currentRunId !== run.id) {
+          throw new Error('Only the current Task Run can request a Consultation');
+        }
+        if (agentEvent.consultation.targetAgentId === run.agentId) {
+          throw new Error('Consultation target must be a different AgentProfile than the source Run');
+        }
+        const [targetAgent] = await tx
+          .select({ enabled: agentProfiles.enabled, workspaceId: agentProfiles.workspaceId })
+          .from(agentProfiles)
+          .where(eq(agentProfiles.id, agentEvent.consultation.targetAgentId))
+          .limit(1);
+        if (!targetAgent?.enabled || targetAgent.workspaceId !== task.workspaceId) {
+          throw new Error(`Invalid Consultation target AgentProfile: ${agentEvent.consultation.targetAgentId}`);
+        }
+        const existingConsultations = await tx
+          .select({ id: consultations.id, sourceRunId: consultations.sourceRunId })
+          .from(consultations)
+          .where(eq(consultations.taskId, task.id));
+        if (existingConsultations.some((consultation) => consultation.sourceRunId === run.id)) {
+          throw new Error(`Run already has a Consultation: ${run.id}`);
+        }
+        if (existingConsultations.length >= MAX_CONSULTATIONS_PER_TASK) {
+          throw new Error(`Task reached the Consultation limit of ${MAX_CONSULTATIONS_PER_TASK}`);
+        }
+        await tx.insert(consultations).values({
+          id: randomUUID(),
+          taskId: task.id,
+          sourceRunId: run.id,
+          sourceAgentId: run.agentId,
+          targetAgentId: agentEvent.consultation.targetAgentId,
+          question: agentEvent.consultation.question,
+          contextSummary: agentEvent.consultation.contextSummary,
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        });
+        break;
+      }
       case 'handoff.consumed': {
         if (run.status !== 'claimed' && run.status !== 'starting') {
           throw new Error(`Cannot consume Handoff while run is ${run.status}`);
@@ -249,7 +296,68 @@ export async function recordAgentEvent(
       case 'run.completed':
         nextRunStatus = 'succeeded';
         {
-          if (run.triggerType === 'review') {
+          if (run.triggerType === 'consult') {
+            const [consultation] = await tx
+              .select()
+              .from(consultations)
+              .where(eq(consultations.targetRunId, run.id))
+              .limit(1);
+            if (!consultation || consultation.status !== 'dispatched') {
+              throw new Error('Consultation Run must belong to a dispatched Consultation');
+            }
+            if (agentEvent.outcome.nextAction?.type !== 'complete') {
+              throw new Error('Consultation Run must complete with a complete nextAction');
+            }
+            const [sourceRun] = await tx
+              .select()
+              .from(runs)
+              .where(eq(runs.id, consultation.sourceRunId))
+              .limit(1);
+            if (!sourceRun || sourceRun.agentId !== consultation.sourceAgentId) {
+              throw new Error(`Consultation source Run is unavailable: ${consultation.sourceRunId}`);
+            }
+            const continuationRunId = randomUUID();
+            await tx.insert(runs).values({
+              id: continuationRunId,
+              taskId: task.id,
+              agentId: sourceRun.agentId,
+              parentRunId: run.id,
+              triggerType: 'continuation',
+              status: 'queued',
+              attempt: sourceRun.attempt,
+              workspaceRoot: sourceRun.workspaceRoot,
+              bootstrapPolicySnapshot: { steps: [] },
+              agentProfileSnapshot: sourceRun.agentProfileSnapshot,
+              worktreePath: sourceRun.worktreePath,
+              workingDirectory: sourceRun.workingDirectory,
+              branchName: sourceRun.branchName,
+              createdAt: now,
+            });
+            const response = agentEvent.outcome.publicMessage ?? agentEvent.outcome.summary;
+            await tx
+              .update(consultations)
+              .set({ status: 'resumed', response, continuationRunId, updatedAt: now })
+              .where(and(eq(consultations.id, consultation.id), eq(consultations.status, 'dispatched')));
+            await tx.insert(outboxEvents).values({
+              aggregateType: 'run',
+              aggregateId: continuationRunId,
+              eventType: 'run.queued',
+              payload: { runId: continuationRunId },
+            });
+            taskPatch.currentRunId = continuationRunId;
+            workflowEvent = {
+              eventType: 'task.consultation_resumed',
+              payload: {
+                consultationId: consultation.id,
+                sourceRunId: sourceRun.id,
+                consultationRunId: run.id,
+                continuationRunId,
+                sourceAgentId: sourceRun.agentId,
+                targetAgentId: run.agentId,
+              },
+              dedupeKey: `workflow-consultation-resumed:${run.id}`,
+            };
+          } else if (run.triggerType === 'review') {
             const [review] = await tx.select().from(reviews).where(eq(reviews.runId, run.id)).limit(1);
             if (!review) throw new Error('Reviewer Run must submit a structured Review before completion');
             const findingRows = await tx
@@ -335,12 +443,71 @@ export async function recordAgentEvent(
               };
             }
           } else {
-            const [pendingHandoff] = await tx
+            const [pendingConsultation] = await tx
               .select()
-              .from(handoffs)
-              .where(and(eq(handoffs.sourceRunId, run.id), eq(handoffs.status, 'pending')))
+              .from(consultations)
+              .where(and(eq(consultations.sourceRunId, run.id), eq(consultations.status, 'pending')))
               .limit(1);
-            if (pendingHandoff?.nextAction?.type === 'handoff') {
+            if (pendingConsultation) {
+              if (
+                agentEvent.outcome.nextAction?.type !== 'consult' ||
+                agentEvent.outcome.nextAction.targetAgentId !== pendingConsultation.targetAgentId
+              ) {
+                throw new Error('Run outcome must match the pending Consultation target');
+              }
+              const [targetAgent] = await tx
+                .select()
+                .from(agentProfiles)
+                .where(eq(agentProfiles.id, pendingConsultation.targetAgentId))
+                .limit(1);
+              if (!targetAgent?.enabled || targetAgent.workspaceId !== task.workspaceId) {
+                throw new Error(`Consultation target became unavailable: ${pendingConsultation.targetAgentId}`);
+              }
+              const consultationRunId = randomUUID();
+              await tx.insert(runs).values({
+                id: consultationRunId,
+                taskId: task.id,
+                agentId: pendingConsultation.targetAgentId,
+                parentRunId: run.id,
+                triggerType: 'consult',
+                status: 'queued',
+                workspaceRoot: run.workspaceRoot,
+                bootstrapPolicySnapshot: { steps: [] },
+                agentProfileSnapshot: mapAgentProfile(targetAgent),
+                worktreePath: run.worktreePath,
+                workingDirectory: run.workingDirectory,
+                branchName: run.branchName,
+                createdAt: now,
+              });
+              await tx
+                .update(consultations)
+                .set({ status: 'dispatched', targetRunId: consultationRunId, updatedAt: now })
+                .where(and(eq(consultations.id, pendingConsultation.id), eq(consultations.status, 'pending')));
+              await tx.insert(outboxEvents).values({
+                aggregateType: 'run',
+                aggregateId: consultationRunId,
+                eventType: 'run.queued',
+                payload: { runId: consultationRunId },
+              });
+              taskPatch.currentRunId = consultationRunId;
+              workflowEvent = {
+                eventType: 'task.consultation_dispatched',
+                payload: {
+                  consultationId: pendingConsultation.id,
+                  sourceRunId: run.id,
+                  consultationRunId,
+                  sourceAgentId: run.agentId,
+                  targetAgentId: pendingConsultation.targetAgentId,
+                },
+                dedupeKey: `workflow-consultation-dispatched:${run.id}`,
+              };
+            } else {
+              const [pendingHandoff] = await tx
+                .select()
+                .from(handoffs)
+                .where(and(eq(handoffs.sourceRunId, run.id), eq(handoffs.status, 'pending')))
+                .limit(1);
+              if (pendingHandoff?.nextAction?.type === 'handoff') {
               const genericHandoffs = await tx
                 .select({ id: handoffs.id })
                 .from(handoffs)
@@ -404,11 +571,11 @@ export async function recordAgentEvent(
                 },
                 dedupeKey: `workflow-after-run:${run.id}`,
               };
-            } else {
-              const plan = planAfterSuccessfulBuilderRun({ reviewDispatchAvailable: Boolean(pendingHandoff) });
-              nextTaskStatus = plan.nextTaskStatus;
-              let targetRunId: string | undefined;
-              if (pendingHandoff) {
+              } else {
+                const plan = planAfterSuccessfulBuilderRun({ reviewDispatchAvailable: Boolean(pendingHandoff) });
+                nextTaskStatus = plan.nextTaskStatus;
+                let targetRunId: string | undefined;
+                if (pendingHandoff) {
                 targetRunId = randomUUID();
                 const [targetAgent] = await tx
                   .select()
@@ -444,16 +611,17 @@ export async function recordAgentEvent(
                   payload: { runId: targetRunId },
                 });
                 taskPatch.currentRunId = targetRunId;
-              }
-              workflowEvent = {
-                eventType: plan.eventType,
-                payload: { reason: plan.reason, runId: run.id, completionPolicy: task.completionPolicy },
-                dedupeKey: `workflow-after-run:${run.id}`,
-              };
-              if (pendingHandoff && targetRunId) {
-                workflowEvent.payload.handoffId = pendingHandoff.id;
-                workflowEvent.payload.targetAgentId = pendingHandoff.targetAgentId;
-                workflowEvent.payload.targetRunId = targetRunId;
+                }
+                workflowEvent = {
+                  eventType: plan.eventType,
+                  payload: { reason: plan.reason, runId: run.id, completionPolicy: task.completionPolicy },
+                  dedupeKey: `workflow-after-run:${run.id}`,
+                };
+                if (pendingHandoff && targetRunId) {
+                  workflowEvent.payload.handoffId = pendingHandoff.id;
+                  workflowEvent.payload.targetAgentId = pendingHandoff.targetAgentId;
+                  workflowEvent.payload.targetRunId = targetRunId;
+                }
               }
             }
           }
@@ -466,13 +634,30 @@ export async function recordAgentEvent(
       case 'run.cancelled':
         nextRunStatus = 'cancelled';
         nextTaskStatus = 'cancelled';
+        await tx
+          .update(consultations)
+          .set({ status: 'failed', updatedAt: now })
+          .where(
+            sql`(${consultations.targetRunId} = ${run.id} AND ${consultations.status} = 'dispatched') OR (${consultations.sourceRunId} = ${run.id} AND ${consultations.status} = 'pending')`,
+          );
         runPatch.finishedAt = now;
         runPatch.tokenRevokedAt = now;
         runPatch.leaseExpiresAt = null;
         break;
       case 'run.failed':
         nextRunStatus = 'failed';
-        if (run.triggerType === 'review' && task.status === 'reviewing') {
+        if (run.triggerType === 'consult' && task.status === 'running') {
+          await tx
+            .update(consultations)
+            .set({ status: 'failed', updatedAt: now })
+            .where(and(eq(consultations.targetRunId, run.id), eq(consultations.status, 'dispatched')));
+          nextTaskStatus = 'waiting_for_user';
+          workflowEvent = {
+            eventType: 'task.consultation_failed',
+            payload: { runId: run.id, reason: agentEvent.code, message: agentEvent.message },
+            dedupeKey: `workflow-consultation-failed:${run.id}`,
+          };
+        } else if (run.triggerType === 'review' && task.status === 'reviewing') {
           nextTaskStatus = 'waiting_for_user';
           workflowEvent = {
             eventType: 'task.review_failed',
@@ -481,6 +666,10 @@ export async function recordAgentEvent(
           };
         } else if (task.status === 'queued' || task.status === 'running') {
           nextTaskStatus = 'failed';
+          await tx
+            .update(consultations)
+            .set({ status: 'failed', updatedAt: now })
+            .where(and(eq(consultations.sourceRunId, run.id), eq(consultations.status, 'pending')));
         }
         runPatch.failureCode = agentEvent.code;
         runPatch.failureDetail = agentEvent.message;

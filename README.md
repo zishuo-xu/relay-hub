@@ -14,11 +14,11 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 
 ```text
 进入协作线程 -> @Agent 发起讨论或执行 -> Agent 独立 Run
-        -> Agent 消息回到线程 -> 必要时结构化交接/审查 -> 用户处理关键决策
-        -> Task/Run/Handoff/Review 在后台留下可恢复审计事实
+        -> Agent 消息回到线程 -> 必要时结构化交接/咨询/审查 -> 用户处理关键决策
+        -> Task/Run/Handoff/Consultation/Review 在后台留下可恢复审计事实
 ```
 
-产品北极星是“Chat 主入口 + Agent/模型配置 Hub + Task/Run 治理与审计”。Git worktree、commit、push 和合并策略是 Agent 工具能力或开发 SOP，不是产品中心。Thread/Message、Task 级版本化公开上下文与用户显式多 Agent 并行派发均已完成：同一线程中的多个 Agent 可以在固定、可审计的消息边界内独立处理同一请求并回流结果，详见 [ADR-020](docs/decisions/ADR-020-versioned-conversation-context.md) 与 [ADR-021](docs/decisions/ADR-021-atomic-multi-agent-message-dispatch.md)。
+产品北极星是“Chat 主入口 + Agent/模型配置 Hub + Task/Run 治理与审计”。Git worktree、commit、push 和合并策略是 Agent 工具能力或开发 SOP，不是产品中心。Thread/Message、Task 级版本化公开上下文、用户显式多 Agent 并行派发与单层受控 Agent 咨询均已完成：同一线程中的多个 Agent 可以在固定、可审计的消息边界内独立处理请求；负责 Agent 也能向另一个独立只读 Agent 询问有限问题，再自动恢复并综合结果。详见 [ADR-020](docs/decisions/ADR-020-versioned-conversation-context.md)、[ADR-021](docs/decisions/ADR-021-atomic-multi-agent-message-dispatch.md) 与 [ADR-022](docs/decisions/ADR-022-controlled-agent-consultation.md)。
 
 ## 为什么适合作为简历项目
 
@@ -54,6 +54,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成对话优先第一切片：持久 Thread/Message、线程内 Agent Run、Agent 回复回流与按需审计抽屉
 - [x] 完成 Task 级版本化公开 ConversationContext、跨 Agent 连续对话与上下文审计
 - [x] 完成一条公开消息向最多 4 个 Agent 的原子并行派发、独立状态与结果回流
+- [x] 完成受控 Agent 咨询：只读独立 Run、原 Agent 自动恢复、单层与三次预算约束
 - [ ] 完成可观测性、测试和演示部署
 
 ## 目录约定

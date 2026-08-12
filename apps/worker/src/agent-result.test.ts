@@ -223,6 +223,71 @@ describe('agentCompletionEvents', () => {
     });
   });
 
+  it('turns a structured consultation into consultation.requested and run.completed', () => {
+    const events = agentCompletionEvents({
+      claimed,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'A bounded architecture opinion is needed.',
+        publicMessage: 'I am consulting the UX specialist before I continue.',
+        nextAction: { type: 'consult', targetAgentId: uxAgentId, reason: 'A second perspective is useful.' },
+        consultation: {
+          question: 'Should this interaction use a drawer or a dedicated page?',
+          contextSummary: 'The main workflow must stay compact and the source Agent retains responsibility.',
+        },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: 'consultation.requested',
+        consultation: {
+          targetAgentId: uxAgentId,
+          question: 'Should this interaction use a drawer or a dedicated page?',
+        },
+      },
+      { type: 'run.completed', outcome: { nextAction: { type: 'consult', targetAgentId: uxAgentId } } },
+    ]);
+  });
+
+  it('prevents a consultation Run from routing to another Agent', () => {
+    const consultClaim: ClaimedRun = {
+      ...claimed,
+      run: { ...claimed.run, triggerType: 'consult' },
+    };
+    expect(() => agentCompletionEvents({
+      claimed: consultClaim,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'I want another opinion.',
+        nextAction: { type: 'consult', targetAgentId: uxAgentId, reason: 'Nested consultation.' },
+        consultation: { question: 'Ask again?', contextSummary: 'This must not leave the platform boundary.' },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    })).toThrow('Consultation Runs may only return a complete nextAction');
+  });
+
+  it('completes a plain-text consultation without falling into the fixed Reviewer route', () => {
+    const consultClaim: ClaimedRun = {
+      ...claimed,
+      task: { ...claimed.task, reviewerAgentId: reviewerId },
+      run: { ...claimed.run, triggerType: 'consult' },
+    };
+    const events = agentCompletionEvents({
+      claimed: consultClaim,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: 'Bounded consultation answer.',
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    });
+    expect(events).toMatchObject([
+      { type: 'run.completed', outcome: { nextAction: { type: 'complete' } } },
+    ]);
+  });
+
   it('falls back to the fixed Reviewer Handoff when no envelope is returned', () => {
     const withReviewer: ClaimedRun = { ...claimed, task: { ...claimed.task, reviewerAgentId: reviewerId } };
     const events = agentCompletionEvents({

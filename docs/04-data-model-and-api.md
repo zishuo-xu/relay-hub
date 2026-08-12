@@ -10,7 +10,7 @@
 
 以下内容会被 API、Worker、Web、Handoff 和审计共同引用，因此应尽早稳定：
 
-- 核心实体：Workspace、AgentProfile、Task、Run、RunEvent、Handoff、Review。
+- 核心实体：Workspace、AgentProfile、Task、Run、RunEvent、Handoff、Consultation、Review。
 - 全局身份：每个实体的 ID 以及 Workspace ownership。
 - 因果关系：Task → Run、parentRun → childRun、Handoff → targetRun。
 - Task 与 Run 的状态语义和终态规则。
@@ -54,6 +54,9 @@ erDiagram
     RUN ||--o{ RUN_EVENT : emits
     RUN ||--o{ HANDOFF : requests
     HANDOFF ||--|| RUN : creates_target
+    RUN ||--o{ CONSULTATION : requests
+    CONSULTATION ||--|| RUN : creates_consult
+    CONSULTATION ||--|| RUN : creates_continuation
     RUN ||--o| REVIEW : produces
     REVIEW ||--o{ REVIEW_FINDING : contains
 
@@ -218,7 +221,7 @@ Thread detail 返回 `dispatches[]`，前端据此把一条 User Message 与多�
 关键字段：
 
 - `task_id`, `agent_id`, `parent_run_id`
-- `trigger_type`: `user`、`handoff`、`review`、`retry`
+- `trigger_type`: `user`、`handoff`、`review`、`retry`、`consult`、`continuation`
 - `status`, `attempt`, `version`
 - `worker_id`, `lease_expires_at`
 - `execution_token_hash`, `token_issued_at`, `token_expires_at`, `token_revoked_at`: 单次 Run 执行凭证的哈希和生命周期；不保存明文
@@ -260,6 +263,20 @@ Thread detail 返回 `dispatches[]`，前端据此把一条 User Message 与多�
 - `status`
 
 `source_run_id` 唯一，当前一个 Builder Run 最多产生一个 Handoff。`pending` 表示交接事实已保存但 Builder 尚未完成；`dispatched` 表示 Reviewer 子 Run 与 Outbox 已在同一事务中创建，不表示 Review 已通过。
+
+### `consultations`
+
+| 字段 | 含义 |
+|---|---|
+| `task_id` | 咨询所属 Task；用于执行每 Task 最多 3 次的预算 |
+| `source_run_id`, `source_agent_id` | 发起有限问题的负责 Run 与原责任 Agent |
+| `target_agent_id`, `target_run_id` | 咨询 Agent 与独立只读 consult Run |
+| `continuation_run_id` | 咨询完成后恢复的原 Agent Run |
+| `question`, `context_summary` | 平台校验并持久化的有限问题与必要上下文 |
+| `response` | 咨询 Agent 的公开回答 |
+| `status` | `pending/dispatched/resumed/failed`；保留 `answered` 供回答与恢复未来拆分事务时使用 |
+
+`source_run_id`、`target_run_id`、`continuation_run_id` 分别唯一，避免一个来源 Run 重复咨询或一个 Run 伪装成多个咨询阶段。Consultation 不保存隐藏 reasoning、Token 或 CLI Session，也不改变 Task Builder/责任身份。
 
 ### `outbox_events`
 

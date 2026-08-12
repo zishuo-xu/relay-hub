@@ -11,6 +11,7 @@ export const RUN_QUEUE_NAME = 'relay-hub-runs';
 export const AGENT_RESULT_ENVELOPE_START = '<relayhub_result>';
 export const AGENT_RESULT_ENVELOPE_END = '</relayhub_result>';
 export const MAX_SEQUENTIAL_HANDOFFS = 6;
+export const MAX_CONSULTATIONS_PER_TASK = 3;
 export const HANDOFF_REJECTION_REASONS = ['handoff_budget_exhausted', 'handoff_target_unavailable'] as const;
 export type HandoffRejectionReason = (typeof HANDOFF_REJECTION_REASONS)[number];
 
@@ -91,8 +92,18 @@ export function identifyExecutionPolicyPreset(
 
 export function effectiveExecutionPolicy(
   policy: ExecutionPolicy,
-  triggerType: 'user' | 'handoff' | 'review' | 'retry',
+  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation',
 ): ExecutionPolicy {
+  if (triggerType === 'consult') {
+    return {
+      ...policy,
+      fileAccess: 'read_only',
+      networkAccess: 'none',
+      externalDirectoryAccess: 'deny',
+      gitAccess: 'none',
+      internalSubagents: 'deny',
+    };
+  }
   if (triggerType !== 'review') return policy;
   return {
     ...policy,
@@ -106,7 +117,7 @@ export function effectiveExecutionPolicy(
 export function effectiveExecutionPolicyForAdapter(
   adapterType: AgentAdapterType,
   policy: ExecutionPolicy,
-  triggerType: 'user' | 'handoff' | 'review' | 'retry',
+  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation',
 ): ExecutionPolicy {
   const effective = effectiveExecutionPolicy(policy, triggerType);
   if (adapterType === 'opencode_cli' && effective.fileAccess === 'read_only') {
@@ -457,6 +468,11 @@ export const NextActionSchema = z.discriminatedUnion('type', [
     targetAgentId: z.string().uuid(),
     reason: z.string().min(1).max(2_000),
   }).strict(),
+  z.object({
+    type: z.literal('consult'),
+    targetAgentId: z.string().uuid(),
+    reason: z.string().min(1).max(2_000),
+  }).strict(),
   z.object({ type: z.literal('wait_for_user'), reason: z.string().min(1).max(2_000) }).strict(),
   z.object({ type: z.literal('complete'), reason: z.string().min(1).max(2_000) }).strict(),
 ]);
@@ -532,12 +548,20 @@ export const AgentResultHandoffSchema = z.object({
 
 export type AgentResultHandoff = z.infer<typeof AgentResultHandoffSchema>;
 
+export const AgentResultConsultationSchema = z.object({
+  question: z.string().min(1).max(4_000),
+  contextSummary: z.string().min(1).max(10_000),
+}).strict();
+
+export type AgentResultConsultation = z.infer<typeof AgentResultConsultationSchema>;
+
 export const AgentResultSchema = z
   .object({
     summary: z.string().min(1).max(10_000),
     publicMessage: z.string().min(1).max(10_000).optional(),
     nextAction: NextActionSchema,
     handoff: AgentResultHandoffSchema.optional(),
+    consultation: AgentResultConsultationSchema.optional(),
   })
   .strict()
   .superRefine((result, context) => {
@@ -554,6 +578,23 @@ export const AgentResultSchema = z
         path: ['handoff'],
         message: 'Handoff content requires a handoff or request_review nextAction',
       });
+    }
+    if (result.nextAction.type === 'consult' && !result.consultation) {
+      context.addIssue({
+        code: 'custom',
+        path: ['consultation'],
+        message: 'A consult nextAction requires structured Consultation content',
+      });
+    }
+    if (result.consultation && result.nextAction.type !== 'consult') {
+      context.addIssue({
+        code: 'custom',
+        path: ['consultation'],
+        message: 'Consultation content requires a consult nextAction',
+      });
+    }
+    if (result.handoff && result.consultation) {
+      context.addIssue({ code: 'custom', path: [], message: 'A result cannot request Handoff and Consultation together' });
     }
   });
 
@@ -604,6 +645,14 @@ export const ReviewDraftSchema = z
 
 export type ReviewDraft = z.infer<typeof ReviewDraftSchema>;
 
+export const ConsultationDraftSchema = z.object({
+  targetAgentId: z.string().uuid(),
+  question: z.string().min(1).max(4_000),
+  contextSummary: z.string().min(1).max(10_000),
+}).strict();
+
+export type ConsultationDraft = z.infer<typeof ConsultationDraftSchema>;
+
 export const AgentEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('run.prepared'),
@@ -647,6 +696,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     outputSummary: z.unknown().optional(),
   }),
   z.object({ type: z.literal('handoff.requested'), handoff: HandoffDraftSchema }),
+  z.object({ type: z.literal('consultation.requested'), consultation: ConsultationDraftSchema }),
   z.object({
     type: z.literal('handoff.consumed'),
     handoffId: z.string().uuid(),
@@ -834,7 +884,7 @@ export interface Run {
   agentId: string;
   status: RunStatus;
   attempt: number;
-  triggerType: 'user' | 'handoff' | 'review' | 'retry';
+  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation';
   parentRunId?: string;
   retryOfRunId?: string;
   workspaceRoot: string;
@@ -853,6 +903,22 @@ export interface Run {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+}
+
+export interface Consultation {
+  id: string;
+  taskId: string;
+  sourceRunId: string;
+  sourceAgentId: string;
+  targetAgentId: string;
+  targetRunId?: string;
+  continuationRunId?: string;
+  question: string;
+  contextSummary: string;
+  response?: string;
+  status: 'pending' | 'dispatched' | 'answered' | 'resumed' | 'failed';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RunEvent {
@@ -879,6 +945,9 @@ export type CoordinationReason =
   | 'review_waiting_for_dispatch'
   | 'review_in_progress'
   | 'repair_in_progress'
+  | 'consultation_waiting_for_dispatch'
+  | 'consultation_in_progress'
+  | 'continuation_in_progress'
   | 'handoff_pending'
   | 'workflow_resolution_pending'
   | 'user_confirmation_required'
@@ -928,6 +997,7 @@ export interface TaskDetail {
   runs: Run[];
   events: RunEvent[];
   handoffs: Handoff[];
+  consultations: Consultation[];
   reviews: Review[];
   coordination: TaskCoordinationView;
 }
@@ -938,6 +1008,7 @@ export interface ClaimedRun {
   workspace: Workspace;
   agent: AgentProfile;
   handoff?: Handoff;
+  consultation?: Consultation;
   review?: Review;
   handoffTargets?: HandoffTargetView[];
   conversationContext?: ConversationContextView;

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
-import { WorktreeManager } from './worktree-manager.js';
+import { shouldReusePreparedWorktree, WorktreeManager } from './worktree-manager.js';
 
 const execFileAsync = promisify(execFile);
 const temporaryRoots: string[] = [];
@@ -14,6 +14,21 @@ afterEach(async () => {
 });
 
 describe('WorktreeManager', () => {
+  it('prepares a new worktree when an inherited Run has no environment to reuse', () => {
+    expect(shouldReusePreparedWorktree({ triggerType: 'consult' })).toBe(false);
+    expect(shouldReusePreparedWorktree({
+      triggerType: 'consult',
+      worktreePath: '/tmp/worktree',
+      workingDirectory: '/tmp/worktree/project',
+      branchName: 'relayhub/source',
+    })).toBe(true);
+    expect(shouldReusePreparedWorktree({
+      triggerType: 'user',
+      worktreePath: '/tmp/worktree',
+      workingDirectory: '/tmp/worktree/project',
+      branchName: 'relayhub/source',
+    })).toBe(false);
+  });
   it('creates an isolated branch outside the source repository', async () => {
     const root = await mkdtemp(join(tmpdir(), 'relayhub-worktree-test-'));
     temporaryRoots.push(root);

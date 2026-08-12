@@ -7,6 +7,7 @@ import {
 import { agentCompletionEvents } from './agent-result.js';
 
 const HANDOFF_CHAIN_PATTERN = /^relayhub:handoff-chain=([0-9a-fA-F-]+(?:,[0-9a-fA-F-]+)*)\s*$/m;
+const CONSULT_PATTERN = /^relayhub:consult=([0-9a-fA-F-]+)\s*$/m;
 const REPORT_CONTEXT_PATTERN = /^relayhub:report-context\s*$/m;
 
 /**
@@ -31,6 +32,7 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
   yield { type: 'run.started', sessionRef: `mock-${claimed.run.id}` };
 
   const isReviewRun = claimed.run.triggerType === 'review';
+  const isConsultationRun = claimed.run.triggerType === 'consult';
 
   const messages = isReviewRun
     ? [
@@ -38,6 +40,12 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
         '正在独立检查 Builder 交接内容与验收标准……',
         `已读取 ${claimed.handoff?.artifactRefs.length ?? 0} 个交接产物引用。`,
       ]
+    : isConsultationRun
+      ? [
+          `收到咨询问题：${claimed.consultation?.question ?? claimed.task.title}`,
+          '正在只读分析必要上下文……',
+          '已形成给负责 Agent 的咨询建议。',
+        ]
     : claimed.run.triggerType === 'retry'
       ? [
           `收到返工任务：Review round ${claimed.review?.round ?? 'unknown'}`,
@@ -91,13 +99,58 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
     return;
   }
 
+  if (isConsultationRun) {
+    const finalMessage = [
+      'Mock 咨询 Agent 建议保持当前边界，并由原 Agent 负责综合结论。',
+      AGENT_RESULT_ENVELOPE_START,
+      JSON.stringify({
+        summary: 'Mock consultation answered the bounded question.',
+        publicMessage: 'Mock 咨询 Agent 建议保持当前边界，并由原 Agent 负责综合结论。',
+        nextAction: { type: 'complete', reason: 'The bounded mock consultation has been answered.' },
+      }),
+      AGENT_RESULT_ENVELOPE_END,
+    ].join('\n');
+    for (const event of agentCompletionEvents({
+      claimed,
+      workingDirectory: claimed.run.workingDirectory ?? claimed.run.workspaceRoot,
+      finalMessage,
+      commandEvidence: [],
+      fallbackSummary: 'Mock consultation completed successfully.',
+    })) {
+      yield event;
+    }
+    return;
+  }
+
   const chainNext = claimed.run.triggerType === 'user' || claimed.run.triggerType === 'handoff'
     ? mockHandoffChainNext(claimed.task.description, claimed.agent.id)
     : undefined;
   const contextReport = REPORT_CONTEXT_PATTERN.test(claimed.task.description)
     ? `Mock Agent 已读取 ${claimed.conversationContext?.messages.length ?? 0} 条公开线程上下文。最近发言：${claimed.conversationContext?.messages.at(-1)?.senderName ?? '无'}。`
     : undefined;
-  const finalMessage = chainNext
+  const consultTarget = claimed.run.triggerType === 'user'
+    ? CONSULT_PATTERN.exec(claimed.task.description)?.[1]
+    : undefined;
+  const finalMessage = consultTarget
+    ? [
+        'Mock Agent 需要一条独立建议，咨询后会继续负责本任务。',
+        AGENT_RESULT_ENVELOPE_START,
+        JSON.stringify({
+          summary: 'Mock Agent prepared a bounded consultation request.',
+          publicMessage: 'Mock Agent 正在咨询一个独立 Agent，之后会继续完成任务。',
+          nextAction: {
+            type: 'consult',
+            targetAgentId: consultTarget,
+            reason: 'The mock scenario exercises controlled Agent consultation.',
+          },
+          consultation: {
+            question: '在不转移任务责任的前提下，应该如何保持这个实现边界？',
+            contextSummary: `当前任务是“${claimed.task.title}”，原 Agent 会在收到建议后继续负责。`,
+          },
+        }),
+        AGENT_RESULT_ENVELOPE_END,
+      ].join('\n')
+    : chainNext
     ? [
         'Mock Agent 已完成本次任务，执行记录已持久化。',
         AGENT_RESULT_ENVELOPE_START,

@@ -1,5 +1,23 @@
 # 07. 实现状态
 
+## 2026-08-13：受控 Agent 咨询与原 Agent 恢复
+
+### 已实现
+
+- 新增结构化 `NextAction=consult` 与 `Consultation` 事实；问题、必要上下文、来源/目标 Agent、咨询 Run、回答和 continuation Run 均可从 PostgreSQL 重建。Consultation 不复用 Handoff 语义，Task 责任始终保留在来源 Agent。
+- Orchestrator 在来源 Run 完成后派发独立 `triggerType=consult` Run；咨询完成后持久化公开回答并自动创建 `triggerType=continuation` 的原 Agent Run。每段 Run 都有独立 Profile snapshot、Token、Lease 和 Session。
+- consult Run 无条件收紧为文件只读、无外网、禁止 Git 与内部子 Agent；Worker 协议只允许 `complete`。API 拒绝 Review/consult Run 发起咨询、拒绝自身/跨 Workspace/禁用目标，并把每 Task 咨询预算固定为 3 次。
+- 有完整来源 worktree 时咨询和 continuation 复用环境；Mock 来源与真实 CLI 组合没有可继承环境时，Worker 为咨询 Run 新建隔离 worktree。咨询失败时 Task 转 `waiting_for_user`，不会静默继续。
+- `TaskCoordinationView` 新增咨询等待、咨询进行和原 Agent 恢复三种原因；咨询进行时当前执行者虽是专家 Agent，但 Owner 仍投影为原责任 Agent。Web 消息流展示咨询回答，概览显示次数/状态，Timeline 展示请求、派发、恢复和失败。
+
+### 验证证据
+
+- 全新隔离数据库 `relayhub_consult_test_20260813` 应用全部 migration；API 54/54 通过，专用测试覆盖 source → consult → continuation、嵌套拒绝和第 4 次预算拒绝。
+- Contracts 41/41、Worker 58/58、Web 7/7 通过；Worker 回归覆盖混合 Adapter 无来源 worktree 时新建环境。
+- 正式 PostgreSQL 无损应用 additive migration `0015_famous_ulik.sql`；新增两个 Run enum 值、一张 Consultation 表和索引，没有删除或清空既有 PostgreSQL、Redis 或历史事实。
+- 真实 Task `5c404b85-ba49-420d-9ebd-63f7ad2f1616` 完成 Mock 负责 Agent → 真实 Codex 咨询 Agent → Mock continuation；三个 Run 均 succeeded，咨询回答持久化，Task 最终 `waiting_for_user`。
+- 浏览器线程按顺序显示原 Agent 咨询说明、Codex 建议和原 Agent 最终回复；审计显示“已请求咨询 → 咨询已派发 → 原 Agent 已恢复”。614 × 772 视口 document/body 等于 viewport，审计内部滚动，控制台无 warning/error。
+
 ## 2026-08-13：用户显式多 Agent 原子派发与并行回流
 
 ### 已实现

@@ -12,6 +12,38 @@ import {
 const targetId = DEFAULT_MOCK_REVIEWER_AGENT_ID;
 
 describe('Agent result contract', () => {
+  it('accepts a structured bounded consultation', () => {
+    expect(
+      AgentResultSchema.parse({
+        summary: 'Need specialist advice.',
+        nextAction: { type: 'consult', targetAgentId: targetId, reason: 'Need UX expertise.' },
+        consultation: {
+          question: 'Which layout preserves focus?',
+          contextSummary: 'The source Agent remains responsible for the Task.',
+        },
+      }),
+    ).toMatchObject({
+      nextAction: { type: 'consult' },
+      consultation: { question: 'Which layout preserves focus?' },
+    });
+  });
+
+  it('requires consultation content only for a consult nextAction', () => {
+    expect(() =>
+      AgentResultSchema.parse({
+        summary: 'Missing consultation body.',
+        nextAction: { type: 'consult', targetAgentId: targetId, reason: 'Need UX expertise.' },
+      }),
+    ).toThrow();
+    expect(() =>
+      AgentResultSchema.parse({
+        summary: 'Unexpected consultation body.',
+        nextAction: { type: 'complete', reason: 'Done.' },
+        consultation: { question: 'Unexpected?', contextSummary: 'Not a consult route.' },
+      }),
+    ).toThrow();
+  });
+
   it('accepts a structured handoff result and applies list defaults', () => {
     expect(
       AgentResultSchema.parse({

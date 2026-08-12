@@ -12,6 +12,7 @@ import {
 } from '@relay-hub/contracts';
 import {
   agentProfiles,
+  consultations,
   handoffs,
   type RelayDatabase,
   reviewFindings,
@@ -27,6 +28,7 @@ import { runLeaseExpiration, runLeaseHeartbeatIntervalMs } from '../run-lease.js
 import { handoffContentDigest } from '../handoff-integrity.js';
 import {
   mapEvent,
+  mapConsultation,
   mapHandoff,
   mapReview,
   mapReviewFinding,
@@ -113,6 +115,11 @@ export async function claimRun(
     const findingRows = reviewRow
       ? await tx.select().from(reviewFindings).where(eq(reviewFindings.reviewId, reviewRow.id))
       : [];
+    const [consultationRow] = claimed.triggerType === 'consult'
+      ? await tx.select().from(consultations).where(eq(consultations.targetRunId, claimed.id)).limit(1)
+      : claimed.triggerType === 'continuation'
+        ? await tx.select().from(consultations).where(eq(consultations.continuationRunId, claimed.id)).limit(1)
+        : [];
     const [eventRow] = await tx
       .insert(runEvents)
       .values({
@@ -149,6 +156,7 @@ export async function claimRun(
           handoffTargets,
           ...(conversationContext ? { conversationContext } : {}),
           ...(handoffRow ? { handoff: mapHandoff(handoffRow) } : {}),
+          ...(consultationRow ? { consultation: mapConsultation(consultationRow) } : {}),
           ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
         } satisfies ClaimedRun,
         executionToken: token.plaintext,

@@ -91,6 +91,7 @@
 7. [ ] 将 Review verdict、返工、用户确认和完成继续收敛到统一 Route 投影，同时保持 Orchestrator 为唯一状态迁移者。
 8. [x] 从现有 Task/Run/Handoff/Review/RunOutcome 推导只读 `TaskCoordinationView`，在 Task Detail 和单屏概览统一展示 State、Owner、Evidence、Verdict、Route；Event 保持审计职责，不作为当前状态真相。
 9. [x] 在不引入通用 Workflow Engine 的前提下，为方案、UX、安全等 AgentProfile 专业方向提供顺序型动态 Handoff 路径。
+10. [x] 实现单层受控 Agent Consultation：独立只读咨询 Run、原 Agent continuation、每 Task 三次预算与失败转用户。
 
 退出条件：标准演示场景端到端通过，且交接链可以由数据库查询重建。
 
@@ -108,7 +109,7 @@
 4. [x] 完成用户选择 `@Agent` → 独立 Task/Run → Agent 消息回到同一线程的闭环。
 5. [x] 为 Task 固定版本化公开 ConversationContext，完成 Agent A 公开结论 → Agent B 读取并继续协作的闭环。
 6. [x] 增加用户显式多 Agent 选择、原子 MessageDispatch、并行回流与每目标失败入口。
-7. [ ] 增加 Agent 主动 `@Agent`/咨询协议；不把咨询伪装成正式 Handoff。
+7. [x] 增加结构化 Agent 咨询协议；咨询不转移 Task 责任，结果返回后自动恢复原 Agent。自由文本 `@name` 解析继续不进入第一版。
 8. [x] 复用现有 AgentProfile snapshot、Run Token、Queue、Handoff、Review、Lease 和 Coordination projection，没有引入通用 Workflow Engine。
 
 退出条件：用户可以在一个线程里连续与至少两个独立 Agent 协作；消息、Run、结构化交接和审计事实边界清楚，刷新后完整恢复，用户不需要在多个 Agent 页面之间搬运上下文。

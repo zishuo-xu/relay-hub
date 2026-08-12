@@ -13,7 +13,7 @@ import { runMockAgent } from './mock-agent.js';
 import { runOpenCodeAgent } from './opencode-adapter.js';
 import { startRunHeartbeat } from './run-heartbeat.js';
 import { handoffConsumedEvent } from './handoff.js';
-import { WorktreeManager } from './worktree-manager.js';
+import { shouldReusePreparedWorktree, WorktreeManager } from './worktree-manager.js';
 import { workerConcurrency } from './worker-config.js';
 
 const apiUrl = process.env.RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
@@ -61,8 +61,7 @@ async function execute(
     let workingDirectory = claimed.run.workspaceRoot;
 
     if (claimed.agent.adapterType !== 'mock') {
-      const isReviewer = claimed.run.triggerType === 'review';
-      const reusesPreparedWorktree = isReviewer || claimed.run.triggerType === 'retry';
+      const reusesPreparedWorktree = shouldReusePreparedWorktree(claimed.run);
       const prepared = reusesPreparedWorktree
         ? {
             worktreePath: claimed.run.worktreePath,
@@ -71,7 +70,7 @@ async function execute(
           }
         : await worktreeManager.prepare(claimed.run.workspaceRoot, claimed.run.id);
       if (!prepared.worktreePath || !prepared.workingDirectory || !prepared.branchName) {
-        throw new Error('Inherited Run is missing the prepared Builder worktree');
+        throw new Error('Run worktree preparation did not produce a complete environment');
       }
       workingDirectory = prepared.workingDirectory;
       sequence += 1;

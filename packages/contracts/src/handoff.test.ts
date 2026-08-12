@@ -100,6 +100,22 @@ describe('AgentProfile configuration contract', () => {
       networkAccess: 'none',
     });
   });
+
+  it('narrows every Consultation Run to the same read-only advisory boundary', () => {
+    expect(
+      effectiveExecutionPolicyForAdapter(
+        'codex_cli',
+        executionPolicyPreset('codex_cli', 'builder_standard'),
+        'consult',
+      ),
+    ).toMatchObject({
+      fileAccess: 'read_only',
+      commandAccess: 'allow',
+      networkAccess: 'none',
+      gitAccess: 'none',
+      internalSubagents: 'deny',
+    });
+  });
 });
 
 describe('Task review policy contract', () => {

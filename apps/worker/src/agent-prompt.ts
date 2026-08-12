@@ -109,9 +109,11 @@ function routingInstructions(claimed: ClaimedRun): string[] {
     AGENT_RESULT_ENVELOPE_START,
     '{"summary":"What this Run finished","publicMessage":"The concise answer that the user and later Thread Agents must read","nextAction":{"type":"wait_for_user","reason":"Why the user must decide next"}}',
     AGENT_RESULT_ENVELOPE_END,
-    'Allowed nextAction types: handoff, request_review, wait_for_user, continue, complete.',
+    'Allowed nextAction types: handoff, request_review, consult, wait_for_user, continue, complete.',
     'For handoff, use this exact object shape; nextAction and handoff are sibling fields:',
     '{"summary":"Concise completed work","publicMessage":"The result that should appear in the public Thread","nextAction":{"type":"handoff","targetAgentId":"TARGET_UUID","reason":"Why this Agent owns the next step"},"handoff":{"objective":"What the target must do","summary":"Concise context without hidden reasoning","artifactRefs":[],"evidenceRefs":[],"decisions":[],"openQuestions":[],"risks":[]}}',
+    'For a bounded advisory question that does not transfer Task ownership, use this exact consultation shape:',
+    '{"summary":"Why outside advice is needed","publicMessage":"I am consulting a specialist before continuing.","nextAction":{"type":"consult","targetAgentId":"TARGET_UUID","reason":"Why this specialist is useful"},"consultation":{"question":"The precise question to answer","contextSummary":"Only the context needed to answer it"}}',
     'Always include publicMessage with the useful answer or conclusion that the user and later Thread Agents need; summary is only the execution/audit summary. Keep the envelope valid compact JSON and normally under 6,000 characters. Do not put handoff inside nextAction. The targetAgentId must come from the candidate directory below. RelayHub validates the target, writes the acceptance criteria itself, and creates the next Run.',
     'Keep artifactRefs and evidenceRefs empty unless a reference is essential. Every reference must be an object such as {"kind":"text","value":"README.md","label":"optional label"}; never put a plain string in either array.',
     reviewerRule,
@@ -209,6 +211,28 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
     ].join('\n');
   }
 
+  if (claimed.run.triggerType === 'consult') {
+    const consultation = claimed.consultation;
+    if (!consultation) throw new Error('Consultation Run is missing its persisted Consultation');
+    return [
+      'You are an advisory Agent answering one bounded RelayHub Consultation.',
+      ...executionRules(claimed),
+      'You do not own the Task. Give an evidence-based answer to the question only; do not implement, hand off, request Review, or consult another Agent.',
+      ...profileInstructions(claimed),
+      ...conversationContextSection(claimed),
+      '',
+      `Task: ${claimed.task.title}`,
+      `Consultation question: ${consultation.question}`,
+      `Context supplied by the responsible Agent: ${consultation.contextSummary}`,
+      '',
+      'Return exactly one structured result envelope with no Markdown fence:',
+      AGENT_RESULT_ENVELOPE_START,
+      '{"summary":"Concise advisory conclusion","publicMessage":"The useful consultation answer for the Thread and responsible Agent","nextAction":{"type":"complete","reason":"The bounded consultation has been answered"}}',
+      AGENT_RESULT_ENVELOPE_END,
+      'The nextAction must be complete. RelayHub will resume the original responsible Agent automatically.',
+    ].join('\n');
+  }
+
   if (claimed.run.triggerType === 'retry') {
     const review = claimed.review;
     if (!review) throw new Error('Repair Run is missing its source Review');
@@ -243,7 +267,9 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
   }
 
   return [
-    'You are the Builder Agent for a RelayHub task.',
+    claimed.run.triggerType === 'continuation'
+      ? 'You are the responsible Builder Agent resuming a RelayHub task after a bounded consultation.'
+      : 'You are the Builder Agent for a RelayHub task.',
     ...executionRules(claimed),
     'Implement the requested change, run proportionate verification, and leave the worktree ready for Reviewer inspection.',
     ...profileInstructions(claimed),
@@ -251,6 +277,14 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
     '',
     `Task: ${claimed.task.title}`,
     claimed.task.description,
+    ...(claimed.run.triggerType === 'continuation' && claimed.consultation
+      ? [
+          '',
+          'A consulting Agent has answered your bounded question. You retain Task ownership and must evaluate, synthesize, and continue:',
+          `Your question: ${claimed.consultation.question}`,
+          `Consultation response: ${claimed.consultation.response ?? 'No response was persisted.'}`,
+        ]
+      : []),
     ...incomingHandoffSection(claimed),
     '',
     'Acceptance criteria:',

@@ -8,6 +8,7 @@ import {
 } from '@relay-hub/contracts';
 import {
   agentProfiles,
+  consultations,
   handoffs,
   idempotencyKeys,
   outboxEvents,
@@ -22,7 +23,7 @@ import {
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
-import { mapAgentProfile, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
+import { mapAgentProfile, mapConsultation, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
 import { allocateThreadMessageSequence } from './thread-message-repository.js';
 import { projectTaskCoordination } from '../task-coordination.js';
@@ -51,6 +52,11 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     .innerJoin(runs, eq(handoffs.sourceRunId, runs.id))
     .where(eq(runs.taskId, taskId))
     .orderBy(asc(handoffs.createdAt));
+  const consultationRows = await db
+    .select()
+    .from(consultations)
+    .where(eq(consultations.taskId, taskId))
+    .orderBy(asc(consultations.createdAt));
   const reviewRows = await db.select().from(reviews).where(eq(reviews.taskId, taskId)).orderBy(asc(reviews.round));
   const findingRows = reviewRows.length > 0
     ? await db
@@ -66,6 +72,7 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     runs: runRows.map(mapRun),
     events: eventRows.map(mapEvent),
     handoffs: handoffRows.map(({ handoff }) => mapHandoff(handoff)),
+    consultations: consultationRows.map(mapConsultation),
     reviews: reviewRows.map((review) => mapReview(
       review,
       mappedFindings.filter((finding) => finding.reviewId === review.id),

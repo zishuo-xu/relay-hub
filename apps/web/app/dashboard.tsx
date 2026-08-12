@@ -51,6 +51,9 @@ const coordinationReasonLabels: Record<CoordinationReason, string> = {
   review_waiting_for_dispatch: 'Reviewer Run 已创建，等待平台派发',
   review_in_progress: 'Reviewer 正在独立检查并准备裁决',
   repair_in_progress: 'Builder 正在根据 Finding 返工',
+  consultation_waiting_for_dispatch: '咨询 Run 已创建，等待平台派发',
+  consultation_in_progress: '咨询 Agent 正在只读回答问题，任务责任仍属于原 Agent',
+  continuation_in_progress: '原 Agent 已收到咨询结果并继续负责当前任务',
   handoff_pending: '当前 Agent 已准备交接，等待完成后派发目标 Agent',
   workflow_resolution_pending: 'Run 已结束，平台正在收敛下一状态',
   user_confirmation_required: 'Review 已通过，等待用户最终确认',
@@ -62,6 +65,7 @@ const routeActionLabels: Record<CoordinationRouteAction, string> = {
   continue: '继续执行',
   handoff: '交接 Agent',
   request_review: '进入审查',
+  consult: '咨询 Agent',
   wait_for_user: '等待用户',
   complete: '确认完成',
   terminal: '流程结束',
@@ -81,6 +85,10 @@ const eventLabels: Record<string, string> = {
   'tool.completed': '工具完成',
   'run.completed': '执行结束',
   'handoff.requested': '已准备交接',
+  'consultation.requested': '已请求咨询',
+  'task.consultation_dispatched': '咨询已派发',
+  'task.consultation_resumed': '原 Agent 已恢复',
+  'task.consultation_failed': '咨询执行失败',
   'handoff.consumed': '已接收交接',
   'task.handoff_dispatched': '交接已派发',
   'task.handoff_rejected': '交接被拒绝',
@@ -141,6 +149,16 @@ function eventText(event: RunEvent, detail: TaskDetail): string {
       const handoff = event.payload.handoff as { targetAgentId?: unknown; summary?: unknown } | undefined;
       return `Agent 已准备交接给 ${agentAuditLabel(detail, handoff?.targetAgentId)}：${String(handoff?.summary ?? '')}`;
     }
+    case 'consultation.requested': {
+      const consultation = event.payload.consultation as { targetAgentId?: unknown; question?: unknown } | undefined;
+      return `负责 Agent 向 ${agentAuditLabel(detail, consultation?.targetAgentId)} 提出只读咨询：${String(consultation?.question ?? '')}`;
+    }
+    case 'task.consultation_dispatched':
+      return `咨询已派发给 ${agentAuditLabel(detail, event.payload.targetAgentId)}，任务责任仍保留在 ${agentAuditLabel(detail, event.payload.sourceAgentId)}。`;
+    case 'task.consultation_resumed':
+      return `咨询结果已返回，原 Agent ${agentAuditLabel(detail, event.payload.sourceAgentId)} 已通过 Run ${String(event.payload.continuationRunId ?? '').slice(0, 8)} 继续执行。`;
+    case 'task.consultation_failed':
+      return `咨询 Agent 执行失败，任务已转交用户处理：${String(event.payload.message ?? event.payload.reason)}`;
     case 'handoff.consumed':
       return `目标 Worker 已校验并加载 Handoff v${String(event.payload.bundleVersion ?? '')}（${String(event.payload.handoffId ?? '').slice(0, 8)}）。`;
     case 'task.handoff_dispatched':
@@ -205,6 +223,7 @@ function eventTone(event: RunEvent): string {
     event.type === 'task.changes_requested' ||
     event.type === 'task.review_blocked' ||
     event.type === 'task.review_failed' ||
+    event.type === 'task.consultation_failed' ||
     event.type === 'task.repair_limit_reached' ||
     event.type === 'task.handoff_rejected'
   ) return 'danger';
@@ -603,6 +622,7 @@ export function TimelineWorkspace({
   const [workspaceView, setWorkspaceView] = useState<'overview' | 'activity'>('overview');
   const latestReview = detail?.reviews.at(-1);
   const latestHandoff = detail?.handoffs.at(-1);
+  const latestConsultation = detail?.consultations.at(-1);
   const coordination = detail?.coordination;
   const milestoneEvents = detail?.events.filter((event) => ![
     'output.delta',
@@ -706,13 +726,16 @@ export function TimelineWorkspace({
 
                 <article className="overview-card result-card">
                   <header>
-                    <div><span>{latestReview ? `Review #${latestReview.round}` : '当前结果'}</span><h2>{latestReview ? '最近审查结论' : '最近执行进展'}</h2></div>
+                    <div><span>{latestReview ? `Review #${latestReview.round}` : latestConsultation ? 'Agent 咨询' : '当前结果'}</span><h2>{latestReview ? '最近审查结论' : latestConsultation ? '咨询与恢复状态' : '最近执行进展'}</h2></div>
                     {latestReview ? <strong className={`review-verdict ${latestReview.verdict}`}>{latestReview.verdict.replace('_', ' ')}</strong> : null}
                   </header>
-                  <p>{latestReview?.summary ?? currentRun?.outcome?.summary ?? 'Agent 正在准备结果，关键进展会显示在这里。'}</p>
+                  <p>{latestReview?.summary ?? latestConsultation?.response ?? currentRun?.outcome?.summary ?? (latestConsultation ? latestConsultation.question : 'Agent 正在准备结果，关键进展会显示在这里。')}</p>
                   {latestReview ? <small>{latestReview.findings.length} 个 finding</small> : null}
                   {latestHandoff ? (
                     <small>Handoff v{latestHandoff.bundleVersion} · {latestHandoff.status} · {latestHandoff.nextAction?.type ?? 'legacy'}</small>
+                  ) : null}
+                  {latestConsultation ? (
+                    <small>Consultation · {latestConsultation.status} · 原 Agent 保留责任 · {detail.consultations.length}/3</small>
                   ) : null}
                 </article>
 

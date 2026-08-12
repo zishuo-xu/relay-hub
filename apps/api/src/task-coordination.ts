@@ -1,4 +1,5 @@
 import type {
+  Consultation,
   Handoff,
   NextAction,
   Review,
@@ -11,6 +12,7 @@ export interface TaskCoordinationSource {
   task: Task;
   runs: Run[];
   handoffs: Handoff[];
+  consultations?: Consultation[];
   reviews: Review[];
 }
 
@@ -29,9 +31,10 @@ function agentOwner(run: Run, reason: TaskCoordinationView['owner']['reason']): 
 
 function allowedActionsForRun(run: Run, task: Task): NextAction['type'][] {
   if (run.triggerType === 'review') return ['continue', 'wait_for_user'];
+  if (run.triggerType === 'consult') return ['complete'];
   return task.reviewerAgentId
-    ? ['continue', 'handoff', 'request_review', 'wait_for_user']
-    : ['continue', 'handoff', 'wait_for_user'];
+    ? ['continue', 'handoff', 'request_review', 'consult', 'wait_for_user']
+    : ['continue', 'handoff', 'consult', 'wait_for_user'];
 }
 
 function projectVerdict(source: TaskCoordinationSource, currentRun?: Run): TaskCoordinationView['verdict'] {
@@ -144,6 +147,7 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
   if (currentRun.status === 'queued') {
     const waitingForReview = currentRun.triggerType === 'review';
     const waitingForHandoff = currentRun.triggerType === 'handoff';
+    const waitingForConsultation = currentRun.triggerType === 'consult';
     return {
       state,
       owner: {
@@ -152,7 +156,9 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
           ? 'review_waiting_for_dispatch'
           : waitingForHandoff
             ? 'handoff_waiting_for_dispatch'
-            : 'run_waiting_for_dispatch',
+            : waitingForConsultation
+              ? 'consultation_waiting_for_dispatch'
+              : 'run_waiting_for_dispatch',
         runId: currentRun.id,
       },
       evidence,
@@ -171,24 +177,53 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
               allowedActions: ['handoff'],
               targetAgentId: currentRun.agentId,
             }
-          : { action: 'continue', reason: 'run_waiting_for_dispatch', allowedActions: ['continue'] },
+          : waitingForConsultation
+            ? {
+                action: 'consult',
+                reason: 'consultation_waiting_for_dispatch',
+                allowedActions: ['consult'],
+                targetAgentId: currentRun.agentId,
+              }
+            : { action: 'continue', reason: 'run_waiting_for_dispatch', allowedActions: ['continue'] },
     };
   }
 
   if (agentOwnedRunStatuses.has(currentRun.status)) {
     const reviewInProgress = currentRun.triggerType === 'review';
     const repairInProgress = currentRun.triggerType === 'retry';
+    const consultationInProgress = currentRun.triggerType === 'consult';
+    const continuationInProgress = currentRun.triggerType === 'continuation';
     const handoffPending = !reviewInProgress && latestHandoff?.sourceRunId === currentRun.id;
     const reason = reviewInProgress
       ? 'review_in_progress'
       : repairInProgress
         ? 'repair_in_progress'
-        : handoffPending
-          ? 'handoff_pending'
-          : 'run_owned_by_agent';
+        : consultationInProgress
+          ? 'consultation_in_progress'
+          : continuationInProgress
+            ? 'continuation_in_progress'
+            : handoffPending
+              ? 'handoff_pending'
+              : 'run_owned_by_agent';
+    let owner = agentOwner(currentRun, reason);
+    if (consultationInProgress) {
+      const consultation = source.consultations?.find((item) => item.targetRunId === currentRun.id);
+      const sourceRun = consultation
+        ? source.runs.find((candidate) => candidate.id === consultation.sourceRunId)
+        : undefined;
+      if (consultation) {
+        owner = {
+          kind: 'agent',
+          reason,
+          agentId: consultation.sourceAgentId,
+          runId: currentRun.id,
+          ...(sourceRun?.agentProfileSnapshot?.name ? { label: sourceRun.agentProfileSnapshot.name } : {}),
+        };
+      }
+    }
     return {
       state,
-      owner: agentOwner(currentRun, reason),
+      owner,
       evidence,
       verdict,
       route: handoffPending

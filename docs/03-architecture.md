@@ -74,7 +74,7 @@ flowchart LR
     WK -->|"append events and outcomes"| API
 
     API --> O["Orchestrator"]
-    O -->|"create child run"| Q
+    O -->|"handoff / review / consult / continuation"| Q
 ```
 
 ## 组件职责
@@ -90,15 +90,16 @@ flowchart LR
 ### Control Plane API
 
 - 命令校验、身份与 Workspace 边界。
-- Task / Run / Handoff / Review 的事务写入。
+- Task / Run / Handoff / Consultation / Review 的事务写入。
 - 从 Task 固定的消息边界推导版本化公开 ConversationContext；不在 Worker 领取时读取无边界的“最新历史”。
 - 状态机守卫和幂等处理。
 - 查询快照、历史事件和健康状态。
 
 ### Orchestrator
 
-- 根据 Task 和 Handoff 创建 Run。
+- 根据 Task、Handoff 和 Consultation 创建 Run。
 - 控制 builder → reviewer 的流程。
+- 控制负责 Agent → 只读咨询 Agent → 原 Agent continuation，并保证咨询不转移 Task 责任。
 - 保证目标 Agent 可用且没有形成循环交接。
 - 根据 Review 结论推进 Task。
 
@@ -116,11 +117,13 @@ flowchart LR
 
 | 组件 | 核心职责 | 不负责什么 |
 |---|---|---|
-| PostgreSQL | 保存 Task、Run、Handoff、Review 和审计事件，是可恢复事实来源 | 不直接唤醒 Agent，不承担实时界面推送 |
+| PostgreSQL | 保存 Task、Run、Handoff、Consultation、Review 和审计事件，是可恢复事实来源 | 不直接唤醒 Agent，不承担实时界面推送 |
 | Redis/BullMQ | 投递待执行 Run、并发控制、延迟和重试 | 不作为业务状态或历史真相源 |
 | Handoff API | 表达 Agent A 要把什么工作、证据和验收要求交给 Agent B | 不直接共享 A 的隐藏推理或 B 的 Session |
 
 因此 PostgreSQL 会是最终存储架构的一部分，但它本身不是 Agent 的聊天协议。它更像持久邮箱和档案库；Queue 是邮递员；Handoff 是信件内容。
+
+Consultation 与 Handoff 不同：Handoff 转移后续责任；Consultation 只保存有限问题和回答，并由 Orchestrator 恢复原 Agent。详见 [ADR-022](decisions/ADR-022-controlled-agent-consultation.md)。
 
 ### 公开对话上下文与 Agent 隔离
 
