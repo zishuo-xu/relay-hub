@@ -489,16 +489,22 @@ export function ConversationWorkspace({
     <section className="conversation-workspace">
       <div className="conversation-main">
         <header className="conversation-header">
-          <div><p>Conversation</p><h1>{threadDetail?.thread.title ?? '多 Agent 协作空间'}</h1><span>{threadDetail ? `${threadDetail.messages.length} 条消息 · ${threadDetail.tasks.length} 次执行` : '在一个上下文中调用不同 Agent'}</span></div>
+          <div><p>Conversation</p><h1>{threadDetail?.thread.title ?? '多 Agent 协作空间'}</h1><span>{threadDetail ? `${threadDetail.messages.length} 条消息 · ${threadDetail.tasks.length} 次执行 · 责任在同一线程接力` : '在一个上下文中由 Agent 明确接力'}</span></div>
           <div><button className="secondary-button" onClick={onConfigureAgents} type="button">Agent 配置</button><button className="new-task-button" onClick={onNewThread} type="button">新建线程</button></div>
         </header>
         {error ? <div className="error-banner">{error}</div> : null}
         {threadDetail ? (
           <div className="message-stream">
             {threadDetail.messages.length === 0 ? (
-              <div className="conversation-empty"><span>R</span><h2>开始一次团队对话</h2><p>在下方选择 Agent 并描述目标，RelayHub 会创建独立 Run，回复仍回到这里。</p></div>
+              <div className="conversation-empty"><span>R</span><h2>开始一次团队对话</h2><p>选择一位负责人并描述目标；它会在这个线程中把下一步明确交给需要的 Agent，最后再汇总给你。</p></div>
             ) : null}
             {threadDetail.messages.map((entry) => {
+              const isResponsibilityRoute = entry.senderType === 'system' && entry.senderAgentId && entry.recipientAgentId;
+              if (isResponsibilityRoute) {
+                return <div className="responsibility-route" key={entry.id}>
+                  <span>{agentName(entry.senderAgentId)}</span><i>→</i><strong>{agentName(entry.recipientAgentId)}</strong><small>{entry.content}</small>
+                </div>;
+              }
               const task = taskForMessage(entry.taskId);
               const dispatches = entry.senderType === 'user' ? dispatchesForMessage(entry.id) : [];
               const dispatchTasks = dispatches
@@ -528,7 +534,7 @@ export function ConversationWorkspace({
             {threadDetail.delegationPlans.map((plan) => {
               const assignments = threadDetail.delegations.filter((delegation) => delegation.planId === plan.id);
               return <section className={`delegation-plan-card ${plan.status}`} key={plan.id}>
-                <header><div><span>分工计划</span><strong>{plan.status === 'pending' ? '等待你确认' : plan.status === 'running' ? '子任务执行中' : plan.status === 'resumed' ? '已回报负责人' : plan.status === 'rejected' ? '已拒绝' : '需要处理'}</strong></div><small>{assignments.length} 个独立工作包 · final only</small></header>
+                <header><div><span>独立工作</span><strong>{plan.status === 'pending' ? '等待你确认' : plan.status === 'running' ? '隔离执行中' : plan.status === 'resumed' ? '已回报负责人' : plan.status === 'rejected' ? '已拒绝' : '需要处理'}</strong></div><small>{assignments.length} 个例外工作包 · final only</small></header>
                 <div className="delegation-assignments">{assignments.map((assignment) => <article key={assignment.id}>
                   <span>{assignment.kind === 'implementation' ? '实现' : assignment.kind === 'verification' ? '验证' : assignment.kind === 'design' ? '设计' : '分析'}</span>
                   <div><strong>{assignment.title}</strong><p>{assignment.objective}</p><small>{agentName(assignment.targetAgentId)} · {assignment.status === 'proposed' ? '待派发' : assignment.status === 'queued' ? '排队中' : assignment.status === 'running' ? '执行中' : assignment.status === 'completed' ? '已完成' : assignment.status}</small>{assignment.report ? <blockquote>{assignment.report.summary}</blockquote> : null}</div>
@@ -542,7 +548,7 @@ export function ConversationWorkspace({
         )}
         {threadDetail ? (
           <form className="message-composer" onSubmit={onSubmit}>
-            <div className="composer-mode owner-mode"><strong>交给一个负责人</strong><p>你只选择初始 Agent；它需要分工时会提出计划，经你批准后由平台创建独立子任务并强制验收。</p></div>
+            <div className="composer-mode owner-mode"><strong>交给一个负责人</strong><p>负责人会在同一线程明确交接下一步；只有长期、独立或并行的工作才会申请新开执行面。</p></div>
             <div className="composer-target">
               <span>◎</span>
               <div className="target-chips">{selectedAgentIds.slice(0, 1).map((agentId) => <div className="target-chip lead" key={agentId}><b>负责人</b><span>{agentName(agentId)}</span><button aria-label={`移除 ${agentName(agentId)}`} className="remove-agent" onClick={() => onAgentToggle(agentId)} type="button">×</button></div>)}</div>
@@ -575,11 +581,11 @@ export function ConversationWorkspace({
                       <i>＋</i>
                     </button>)}
                   </div>
-                  <footer>负责人可以咨询、交接或提出可审批的独立分工计划。</footer>
+                  <footer>负责人默认在本线程交接责任；仅必要时申请独立工作。</footer>
                 </div> : null}
               </div>
             </div>
-            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="用大白话描述目标；负责人会执行，必要时先提交分工计划…" rows={2} value={message} />
+            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="用大白话描述目标；负责人会推进并在需要时交接给其他 Agent…" rows={2} value={message} />
             <button disabled={sending || !message.trim() || selectedAgentIds.length === 0} type="submit">{sending ? '派发中…' : '交给负责人'}</button>
           </form>
         ) : null}

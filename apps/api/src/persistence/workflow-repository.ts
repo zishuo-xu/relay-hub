@@ -622,6 +622,25 @@ export async function recordAgentEvent(
                   eventType: 'run.queued',
                   payload: { runId: handoffTargetRunId },
                 });
+                // A handoff is a public responsibility transfer, not merely an
+                // audit event. Keep its compact route visible in the same
+                // Thread so the next Agent and the user can see who owns the
+                // next move without opening an execution drawer.
+                if (task.threadId) {
+                  const sequence = await allocateThreadMessageSequence(tx, task.threadId, task.workspaceId, now);
+                  await tx.insert(threadMessages).values({
+                    threadId: task.threadId,
+                    sequence,
+                    taskId: task.id,
+                    runId: handoffTargetRunId,
+                    senderType: 'system',
+                    senderName: 'RelayHub',
+                    senderAgentId: run.agentId,
+                    recipientAgentId: targetAgent.id,
+                    content: pendingHandoff.objective,
+                    createdAt: now,
+                  });
+                }
                 taskPatch.currentRunId = handoffTargetRunId;
               } else {
                 await tx

@@ -181,6 +181,41 @@ suite('sequential handoff integration', () => {
     expect(finished?.events.at(-1)?.type).toBe('task.waiting_for_review');
   });
 
+  it('publishes a compact same-Thread responsibility route when handing work to the next Agent', async () => {
+    const agentA = await createMockAgent(uniqueName('Visible Route A'));
+    const agentB = await createMockAgent(uniqueName('Visible Route B'));
+    const thread = await store.createThread({ title: uniqueName('Visible route Thread') });
+    const dispatched = await store.createThreadMessage(thread.thread.id, {
+      content: 'Please let A hand this bounded step to B.',
+      mode: 'parallel',
+      agentIds: [agentA.id],
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    const task = dispatched.value.tasks.at(-1);
+    if (!task?.currentRunId) throw new Error('Expected a Thread Task with a current Run');
+    const runA = task.currentRunId;
+    await store.claimRun(runA, 'visible-route-a');
+    await store.recordAgentEvent(runA, 'visible-route-a-started', { type: 'run.started' });
+    await store.recordAgentEvent(runA, 'visible-route-a-handoff', genericHandoff(agentB.id, 'B owns the bounded next step'));
+    await store.recordAgentEvent(runA, 'visible-route-a-completed', {
+      type: 'run.completed',
+      outcome: {
+        summary: 'A completed its part.',
+        commandEvidence: [],
+        nextAction: { type: 'handoff', targetAgentId: agentB.id, reason: 'B owns the next step.' },
+      },
+    });
+
+    const detail = await store.getThreadDetail(thread.thread.id);
+    expect(detail?.messages).toContainEqual(expect.objectContaining({
+      senderType: 'system',
+      senderAgentId: agentA.id,
+      recipientAgentId: agentB.id,
+      content: 'B owns the bounded next step',
+    }));
+  });
+
   it('chains A -> B -> C while each Handoff carries its own digest', async () => {
     const agentA = await createMockAgent(uniqueName('Chain A'));
     const agentB = await createMockAgent(uniqueName('Chain B'));

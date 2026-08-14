@@ -165,6 +165,11 @@ textarea:focus-visible {
 .message-task small { color: var(--muted); font-size: 8px; }
 .message-dispatches { display: grid; width: min(430px, 100%); margin-top: 10px; gap: 6px; }
 .message-dispatches .message-task { width: 100%; margin-top: 0; }
+.responsibility-route { display: flex; width: min(620px, calc(100% - 36px)); margin: 4px auto; padding: 8px 11px; align-items: center; gap: 7px; color: var(--muted); border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); font-size: 9px; }
+.responsibility-route > span { color: var(--text-secondary); font-weight: 750; }
+.responsibility-route > i { color: var(--accent); font-size: 13px; font-style: normal; }
+.responsibility-route > strong { color: var(--accent-strong); font-size: 9px; }
+.responsibility-route > small { min-width: 0; margin-left: auto; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .delegation-plan-card { max-width: 820px; margin: 0 auto 24px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgba(24, 39, 32, 0.05); }
 .delegation-plan-card > header { display: flex; padding: 12px 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: var(--surface-soft); }
 .delegation-plan-card > header div { display: flex; align-items: center; gap: 8px; }
