@@ -242,7 +242,12 @@ export function mapWorkspace(row: WorkspaceRow): Workspace {
 }
 
 export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
-  if (row.adapterType !== 'mock' && row.adapterType !== 'codex_cli' && row.adapterType !== 'opencode_cli') {
+  if (
+    row.adapterType !== 'mock' &&
+    row.adapterType !== 'codex_cli' &&
+    row.adapterType !== 'opencode_cli' &&
+    row.adapterType !== 'claude_code'
+  ) {
     throw new Error(`Unsupported adapter type: ${row.adapterType}`);
   }
   const adapterType: AgentAdapterType = row.adapterType;
@@ -267,7 +272,7 @@ export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
 }
 
 export function mapProviderConnection(row: ProviderConnectionRow): ProviderConnection {
-  if (row.adapterType !== 'codex_cli' && row.adapterType !== 'opencode_cli') {
+  if (row.adapterType !== 'codex_cli' && row.adapterType !== 'opencode_cli' && row.adapterType !== 'claude_code') {
     throw new Error(`Unsupported provider connection adapter: ${row.adapterType}`);
   }
   return {

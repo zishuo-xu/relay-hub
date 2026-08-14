@@ -119,13 +119,23 @@ function profileValues(input: AgentProfileInput, connection?: ProviderConnection
   const provider = connection?.kind === 'custom_api'
     ? `relayhub-${connection.id.replaceAll('-', '')}`
     : input.adapterType === 'opencode_cli' ? input.model?.split('/')[0] : undefined;
+  const defaultModelLabel = input.adapterType === 'codex_cli'
+    ? 'Codex CLI default'
+    : input.adapterType === 'claude_code'
+      ? 'Claude Code default'
+      : 'deterministic-mock';
+  const defaultModelFamily = input.adapterType === 'codex_cli'
+    ? 'codex'
+    : input.adapterType === 'claude_code'
+      ? 'claude'
+      : 'mock';
   return {
     name: input.name,
     adapterType: input.adapterType,
     providerConnectionId: connection?.id ?? null,
-    provider: provider ?? (input.adapterType === 'codex_cli' ? 'openai' : 'local'),
-    modelLabel: input.model ?? (input.adapterType === 'codex_cli' ? 'Codex CLI default' : 'deterministic-mock'),
-    modelFamily: provider ?? (input.adapterType === 'codex_cli' ? 'codex' : 'mock'),
+    provider: provider ?? (input.adapterType === 'codex_cli' ? 'openai' : input.adapterType === 'claude_code' ? 'anthropic' : 'local'),
+    modelLabel: input.model ?? defaultModelLabel,
+    modelFamily: provider ?? defaultModelFamily,
     capabilities: input.capabilities,
     config: {
       ...(input.model ? { model: input.model } : {}),

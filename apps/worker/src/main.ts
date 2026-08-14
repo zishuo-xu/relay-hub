@@ -9,6 +9,7 @@ import {
 import { createRunWorker } from '@relay-hub/queue';
 import { runWorkspaceBootstrap } from './bootstrap-runner.js';
 import { runCodexAgent } from './codex-adapter.js';
+import { runClaudeCodeAgent } from './claude-code-adapter.js';
 import { runMockAgent } from './mock-agent.js';
 import { runOpenCodeAgent } from './opencode-adapter.js';
 import { startRunHeartbeat } from './run-heartbeat.js';
@@ -115,6 +116,8 @@ async function execute(
 
     if (claimed.agent.adapterType === 'codex_cli') {
       events = runCodexAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
+    } else if (claimed.agent.adapterType === 'claude_code') {
+      events = runClaudeCodeAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
     } else if (claimed.agent.adapterType === 'opencode_cli') {
       events = runOpenCodeAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
     } else if (claimed.agent.adapterType === 'mock') {

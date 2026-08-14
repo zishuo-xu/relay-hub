@@ -12,7 +12,9 @@ import { createDatabase } from './index.js';
 import { agentProfiles, idempotencyKeys, runEvents, runs, tasks } from './schema.js';
 
 function snapshotAgent(row: typeof agentProfiles.$inferSelect): AgentProfile {
-  const adapterType = row.adapterType === 'codex_cli' || row.adapterType === 'opencode_cli' ? row.adapterType : 'mock';
+  const adapterType = row.adapterType === 'codex_cli' || row.adapterType === 'opencode_cli' || row.adapterType === 'claude_code'
+    ? row.adapterType
+    : 'mock';
   const policyResult = ExecutionPolicySchema.safeParse(row.config.executionPolicy);
   return {
     id: row.id,

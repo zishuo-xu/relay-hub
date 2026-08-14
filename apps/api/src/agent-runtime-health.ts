@@ -59,6 +59,17 @@ export async function checkProviderConnectionHealth(
         message: 'Codex CLI is available; login is managed by Codex. No model request was sent.',
       };
     }
+    if (connection.adapterType === 'claude_code') {
+      const version = await run(process.env.RELAY_HUB_CLAUDE_BIN ?? 'claude', ['--version']);
+      return {
+        status: 'healthy',
+        adapterType: 'claude_code',
+        version,
+        checkMode: 'configuration',
+        requestAttempted: false,
+        message: 'Claude Code is available; login is managed by Claude Code. No model request was sent.',
+      };
+    }
     if (connection.kind === 'official_cli') {
       const runtime = await listOpenCodeModels();
       return {
@@ -189,9 +200,10 @@ export async function listOpenCodeModels(): Promise<{ version: string; models: s
 }
 
 export async function listAgentRuntimes(): Promise<AgentRuntimeDescriptor[]> {
-  const [codexResult, openCodeResult] = await Promise.allSettled([
+  const [codexResult, openCodeResult, claudeCodeResult] = await Promise.allSettled([
     run(process.env.RELAY_HUB_CODEX_BIN ?? 'codex', ['--version']),
     listOpenCodeModels(),
+    run(process.env.RELAY_HUB_CLAUDE_BIN ?? 'claude', ['--version']),
   ]);
   return [
     {
@@ -234,6 +246,22 @@ export async function listAgentRuntimes(): Promise<AgentRuntimeDescriptor[]> {
           models: [],
           message: openCodeResult.reason instanceof Error ? openCodeResult.reason.message : String(openCodeResult.reason),
         },
+    claudeCodeResult.status === 'fulfilled'
+      ? {
+          adapterType: 'claude_code',
+          label: 'Claude Code',
+          available: true,
+          version: claudeCodeResult.value,
+          models: [],
+          message: '使用本机 Claude Code 当前登录与默认模型配置。',
+        }
+      : {
+          adapterType: 'claude_code',
+          label: 'Claude Code',
+          available: false,
+          models: [],
+          message: claudeCodeResult.reason instanceof Error ? claudeCodeResult.reason.message : String(claudeCodeResult.reason),
+        },
   ];
 }
 
@@ -253,6 +281,19 @@ export async function checkAgentHealth(agent: AgentProfile): Promise<AgentHealth
         message: model
           ? `Codex CLI is available; ${model} will be validated by the next real Run.`
           : 'Codex CLI is available and will use its default model.',
+      };
+    }
+    if (agent.adapterType === 'claude_code') {
+      const version = await run(process.env.RELAY_HUB_CLAUDE_BIN ?? 'claude', ['--version']);
+      const model = typeof agent.config.model === 'string' ? agent.config.model : undefined;
+      return {
+        status: 'healthy',
+        adapterType: 'claude_code',
+        version,
+        ...(model ? { model } : {}),
+        message: model
+          ? `Claude Code is available; ${model} will be validated by the next real Run.`
+          : 'Claude Code is available and will use its default model.',
       };
     }
 

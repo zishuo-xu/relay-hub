@@ -29,6 +29,20 @@ import {
   visibleTasksForFilter,
 } from './task-filter';
 
+function adapterMark(adapterType: AgentAdapterType): string {
+  if (adapterType === 'codex_cli') return 'C';
+  if (adapterType === 'opencode_cli') return 'O';
+  if (adapterType === 'claude_code') return 'A';
+  return 'M';
+}
+
+function adapterLabel(adapterType: AgentAdapterType): string {
+  if (adapterType === 'codex_cli') return 'Codex CLI';
+  if (adapterType === 'opencode_cli') return 'OpenCode CLI';
+  if (adapterType === 'claude_code') return 'Claude Code';
+  return 'Mock';
+}
+
 const statusLabels: Record<Task['status'], string> = {
   draft: '草稿',
   queued: '排队中',
@@ -540,11 +554,11 @@ export function SettingsWorkspace({
     connections.find((connection) => connection.id === agent.providerConnectionId)?.name ?? '兼容旧配置';
   const renderConnection = (connection: ProviderConnection) => (
     <button className="connection-row" key={connection.id} onClick={() => onEditConnection(connection)} type="button">
-      <span className="connection-mark">{connection.adapterType === 'codex_cli' ? 'C' : connection.name.slice(0, 1).toUpperCase()}</span>
+      <span className="connection-mark">{adapterMark(connection.adapterType)}</span>
       <div>
         <strong>{connection.name}</strong>
         <small>
-          {connection.adapterType === 'codex_cli' ? 'Codex CLI' : 'OpenCode CLI'} · {
+          {adapterLabel(connection.adapterType)} · {
             connection.kind === 'official_cli' ? 'CLI 管理认证' : connection.baseUrl
           }
         </small>
@@ -581,7 +595,7 @@ export function SettingsWorkspace({
         <div className="settings-content agent-settings-list">
           {agents.map((agent) => (
             <button className="agent-settings-row" key={agent.id} onClick={() => onEditAgent(agent)} type="button">
-              <span className="connection-mark">{agent.adapterType === 'codex_cli' ? 'C' : agent.adapterType === 'opencode_cli' ? 'O' : 'M'}</span>
+              <span className="connection-mark">{adapterMark(agent.adapterType)}</span>
               <div><strong>{agent.name}</strong><small>{agent.capabilities.join(' + ')} · {agent.modelLabel ?? agent.adapterType}</small></div>
               <div><span>{connectionName(agent)}</span><small>{agent.enabled ? '点击编辑' : '已停用 · 点击编辑'}</small></div>
             </button>
@@ -920,14 +934,14 @@ export function CreateTaskDrawer({
               </label>
               <div className="agent-choice">
                 <span className="agent-mark">
-                  {selectedAgent?.adapterType === 'codex_cli' ? 'C' : selectedAgent?.adapterType === 'opencode_cli' ? 'O' : 'M'}
+                  {selectedAgent ? adapterMark(selectedAgent.adapterType) : 'M'}
                 </span>
                 <div>
                   <strong>{selectedAgent?.name ?? '正在加载'}</strong>
                   <small>
                     {selectedAgent?.adapterType === 'opencode_cli'
                       ? `${selectedAgent.modelLabel ?? 'OpenCode'} · 隔离执行`
-                      : selectedAgent?.adapterType === 'codex_cli'
+                      : selectedAgent?.adapterType === 'codex_cli' || selectedAgent?.adapterType === 'claude_code'
                         ? '真实 CLI · 隔离执行'
                         : '实现任务 · 生成交接'}
                   </small>
@@ -1031,7 +1045,7 @@ export function ProviderConnectionDrawer({
     <aside aria-hidden={!open} className={`create-drawer ${open ? 'open' : ''}`}>
       <header className="drawer-header"><div><p>Provider connection</p><h2>{editing ? '管理模型连接' : '新增自定义连接'}</h2></div><button aria-label="关闭" className="drawer-close" onClick={onClose} type="button">×</button></header>
       <form onSubmit={onSubmit}>
-        <div className="runtime-card"><span className="agent-mark">{adapterType === 'codex_cli' ? 'C' : 'O'}</span><div><strong>{adapterType === 'codex_cli' ? 'Codex CLI' : 'OpenCode CLI'}</strong><small>{isCustom ? 'RelayHub 会在每次 Run 中注入临时 provider 配置' : '登录与凭证由官方 CLI 管理'}</small></div></div>
+        <div className="runtime-card"><span className="agent-mark">{adapterMark(adapterType)}</span><div><strong>{adapterLabel(adapterType)}</strong><small>{isCustom ? 'RelayHub 会在每次 Run 中注入临时 provider 配置' : '登录与凭证由官方 CLI 管理'}</small></div></div>
         <label>连接名称<input minLength={2} onChange={(event) => onNameChange(event.target.value)} placeholder="例如 公司 DeepSeek" required value={name} /></label>
         <label>
           连接状态
@@ -1138,10 +1152,8 @@ export function AgentConfigDrawer({
   onEnabledChange,
 }: AgentConfigDrawerProps) {
   const selectedRuntime = runtimes.find((runtime) => runtime.adapterType === adapterType);
-  const runtimeMark = adapterType === 'codex_cli' ? 'C' : adapterType === 'opencode_cli' ? 'O' : 'M';
-  const runtimeLabel = selectedRuntime?.label ?? (
-    adapterType === 'codex_cli' ? 'Codex CLI' : adapterType === 'opencode_cli' ? 'OpenCode CLI' : 'Mock'
-  );
+  const runtimeMark = adapterMark(adapterType);
+  const runtimeLabel = selectedRuntime?.label ?? adapterLabel(adapterType);
   const openCodeModels = runtimes.find((runtime) => runtime.adapterType === 'opencode_cli')?.models ?? [];
   const compatibleConnections = connections.filter((connection) => connection.adapterType === adapterType && connection.enabled);
   const selectedConnection = compatibleConnections.find((connection) => connection.id === providerConnectionId);
@@ -1175,6 +1187,7 @@ export function AgentConfigDrawer({
               <option value="mock">Mock · 内置确定性运行时</option>
               <option value="codex_cli">Codex CLI</option>
               <option value="opencode_cli">OpenCode CLI</option>
+              <option value="claude_code">Claude Code</option>
             </select>
           </label>
           {adapterType !== 'mock' ? <label>
@@ -1294,11 +1307,11 @@ export function AgentConfigDrawer({
                 <input onChange={(event) => onAgentNameChange(event.target.value)} placeholder="build" value={agentName} />
               </label>
             </div>
-          </> : adapterType === 'codex_cli' ? <label>
-            Codex 模型（可选）
+          </> : adapterType === 'codex_cli' || adapterType === 'claude_code' ? <label>
+            {adapterType === 'codex_cli' ? 'Codex' : 'Claude'} 模型（可选）
             <input
               onChange={(event) => onModelChange(event.target.value)}
-              placeholder="留空则跟随 Codex CLI 默认模型"
+              placeholder={`留空则跟随 ${adapterLabel(adapterType)} 默认模型`}
               value={model}
             />
           </label> : null}
@@ -1307,6 +1320,8 @@ export function AgentConfigDrawer({
               Agent 是 RelayHub 身份，OpenCode 只是运行 CLI。URI、协议与凭证引用统一由“模型与连接”管理，这里只选择连接和模型。
             </> : adapterType === 'codex_cli' ? <>
               Agent 使用本机 Codex CLI 官方认证。填写模型时固定使用该模型；留空则跟随 CLI 默认模型。
+            </> : adapterType === 'claude_code' ? <>
+              Agent 使用本机 Claude Code 官方认证。可填写模型别名或完整模型 ID；留空则跟随 CLI 默认模型。
             </> : <>
               Mock 不调用外部模型，用于稳定演示完整编排链路。
             </>}

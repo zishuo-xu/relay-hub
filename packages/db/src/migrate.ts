@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CLAUDE_CODE_CONNECTION_ID,
   DEFAULT_CODEX_AGENT_ID,
   DEFAULT_CODEX_CONNECTION_ID,
   DEFAULT_MOCK_AGENT_ID,
@@ -34,6 +35,18 @@ try {
       name: 'Codex 官方认证',
       kind: 'official_cli',
       adapterType: 'codex_cli',
+      protocol: 'cli_managed',
+      models: [],
+    })
+    .onConflictDoNothing();
+  await database.db
+    .insert(providerConnections)
+    .values({
+      id: DEFAULT_CLAUDE_CODE_CONNECTION_ID,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      name: 'Claude Code 官方认证',
+      kind: 'official_cli',
+      adapterType: 'claude_code',
       protocol: 'cli_managed',
       models: [],
     })

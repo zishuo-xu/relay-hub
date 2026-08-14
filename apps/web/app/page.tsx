@@ -557,7 +557,7 @@ export default function HomePage() {
                   ...(agentConfigVariant.trim() ? { variant: agentConfigVariant.trim() } : {}),
                   ...(agentConfigAgentName.trim() ? { agentName: agentConfigAgentName.trim() } : {}),
                 }
-              : agentConfigAdapter === 'codex_cli' && agentConfigModel.trim()
+              : (agentConfigAdapter === 'codex_cli' || agentConfigAdapter === 'claude_code') && agentConfigModel.trim()
                 ? { model: agentConfigModel.trim() }
                 : {}),
             enabled: agentConfigEnabled,

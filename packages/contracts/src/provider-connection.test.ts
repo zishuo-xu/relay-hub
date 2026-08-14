@@ -56,6 +56,22 @@ describe('ProviderConnection contract', () => {
     })).toMatchObject({ adapterType: 'codex_cli', model: 'gpt-5.6-codex' });
   });
 
+  it('accepts an official Claude Code connection and optional model alias', () => {
+    expect(ProviderConnectionInputSchema.parse({
+      name: 'Claude Code official',
+      kind: 'official_cli',
+      adapterType: 'claude_code',
+      protocol: 'cli_managed',
+    })).toMatchObject({ adapterType: 'claude_code', kind: 'official_cli' });
+    expect(AgentProfileInputSchema.parse({
+      name: 'Claude Architect',
+      adapterType: 'claude_code',
+      providerConnectionId: '00000000-0000-4000-8000-000000000007',
+      capabilities: ['implement'],
+      model: 'sonnet',
+    })).toMatchObject({ adapterType: 'claude_code', model: 'sonnet' });
+  });
+
   it('defaults to a no-cost configuration check and accepts an explicit live check model', () => {
     expect(ProviderConnectionHealthCheckInputSchema.parse({})).toEqual({ mode: 'configuration' });
     expect(ProviderConnectionHealthCheckInputSchema.parse({ mode: 'live', model: 'coding-model' })).toEqual({

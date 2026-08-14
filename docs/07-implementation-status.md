@@ -1,5 +1,20 @@
 # 07. 实现状态
 
+## 2026-08-14：Claude Code Adapter 与正式验收数据清理
+
+### 已实现
+
+- `claude_code` 成为第四种 Agent Adapter；Workspace 自动提供“Claude Code 官方认证”连接，Agent 可选择 Builder/Reviewer 能力、长期提示词、权限模板和可选模型，留空则跟随 CLI 默认模型。
+- Worker 使用 Claude Code 非交互 `stream-json` 协议，把 session、文本、工具调用、命令证据、错误和终态转换成平台统一事件，并复用既有 Worktree、Handoff、Consultation、Review、Run Token、Lease 与取消链路。
+- Builder 按不可变 Run 策略开放写入、Bash、Web 与内部 Task；Reviewer/consult 严格只暴露 Read、Glob、Grep。常规 commit、push、merge 与 rebase 通过 CLI tool rule 禁止。
+- 正式配置中的五个 `20260812` 验收 Agent 以及它们的验收 Task/Run/Thread/Event 已精确删除；同批数据删除前已创建完整 PostgreSQL custom-format 备份，正式 Agent、连接和非验收任务未改写。
+
+### 验证证据
+
+- 本机发现 Claude Code `2.1.220`；API `/api/agent-runtimes` 返回 `claude_code available=true`，ProviderConnection API 返回 Claude Code 官方连接。
+- Worker Adapter 测试覆盖 Builder/Reviewer 工具边界、模型参数、stream-json 转换、命令证据和认证失败终态。
+- 正式 Agent 列表清理后只保留 Mock Builder、Codex Builder、Mock Reviewer、OpenCode Go Builder 与 Codex Reviewer。
+
 ## 2026-08-13：受控 Agent 咨询与原 Agent 恢复
 
 ### 已实现

@@ -118,7 +118,7 @@ erDiagram
 
 | 字段 | 说明 |
 |---|---|
-| `adapter_type` | `mock`、`codex_cli` 或 `opencode_cli` |
+| `adapter_type` | `mock`、`codex_cli`、`opencode_cli` 或 `claude_code` |
 | `provider_connection_id` | 可复用的 Workspace ProviderConnection；新的非 Mock Agent 必填，旧 Profile 可空 |
 | `model_label` | 仅作展示与诊断，不参与安全判断 |
 | `capabilities` | 例如 `implement`、`review`、`research` |
@@ -138,9 +138,11 @@ erDiagram
 
 AgentProfile 属于 Workspace，可被多个新 Task 复用；修改配置不会改写已经创建的 Run 或历史事件。CLI 专属配置继续复用通用 JSONB `config`；ProviderConnection 本身由 migration `0010_wealthy_pet_avengers.sql` 新增。
 
-AgentProfile 表达用户定义的 Agent 身份，不表达一次执行。名称和能力是通用字段，`adapter_type` 才选择 Mock、Codex CLI 或 OpenCode CLI；CLI 专属配置只进入经过白名单校验的 `config`。
+AgentProfile 表达用户定义的 Agent 身份，不表达一次执行。名称和能力是通用字段，`adapter_type` 才选择 Mock、Codex CLI、OpenCode CLI 或 Claude Code；CLI 专属配置只进入经过白名单校验的 `config`。
 
 Codex AgentProfile 可在 `config.model` 中固定模型；Worker 启动时传给 `codex exec --model`。留空则继续使用 Codex CLI 默认模型。Web 对所有 AgentProfile 使用同一编辑入口，允许修改名称、能力、运行 CLI、ProviderConnection、模型和启停状态；OpenCode 的可用模型优先从所选连接目录中选择。更新只影响之后创建的 Run。
+
+Claude Code AgentProfile 同样允许在 `config.model` 固定模型别名或完整模型 ID；留空时跟随 CLI 默认模型。官方连接只代表本机 CLI 认证入口，不保存 API Key、Base URI 或用户级 Claude 配置。
 
 ### `provider_connections`
 
@@ -148,7 +150,7 @@ Codex AgentProfile 可在 `config.model` 中固定模型；Worker 启动时传�
 |---|---|
 | `workspace_id` | 连接所属 Workspace |
 | `kind` | `official_cli` 或 `custom_api` |
-| `adapter_type` | 当前支持 `codex_cli`、`opencode_cli` |
+| `adapter_type` | 当前支持 `codex_cli`、`opencode_cli`、`claude_code` |
 | `protocol` | `cli_managed`、`openai_chat_completions`、`openai_responses` |
 | `base_url` | 自定义 API 的 Base URI；官方连接为空 |
 | `credential_env` | Worker 允许透传的环境变量名称；不保存密钥值 |
@@ -321,7 +323,7 @@ GET    /api/agent-runtimes
 GET    /api/agent-runtimes/opencode
 ```
 
-创建和更新 AgentProfile 使用同一份完整配置 schema。`GET /api/agent-runtimes` 统一返回 Mock、Codex CLI 和 OpenCode CLI 的可用性、版本与可选模型目录；OpenCode 专属 endpoint 保留兼容。`POST /api/agents/:agentId/health-check` 只做无计费的 CLI/目录检测，不启动 Run。
+创建和更新 AgentProfile 使用同一份完整配置 schema。`GET /api/agent-runtimes` 统一返回 Mock、Codex CLI、OpenCode CLI 和 Claude Code 的可用性、版本与可选模型目录；OpenCode 专属 endpoint 保留兼容。`POST /api/agents/:agentId/health-check` 只做无计费的 CLI/目录检测，不启动 Run。
 
 ProviderConnection 更新使用完整配置 schema，且 `kind` / `adapterType` 不可变。服务端拒绝停用仍被启用 Agent 引用的连接，也拒绝从自定义目录移除启用 Agent 正在使用的模型。连接健康检测默认 `mode=configuration`，检查 CLI、Worker 凭证环境变量和模型目录；只有 `mode=live` 才发送固定测试文本并可能产生 provider 用量，当前只对自定义 OpenCode 连接开放。
 

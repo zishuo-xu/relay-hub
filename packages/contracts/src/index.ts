@@ -6,6 +6,7 @@ export const DEFAULT_CODEX_AGENT_ID = '00000000-0000-4000-8000-000000000003';
 export const DEFAULT_MOCK_REVIEWER_AGENT_ID = '00000000-0000-4000-8000-000000000004';
 export const DEFAULT_CODEX_CONNECTION_ID = '00000000-0000-4000-8000-000000000005';
 export const DEFAULT_OPENCODE_CONNECTION_ID = '00000000-0000-4000-8000-000000000006';
+export const DEFAULT_CLAUDE_CODE_CONNECTION_ID = '00000000-0000-4000-8000-000000000007';
 export const RUN_QUEUE_NAME = 'relay-hub-runs';
 
 export const AGENT_RESULT_ENVELOPE_START = '<relayhub_result>';
@@ -15,8 +16,9 @@ export const MAX_CONSULTATIONS_PER_TASK = 3;
 export const HANDOFF_REJECTION_REASONS = ['handoff_budget_exhausted', 'handoff_target_unavailable'] as const;
 export type HandoffRejectionReason = (typeof HANDOFF_REJECTION_REASONS)[number];
 
-export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli', 'opencode_cli'] as const;
+export const AGENT_ADAPTER_TYPES = ['mock', 'codex_cli', 'opencode_cli', 'claude_code'] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
+export const EXECUTABLE_AGENT_ADAPTER_TYPES = ['codex_cli', 'opencode_cli', 'claude_code'] as const;
 
 export const AGENT_CAPABILITIES = ['implement', 'review'] as const;
 export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
@@ -43,7 +45,9 @@ export function executionPolicyPreset(
     return {
       fileAccess: 'workspace_write',
       commandAccess: 'allow',
-      networkAccess: adapterType === 'opencode_cli' ? 'outbound' : adapterType === 'codex_cli' ? 'loopback' : 'none',
+      networkAccess: adapterType === 'opencode_cli' || adapterType === 'claude_code'
+        ? 'outbound'
+        : adapterType === 'codex_cli' ? 'loopback' : 'none',
       externalDirectoryAccess: 'deny',
       gitAccess: 'none',
       internalSubagents: 'allow',
@@ -52,8 +56,10 @@ export function executionPolicyPreset(
   if (preset === 'reviewer_standard') {
     return {
       fileAccess: 'read_only',
-      commandAccess: adapterType === 'opencode_cli' ? 'deny' : 'allow',
-      networkAccess: adapterType === 'opencode_cli' ? 'none' : adapterType === 'codex_cli' ? 'loopback' : 'none',
+      commandAccess: adapterType === 'opencode_cli' || adapterType === 'claude_code' ? 'deny' : 'allow',
+      networkAccess: adapterType === 'opencode_cli' || adapterType === 'claude_code'
+        ? 'none'
+        : adapterType === 'codex_cli' ? 'loopback' : 'none',
       externalDirectoryAccess: 'deny',
       gitAccess: 'none',
       internalSubagents: 'deny',
@@ -61,7 +67,7 @@ export function executionPolicyPreset(
   }
   return {
     fileAccess: 'read_only',
-    commandAccess: adapterType === 'opencode_cli' ? 'deny' : 'allow',
+    commandAccess: adapterType === 'opencode_cli' || adapterType === 'claude_code' ? 'deny' : 'allow',
     networkAccess: 'none',
     externalDirectoryAccess: 'deny',
     gitAccess: 'none',
@@ -120,7 +126,7 @@ export function effectiveExecutionPolicyForAdapter(
   triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation',
 ): ExecutionPolicy {
   const effective = effectiveExecutionPolicy(policy, triggerType);
-  if (adapterType === 'opencode_cli' && effective.fileAccess === 'read_only') {
+  if ((adapterType === 'opencode_cli' || adapterType === 'claude_code') && effective.fileAccess === 'read_only') {
     return { ...effective, commandAccess: 'deny', networkAccess: 'none' };
   }
   return effective;
@@ -136,7 +142,7 @@ export const ProviderConnectionInputSchema = z
   .object({
     name: z.string().trim().min(2).max(80),
     kind: z.enum(PROVIDER_CONNECTION_KINDS),
-    adapterType: z.enum(['codex_cli', 'opencode_cli']),
+    adapterType: z.enum(EXECUTABLE_AGENT_ADAPTER_TYPES),
     protocol: z.enum(PROVIDER_PROTOCOLS),
     baseUrl: z.string().trim().url().max(2_048).refine((value) => /^https?:\/\//i.test(value), 'Base URI must use HTTP or HTTPS').optional(),
     credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
@@ -183,7 +189,7 @@ export const ProviderConnectionSnapshotSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   kind: z.enum(PROVIDER_CONNECTION_KINDS),
-  adapterType: z.enum(['codex_cli', 'opencode_cli']),
+  adapterType: z.enum(EXECUTABLE_AGENT_ADAPTER_TYPES),
   protocol: z.enum(PROVIDER_PROTOCOLS),
   baseUrl: z.string().url().optional(),
   credentialEnv: z.string().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
@@ -283,6 +289,22 @@ export const AgentProfileInputSchema = z
         });
       }
     }
+    if (input.executionPolicy && input.adapterType === 'claude_code') {
+      if (input.executionPolicy.networkAccess === 'loopback') {
+        context.addIssue({
+          code: 'custom',
+          path: ['executionPolicy', 'networkAccess'],
+          message: 'Claude Code cannot enforce loopback-only tool network access',
+        });
+      }
+      if (input.executionPolicy.fileAccess === 'read_only' && input.executionPolicy.commandAccess === 'allow') {
+        context.addIssue({
+          code: 'custom',
+          path: ['executionPolicy', 'commandAccess'],
+          message: 'Claude Code read-only Agents must deny shell commands because shell writes cannot be sandboxed',
+        });
+      }
+    }
   });
 
 export type AgentProfileInput = z.input<typeof AgentProfileInputSchema>;
@@ -296,6 +318,12 @@ export const OpenCodeRuntimeConfigSchema = z.object({
 });
 
 export type OpenCodeRuntimeConfig = z.infer<typeof OpenCodeRuntimeConfigSchema>;
+
+export const ClaudeCodeRuntimeConfigSchema = z.object({
+  model: z.string().trim().min(1).max(240).optional(),
+});
+
+export type ClaudeCodeRuntimeConfig = z.infer<typeof ClaudeCodeRuntimeConfigSchema>;
 
 export const TASK_STATUSES = [
   'draft',

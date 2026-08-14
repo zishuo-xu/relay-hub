@@ -49,6 +49,7 @@ GitHub：<https://github.com/zishuo-xu/relay-hub>
 - [x] 完成多 Agent 交接与 Review 主流程
 - [x] 完成任意已配置平台 Agent 之间的顺序型动态 Handoff，并通过真实 OpenCode A → B 验收
 - [x] 完成可配置 OpenCode Builder/Reviewer、运行时检测与统一事件适配
+- [x] 完成 Claude Code 官方连接、Builder/Reviewer Adapter、权限映射与统一事件适配
 - [x] 完成通用 Agent 创建、CLI/模型/长期提示词/权限模板配置与不可变 Run AgentProfile 快照
 - [x] 完成 Worker Lease、Heartbeat、失联权限撤销和 `lost` 状态收敛
 - [x] 完成对话优先第一切片：持久 Thread/Message、线程内 Agent Run、Agent 回复回流与按需审计抽屉
@@ -73,7 +74,7 @@ relay-hub/
 │   └── decisions/
 ├── apps/
 │   ├── api/               # Task/Run 状态、持久事件与实时广播
-│   ├── worker/            # BullMQ Consumer、Mock/Codex/OpenCode Adapter 与 Worktree 隔离
+│   ├── worker/            # BullMQ Consumer、Mock/Codex/OpenCode/Claude Code Adapter 与 Worktree 隔离
 │   └── web/               # 任务控制台与实时 Timeline
 └── packages/
     ├── contracts/         # 跨进程共享协议与状态机
@@ -120,6 +121,13 @@ opencode providers login
 opencode models
 ```
 
+使用 Claude Code Agent 时，需要先安装并登录 Claude Code：
+
+```bash
+claude --version
+claude auth status
+```
+
 RelayHub 的“模型与连接”统一管理 URI、协议、模型目录和凭证环境变量名称，不保存 API Key。“Agent 配置”只引用连接和模型，并保存长期提示词与执行权限。运行时配置参考 OpenCode 官方的 [Config](https://opencode.ai/docs/config/)、[Providers](https://opencode.ai/docs/providers/) 和 [Permissions](https://opencode.ai/docs/permissions/) 约定。
 
 ```bash
@@ -136,7 +144,7 @@ pnpm dev
 
 - `Mock Builder`：不调用外部模型，用于稳定演示平台链路。
 - `Codex Builder`：创建 `relayhub/run-<runId>` 分支和独立 Worktree，再调用 `codex exec --json` 真实修改代码。
-- 自定义 Agent：点击页面右上方“Agent 配置”，先填写自定义名称和 Builder/Reviewer 能力，再选择 Mock、Codex CLI 或 OpenCode CLI。CLI 只是运行载体；只有选择 OpenCode 时才填写 `provider/model` 等专属字段。
+- 自定义 Agent：在“Agent 配置”中填写自定义名称和 Builder/Reviewer 能力，再选择 Mock、Codex CLI、OpenCode CLI 或 Claude Code。CLI 只是运行载体；OpenCode 选择连接模型目录，Codex 与 Claude Code 可选固定模型或跟随 CLI 默认模型。
 
 AgentProfile 是可长期复用、可修改的当前配置。长期提示词定义角色偏好，Builder、Reviewer 和只读分析权限模板定义统一执行边界；CLI 内部子 Agent 只能继承父 Run 权限。每个 Run 在创建时保存不可变 AgentProfile 快照，因此修改 Agent 名称、CLI、模型、提示词或权限不会改变已经排队和历史 Run；后续 Run 才使用新配置。
 
