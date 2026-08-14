@@ -12,6 +12,8 @@ import {
 import {
   agentProfiles,
   consultations,
+  delegationPlans,
+  delegations,
   handoffs,
   outboxEvents,
   type RelayDatabase,
@@ -23,7 +25,7 @@ import {
   threadMessages,
   threads,
 } from '@relay-hub/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   planAfterReview,
   planAfterSuccessfulBuilderRun,
@@ -68,6 +70,7 @@ export async function recordAgentEvent(
     let workflowEvent: { eventType: string; payload: Record<string, unknown>; dedupeKey: string } | undefined;
     let secondaryWorkflowEvent: { eventType: string; payload: Record<string, unknown>; dedupeKey: string } | undefined;
     let repairRunId: string | undefined;
+    const additionalEmitted: RunEvent[] = [];
     const runPatch: Partial<typeof runs.$inferInsert> = {};
     const taskPatch: Partial<typeof tasks.$inferInsert> = {};
 
@@ -81,6 +84,9 @@ export async function recordAgentEvent(
       case 'run.started':
         nextRunStatus = 'running';
         if (task.status === 'queued') nextTaskStatus = 'running';
+        if (task.parentTaskId) {
+          await tx.update(delegations).set({ status: 'running', updatedAt: now }).where(and(eq(delegations.childTaskId, task.id), eq(delegations.status, 'queued')));
+        }
         runPatch.startedAt = now;
         if (agentEvent.sessionRef) runPatch.sessionRef = agentEvent.sessionRef;
         break;
@@ -219,6 +225,55 @@ export async function recordAgentEvent(
           createdAt: now,
           updatedAt: now,
         });
+        break;
+      }
+      case 'delegation.requested': {
+        if (run.status !== 'running') throw new Error(`Cannot request delegation while run is ${run.status}`);
+        if (run.triggerType === 'review' || run.triggerType === 'consult' || task.parentTaskId) {
+          throw new Error('Review, Consultation, and delegated child Runs cannot create another Delegation');
+        }
+        if (task.currentRunId !== run.id) throw new Error('Only the current Task Run can request a Delegation');
+        const [existingPlan] = await tx.select({ id: delegationPlans.id }).from(delegationPlans).where(eq(delegationPlans.sourceRunId, run.id)).limit(1);
+        if (existingPlan) throw new Error(`Run already has a Delegation plan: ${run.id}`);
+        const targetIds = agentEvent.delegationPlan.assignments.map((assignment) => assignment.targetAgentId);
+        if (new Set(targetIds).size !== targetIds.length) throw new Error('Each delegated assignment must target a different Agent');
+        const targetRows = await tx.select().from(agentProfiles).where(inArray(agentProfiles.id, targetIds));
+        const targetById = new Map(targetRows.map((target) => [target.id, target]));
+        for (const assignment of agentEvent.delegationPlan.assignments) {
+          const target = targetById.get(assignment.targetAgentId);
+          if (!target?.enabled || target.workspaceId !== task.workspaceId || !target.capabilities.includes('implement')) {
+            throw new Error(`Delegation target is unavailable or cannot execute work: ${assignment.targetAgentId}`);
+          }
+          if (assignment.requiredSpecialties.some((specialty) => !target.specialties.includes(specialty))) {
+            throw new Error(`Delegation target lacks required specialties: ${assignment.targetAgentId}`);
+          }
+        }
+        const planId = randomUUID();
+        await tx.insert(delegationPlans).values({
+          id: planId,
+          parentTaskId: task.id,
+          sourceRunId: run.id,
+          sourceAgentId: run.agentId,
+          reportingMode: 'final_only',
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        });
+        await tx.insert(delegations).values(agentEvent.delegationPlan.assignments.map((assignment) => ({
+          id: randomUUID(),
+          planId,
+          targetAgentId: assignment.targetAgentId,
+          kind: assignment.kind,
+          title: assignment.title,
+          objective: assignment.objective,
+          scope: assignment.scope,
+          deliverables: assignment.deliverables,
+          acceptanceCriteria: assignment.acceptanceCriteria,
+          requiredSpecialties: assignment.requiredSpecialties,
+          status: 'proposed' as const,
+          createdAt: now,
+          updatedAt: now,
+        })));
         break;
       }
       case 'handoff.consumed': {
@@ -443,6 +498,22 @@ export async function recordAgentEvent(
               };
             }
           } else {
+            const [pendingDelegationPlan] = await tx
+              .select()
+              .from(delegationPlans)
+              .where(and(eq(delegationPlans.sourceRunId, run.id), eq(delegationPlans.status, 'pending')))
+              .limit(1);
+            if (pendingDelegationPlan) {
+              if (agentEvent.outcome.nextAction?.type !== 'delegate') {
+                throw new Error('Run outcome must match the pending Delegation plan');
+              }
+              nextTaskStatus = 'waiting_for_user';
+              workflowEvent = {
+                eventType: 'task.delegation_proposed',
+                payload: { planId: pendingDelegationPlan.id, sourceRunId: run.id },
+                dedupeKey: `workflow-delegation-proposed:${run.id}`,
+              };
+            } else {
             const [pendingConsultation] = await tx
               .select()
               .from(consultations)
@@ -572,7 +643,10 @@ export async function recordAgentEvent(
                 dedupeKey: `workflow-after-run:${run.id}`,
               };
               } else {
-                const plan = planAfterSuccessfulBuilderRun({ reviewDispatchAvailable: Boolean(pendingHandoff) });
+                const delegatedDirectCompletion = Boolean(task.parentTaskId) && !pendingHandoff && agentEvent.outcome.nextAction?.type === 'complete';
+                const plan = delegatedDirectCompletion
+                  ? { nextTaskStatus: 'completed' as const, eventType: 'task.delegated_work_completed', reason: 'delegated_child_completed' }
+                  : planAfterSuccessfulBuilderRun({ reviewDispatchAvailable: Boolean(pendingHandoff) });
                 nextTaskStatus = plan.nextTaskStatus;
                 let targetRunId: string | undefined;
                 if (pendingHandoff) {
@@ -623,6 +697,7 @@ export async function recordAgentEvent(
                   workflowEvent.payload.targetRunId = targetRunId;
                 }
               }
+            }
             }
           }
         }
@@ -679,6 +754,92 @@ export async function recordAgentEvent(
         break;
       default:
         if (run.status !== 'running') throw new Error(`Cannot append ${agentEvent.type} while run is ${run.status}`);
+    }
+
+    if (task.parentTaskId && nextTaskStatus && ['completed', 'failed', 'cancelled'].includes(nextTaskStatus)) {
+      const [delegation] = await tx.select().from(delegations).where(eq(delegations.childTaskId, task.id)).limit(1);
+      if (delegation && !['completed', 'failed', 'cancelled'].includes(delegation.status)) {
+        const reportRunId = agentEvent.type === 'run.completed' && run.triggerType === 'review' && run.parentRunId
+          ? run.parentRunId
+          : run.id;
+        const [reportRun] = await tx.select({ outcome: runs.outcome }).from(runs).where(eq(runs.id, reportRunId)).limit(1);
+        const reportStatus = nextTaskStatus as 'completed' | 'failed' | 'cancelled';
+        const reportSummary = reportRun?.outcome?.publicMessage
+          ?? reportRun?.outcome?.summary
+          ?? (agentEvent.type === 'run.failed' ? agentEvent.message : `${delegation.title} ${reportStatus}`);
+        await tx.update(delegations).set({
+          status: reportStatus,
+          report: {
+            status: reportStatus,
+            summary: reportSummary,
+            deliverables: delegation.deliverables,
+            evidence: [],
+            openIssues: reportStatus === 'completed' ? [] : [reportSummary],
+          },
+          updatedAt: now,
+        }).where(eq(delegations.id, delegation.id));
+        const siblingRows = await tx.select().from(delegations).where(eq(delegations.planId, delegation.planId));
+        const allTerminal = siblingRows.every((sibling) =>
+          sibling.id === delegation.id || ['completed', 'failed', 'cancelled'].includes(sibling.status),
+        );
+        if (allTerminal) {
+          const [delegationPlan] = await tx.select().from(delegationPlans).where(eq(delegationPlans.id, delegation.planId)).limit(1);
+          if (delegationPlan?.status === 'running') {
+            const [sourceRun] = await tx.select().from(runs).where(eq(runs.id, delegationPlan.sourceRunId)).limit(1);
+            const [parentTask] = await tx.select().from(tasks).where(eq(tasks.id, delegationPlan.parentTaskId)).limit(1);
+            if (!sourceRun || !parentTask || parentTask.status !== 'waiting_on_children') {
+              throw new Error('Delegation parent is unavailable for continuation');
+            }
+            const continuationRunId = randomUUID();
+            await tx.insert(runs).values({
+              id: continuationRunId,
+              taskId: parentTask.id,
+              agentId: delegationPlan.sourceAgentId,
+              parentRunId: run.id,
+              triggerType: 'continuation',
+              status: 'queued',
+              attempt: sourceRun.attempt,
+              workspaceRoot: sourceRun.workspaceRoot,
+              bootstrapPolicySnapshot: { steps: [] },
+              agentProfileSnapshot: sourceRun.agentProfileSnapshot,
+              worktreePath: sourceRun.worktreePath,
+              workingDirectory: sourceRun.workingDirectory,
+              branchName: sourceRun.branchName,
+              createdAt: now,
+            });
+            await tx.insert(outboxEvents).values({ aggregateType: 'run', aggregateId: continuationRunId, eventType: 'run.queued', payload: { runId: continuationRunId } });
+            await tx.update(delegationPlans).set({ status: 'resumed', continuationRunId, updatedAt: now }).where(eq(delegationPlans.id, delegationPlan.id));
+            await tx.update(tasks).set({
+              status: 'queued',
+              currentRunId: continuationRunId,
+              version: parentTask.version + 1,
+              updatedAt: now,
+            }).where(and(eq(tasks.id, parentTask.id), eq(tasks.version, parentTask.version)));
+            const [parentEvent] = await tx.insert(runEvents).values({
+              taskId: parentTask.id,
+              runId: continuationRunId,
+              eventType: 'task.delegation_resumed',
+              payload: { planId: delegationPlan.id, continuationRunId, assignmentCount: siblingRows.length },
+              source: 'api',
+              occurredAt: now,
+              dedupeKey: `delegation-resumed:${delegationPlan.id}`,
+            }).returning();
+            if (parentEvent) additionalEmitted.push(mapEvent(parentEvent));
+            if (parentTask.threadId) {
+              const sequence = await allocateThreadMessageSequence(tx, parentTask.threadId, parentTask.workspaceId, now);
+              await tx.insert(threadMessages).values({
+                threadId: parentTask.threadId,
+                sequence,
+                taskId: parentTask.id,
+                senderType: 'system',
+                senderName: 'RelayHub',
+                content: '所有委派子任务已完成回报，原负责人正在继续综合结果。',
+                createdAt: now,
+              });
+            }
+          }
+        }
+      }
     }
 
     if (nextRunStatus) {
@@ -741,7 +902,7 @@ export async function recordAgentEvent(
       })
       .returning();
     if (!eventRow) throw new Error('Agent event insert did not return a row');
-    const emitted = [mapEvent(eventRow)];
+    const emitted = [...additionalEmitted, mapEvent(eventRow)];
     if (workflowEvent) {
       const [workflowEventRow] = await tx
         .insert(runEvents)

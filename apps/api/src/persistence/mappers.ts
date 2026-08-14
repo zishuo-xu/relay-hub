@@ -2,6 +2,8 @@ import type {
   AgentAdapterType,
   AgentProfile,
   Consultation,
+  Delegation,
+  DelegationPlan,
   Handoff,
   MessageDispatch,
   Review,
@@ -18,6 +20,8 @@ import { defaultExecutionPolicy, effectiveExecutionPolicyForAdapter, ExecutionPo
 import {
   agentProfiles,
   consultations,
+  delegationPlans,
+  delegations,
   handoffs,
   messageDispatches,
   providerConnections,
@@ -33,6 +37,8 @@ import {
 
 type TaskRow = typeof tasks.$inferSelect;
 type ConsultationRow = typeof consultations.$inferSelect;
+type DelegationPlanRow = typeof delegationPlans.$inferSelect;
+type DelegationRow = typeof delegations.$inferSelect;
 type ThreadRow = typeof threads.$inferSelect;
 type ThreadMessageRow = typeof threadMessages.$inferSelect;
 type MessageDispatchRow = typeof messageDispatches.$inferSelect;
@@ -54,6 +60,7 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
     id: row.id,
     workspaceId: row.workspaceId,
     ...(row.threadId ? { threadId: row.threadId } : {}),
+    ...(row.parentTaskId ? { parentTaskId: row.parentTaskId } : {}),
     ...(row.conversationContextBeforeSequence !== null
       ? { conversationContextBeforeSequence: row.conversationContextBeforeSequence }
       : {}),
@@ -74,6 +81,42 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
     version: row.version,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
+  };
+}
+
+export function mapDelegationPlan(row: DelegationPlanRow): DelegationPlan {
+  return {
+    id: row.id,
+    parentTaskId: row.parentTaskId,
+    sourceRunId: row.sourceRunId,
+    sourceAgentId: row.sourceAgentId,
+    reportingMode: row.reportingMode,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+    ...(row.continuationRunId ? { continuationRunId: row.continuationRunId } : {}),
+  };
+}
+
+export function mapDelegation(row: DelegationRow): Delegation {
+  return {
+    id: row.id,
+    planId: row.planId,
+    targetAgentId: row.targetAgentId,
+    kind: row.kind,
+    title: row.title,
+    objective: row.objective,
+    scope: row.scope,
+    deliverables: row.deliverables,
+    acceptanceCriteria: row.acceptanceCriteria,
+    requiredSpecialties: row.requiredSpecialties,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+    ...(row.reviewerAgentId ? { reviewerAgentId: row.reviewerAgentId } : {}),
+    ...(row.childThreadId ? { childThreadId: row.childThreadId } : {}),
+    ...(row.childTaskId ? { childTaskId: row.childTaskId } : {}),
+    ...(row.report ? { report: row.report } : {}),
   };
 }
 
@@ -208,6 +251,7 @@ export function mapRun(row: RunRow): Run {
       name: snapshot.name,
       adapterType: snapshot.adapterType,
       capabilities: snapshot.capabilities,
+      specialties: snapshot.specialties ?? [],
       executionPolicy: effectiveExecutionPolicyForAdapter(snapshot.adapterType, snapshotPolicy, row.triggerType),
       ...(snapshot.provider ? { provider: snapshot.provider } : {}),
       ...(snapshot.modelLabel ? { modelLabel: snapshot.modelLabel } : {}),
@@ -261,6 +305,7 @@ export function mapAgentProfile(row: AgentProfileRow): AgentProfile {
     adapterType,
     ...(row.providerConnectionId ? { providerConnectionId: row.providerConnectionId } : {}),
     capabilities: row.capabilities,
+    specialties: row.specialties,
     config: row.config,
     instructions: typeof row.config.instructions === 'string' ? row.config.instructions : '',
     executionPolicy: policyResult.success

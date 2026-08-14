@@ -602,7 +602,7 @@ suite('sequential handoff integration', () => {
     expect(targets.some((target) => target.id === agentA.id)).toBe(false);
     expect(targets.some((target) => target.id === disabled.id)).toBe(false);
     for (const target of targets) {
-      expect(Object.keys(target).sort()).toEqual(['capabilities', 'id', 'name']);
+      expect(Object.keys(target).sort()).toEqual(['capabilities', 'id', 'name', 'specialties']);
     }
   });
 

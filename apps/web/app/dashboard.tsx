@@ -5,6 +5,7 @@ import type {
   AgentCapability,
   AgentHealth,
   AgentProfile,
+  AgentSpecialty,
   ConversationContextView,
   AgentRuntimeDescriptor,
   AgentPermissionPreset,
@@ -50,6 +51,7 @@ const statusLabels: Record<Task['status'], string> = {
   running: '执行中',
   reviewing: '审查中',
   changes_requested: '需要修改',
+  waiting_on_children: '等待子任务',
   waiting_for_user: '等待用户',
   completed: '已完成',
   failed: '失败',
@@ -69,6 +71,7 @@ const coordinationReasonLabels: Record<CoordinationReason, string> = {
   consultation_waiting_for_dispatch: '咨询 Run 已创建，等待平台派发',
   consultation_in_progress: '咨询 Agent 正在只读回答问题，任务责任仍属于原 Agent',
   continuation_in_progress: '原 Agent 已收到咨询结果并继续负责当前任务',
+  delegation_in_progress: '平台正在运行独立子任务，完成后自动恢复负责人',
   handoff_pending: '当前 Agent 已准备交接，等待完成后派发目标 Agent',
   workflow_resolution_pending: 'Run 已结束，平台正在收敛下一状态',
   user_confirmation_required: 'Review 已通过，等待用户最终确认',
@@ -78,6 +81,7 @@ const coordinationReasonLabels: Record<CoordinationReason, string> = {
 
 const routeActionLabels: Record<CoordinationRouteAction, string> = {
   continue: '继续执行',
+  delegate: '委派分工',
   handoff: '交接 Agent',
   request_review: '进入审查',
   consult: '咨询 Agent',
@@ -101,6 +105,10 @@ const eventLabels: Record<string, string> = {
   'run.completed': '执行结束',
   'handoff.requested': '已准备交接',
   'consultation.requested': '已请求咨询',
+  'delegation.requested': '已提出分工',
+  'task.delegation_proposed': '等待批准分工',
+  'task.delegation_approved': '分工已批准',
+  'task.delegation_resumed': '负责人已恢复',
   'task.consultation_dispatched': '咨询已派发',
   'task.consultation_resumed': '原 Agent 已恢复',
   'task.consultation_failed': '咨询执行失败',
@@ -414,6 +422,8 @@ interface ConversationWorkspaceProps {
   canConfirm: boolean;
   confirming: boolean;
   onAgentToggle: (agentId: string) => void;
+  onApproveDelegation: (planId: string) => void;
+  onRejectDelegation: (planId: string) => void;
   onMessageChange: (message: string) => void;
   onModeChange: (mode: ThreadMessageMode) => void;
   onLeadSelect: (agentId: string) => void;
@@ -440,6 +450,8 @@ export function ConversationWorkspace({
   canConfirm,
   confirming,
   onAgentToggle,
+  onApproveDelegation,
+  onRejectDelegation,
   onMessageChange,
   onModeChange,
   onLeadSelect,
@@ -513,35 +525,40 @@ export function ConversationWorkspace({
                 </article>
               );
             })}
+            {threadDetail.delegationPlans.map((plan) => {
+              const assignments = threadDetail.delegations.filter((delegation) => delegation.planId === plan.id);
+              return <section className={`delegation-plan-card ${plan.status}`} key={plan.id}>
+                <header><div><span>分工计划</span><strong>{plan.status === 'pending' ? '等待你确认' : plan.status === 'running' ? '子任务执行中' : plan.status === 'resumed' ? '已回报负责人' : plan.status === 'rejected' ? '已拒绝' : '需要处理'}</strong></div><small>{assignments.length} 个独立工作包 · final only</small></header>
+                <div className="delegation-assignments">{assignments.map((assignment) => <article key={assignment.id}>
+                  <span>{assignment.kind === 'implementation' ? '实现' : assignment.kind === 'verification' ? '验证' : assignment.kind === 'design' ? '设计' : '分析'}</span>
+                  <div><strong>{assignment.title}</strong><p>{assignment.objective}</p><small>{agentName(assignment.targetAgentId)} · {assignment.status === 'proposed' ? '待派发' : assignment.status === 'queued' ? '排队中' : assignment.status === 'running' ? '执行中' : assignment.status === 'completed' ? '已完成' : assignment.status}</small>{assignment.report ? <blockquote>{assignment.report.summary}</blockquote> : null}</div>
+                </article>)}</div>
+                {plan.status === 'pending' ? <footer><button className="secondary-button" onClick={() => onRejectDelegation(plan.id)} type="button">退回负责人</button><button className="new-task-button" onClick={() => onApproveDelegation(plan.id)} type="button">批准并启动</button></footer> : null}
+              </section>;
+            })}
           </div>
         ) : (
           <div className="conversation-empty standalone"><span>R</span><h2>还没有协作线程</h2><p>创建第一个线程，把多个 Agent 放进同一个持续上下文。</p><button className="new-task-button" onClick={onNewThread} type="button">新建线程</button></div>
         )}
         {threadDetail ? (
           <form className="message-composer" onSubmit={onSubmit}>
-            <div className="composer-mode">
-              <div role="tablist" aria-label="协作方式">
-                <button aria-selected={mode === 'parallel'} className={mode === 'parallel' ? 'active' : ''} onClick={() => onModeChange('parallel')} role="tab" type="button">分别回答</button>
-                <button aria-selected={mode === 'coordinated'} className={mode === 'coordinated' ? 'active' : ''} onClick={() => onModeChange('coordinated')} role="tab" type="button">协作完成</button>
-              </div>
-              <p>{mode === 'coordinated' ? '第一位是主导 Agent：负责分工、咨询协作者并汇总结果。' : '每个 Agent 独立回答同一个问题，彼此不分工。'}</p>
-            </div>
+            <div className="composer-mode owner-mode"><strong>交给一个负责人</strong><p>你只选择初始 Agent；它需要分工时会提出计划，经你批准后由平台创建独立子任务并强制验收。</p></div>
             <div className="composer-target">
-              <span>{mode === 'coordinated' ? '◎' : '@'}</span>
-              <div className="target-chips">{selectedAgentIds.map((agentId, index) => <div className={mode === 'coordinated' && index === 0 ? 'target-chip lead' : 'target-chip'} key={agentId}>{mode === 'coordinated' && index === 0 ? <b>主导</b> : null}<span>{agentName(agentId)}</span>{mode === 'coordinated' && index > 0 ? <button aria-label={`设 ${agentName(agentId)} 为主导 Agent`} className="make-lead" onClick={() => onLeadSelect(agentId)} title="设为主导" type="button">↑</button> : null}<button aria-label={`移除 ${agentName(agentId)}`} className="remove-agent" onClick={() => onAgentToggle(agentId)} type="button">×</button></div>)}</div>
+              <span>◎</span>
+              <div className="target-chips">{selectedAgentIds.slice(0, 1).map((agentId) => <div className="target-chip lead" key={agentId}><b>负责人</b><span>{agentName(agentId)}</span><button aria-label={`移除 ${agentName(agentId)}`} className="remove-agent" onClick={() => onAgentToggle(agentId)} type="button">×</button></div>)}</div>
               <div className="agent-picker" ref={agentPickerRef}>
                 <button
                   aria-expanded={agentPickerOpen}
                   aria-haspopup="listbox"
                   className="agent-picker-trigger"
-                  disabled={selectedAgentIds.length >= 4 || availableAgents.length === 0}
+                  disabled={availableAgents.length === 0}
                   onClick={() => setAgentPickerOpen((current) => !current)}
                   type="button"
                 >
-                  <span>＋</span>{selectedAgentIds.length >= 4 ? '已达上限' : '添加 Agent'}<i>⌄</i>
+                  <span>＋</span>{selectedAgentIds.length ? '更换负责人' : '选择负责人'}<i>⌄</i>
                 </button>
                 {agentPickerOpen ? <div aria-label="可添加的 Agent" className="agent-picker-menu" role="listbox">
-                  <header><strong>选择协作者</strong><span>{selectedAgentIds.length}/4 已选择</span></header>
+                  <header><strong>选择初始负责人</strong><span>单选</span></header>
                   <div className="agent-picker-list">
                     {availableAgents.map((agent) => <button
                       aria-selected="false"
@@ -558,12 +575,12 @@ export function ConversationWorkspace({
                       <i>＋</i>
                     </button>)}
                   </div>
-                  <footer>{mode === 'coordinated' ? '主导 Agent 保持责任；协作者通过受控 Consultation 独立回答。' : '每个 Agent 会获得独立 Run，最多并行选择 4 个。'}</footer>
+                  <footer>负责人可以咨询、交接或提出可审批的独立分工计划。</footer>
                 </div> : null}
               </div>
             </div>
-            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder={mode === 'coordinated' ? '描述最终目标，主导 Agent 会拆分视角、咨询协作者并给出统一结果…' : '描述问题，让选中的 Agent 分别回答并回到同一线程…'} rows={2} value={message} />
-            <button disabled={sending || !message.trim() || selectedAgentIds.length === 0 || (mode === 'coordinated' && selectedAgentIds.length < 2)} type="submit">{sending ? '派发中…' : mode === 'coordinated' ? selectedAgentIds.length < 2 ? '至少选择 2 个' : `开始协作 ${selectedAgentIds.length}` : selectedAgentIds.length > 1 ? `分别发送 ${selectedAgentIds.length}` : '发送'}</button>
+            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="用大白话描述目标；负责人会执行，必要时先提交分工计划…" rows={2} value={message} />
+            <button disabled={sending || !message.trim() || selectedAgentIds.length === 0} type="submit">{sending ? '派发中…' : '交给负责人'}</button>
           </form>
         ) : null}
       </div>
@@ -669,7 +686,7 @@ export function SettingsWorkspace({
           {agents.map((agent) => (
             <button className="agent-settings-row" key={agent.id} onClick={() => onEditAgent(agent)} type="button">
               <span className="connection-mark">{adapterMark(agent.adapterType)}</span>
-              <div><strong>{agent.name}</strong><small>{agent.capabilities.join(' + ')} · {agent.modelLabel ?? agent.adapterType}</small></div>
+              <div><strong>{agent.name}</strong><small>{agent.capabilities.join(' + ')} · {agent.specialties?.join(' / ') || '通用'} · {agent.modelLabel ?? agent.adapterType}</small></div>
               <div><span>{connectionName(agent)}</span><small>{agent.enabled ? '点击编辑' : '已停用 · 点击编辑'}</small></div>
             </button>
           ))}
@@ -1185,6 +1202,7 @@ interface AgentConfigDrawerProps {
   enabled: boolean;
   name: string;
   capabilities: AgentCapability[];
+  specialties: AgentSpecialty[];
   adapterType: AgentAdapterType;
   model: string;
   variant: string;
@@ -1206,6 +1224,7 @@ interface AgentConfigDrawerProps {
   onExecutionPolicyChange: (value: ExecutionPolicy) => void;
   onPermissionPresetChange: (value: AgentPermissionPreset | 'custom') => void;
   onCapabilitiesChange: (value: AgentCapability[]) => void;
+  onSpecialtiesChange: (value: AgentSpecialty[]) => void;
   onNameChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onVariantChange: (value: string) => void;
@@ -1219,6 +1238,7 @@ export function AgentConfigDrawer({
   enabled,
   name,
   capabilities,
+  specialties,
   adapterType,
   model,
   variant,
@@ -1240,6 +1260,7 @@ export function AgentConfigDrawer({
   onExecutionPolicyChange,
   onPermissionPresetChange,
   onCapabilitiesChange,
+  onSpecialtiesChange,
   onNameChange,
   onModelChange,
   onVariantChange,
@@ -1313,6 +1334,18 @@ export function AgentConfigDrawer({
                   <span><strong>{label}</strong><small>{description}</small></span>
                 </label>
               ))}
+            </div>
+          </fieldset>
+          <fieldset className="capability-fieldset specialty-fieldset">
+            <legend>专业标签（用于负责人选择协作者）</legend>
+            <div className="specialty-grid">
+              {([
+                ['product', '产品'], ['architecture', '架构'], ['frontend', '前端'], ['backend', '后端'], ['ux', 'UX'],
+                ['qa', '测试'], ['security', '安全'], ['research', '调研'], ['devops', '运维'], ['data', '数据'],
+              ] as const).map(([specialty, label]) => <label className={specialties.includes(specialty) ? 'selected' : ''} key={specialty}>
+                <input checked={specialties.includes(specialty)} onChange={(event) => onSpecialtiesChange(event.target.checked ? [...specialties, specialty] : specialties.filter((candidate) => candidate !== specialty))} type="checkbox" />
+                <span>{label}</span>
+              </label>)}
             </div>
           </fieldset>
           <details className="agent-policy-details">

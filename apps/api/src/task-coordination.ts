@@ -124,6 +124,16 @@ export function projectTaskCoordination(source: TaskCoordinationSource): TaskCoo
     };
   }
 
+  if (source.task.status === 'waiting_on_children') {
+    return {
+      state,
+      owner: { kind: 'platform', reason: 'delegation_in_progress' },
+      evidence,
+      verdict,
+      route: { action: 'delegate', reason: 'delegation_in_progress', allowedActions: ['delegate'] },
+    };
+  }
+
   if (!currentRun) {
     return {
       state,

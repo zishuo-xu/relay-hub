@@ -80,34 +80,45 @@ export function agentCompletionEvents(input: {
     if (claimed.run.triggerType === 'consult' && result.nextAction.type !== 'complete') {
       throw new Error('Consultation Runs may only return a complete nextAction');
     }
-    if (result.nextAction.type === 'request_review') {
+    const nextAction = claimed.run.triggerType !== 'consult' && claimed.task.reviewerAgentId && result.nextAction.type === 'complete'
+      ? {
+          type: 'request_review' as const,
+          targetAgentId: claimed.task.reviewerAgentId,
+          reason: 'RelayHub requires the configured independent Review before completion.',
+        }
+      : result.nextAction;
+    if (nextAction.type === 'request_review') {
       const reviewerAgentId = claimed.task.reviewerAgentId;
       if (!reviewerAgentId) {
         throw new Error('Agent requested review but the Task has no configured Reviewer');
       }
-      if (result.nextAction.targetAgentId !== reviewerAgentId) {
+      if (nextAction.targetAgentId !== reviewerAgentId) {
         throw new Error('Agent requested review from an Agent other than the configured Task Reviewer');
       }
     }
     const events: AgentEvent[] = [];
-    const structuredHandoff = handoffFromAgentResult(claimed, result);
+    const routedResult = nextAction === result.nextAction ? result : { ...result, nextAction };
+    const structuredHandoff = handoffFromAgentResult(claimed, routedResult);
     if (structuredHandoff) {
       events.push({ type: 'handoff.requested', handoff: structuredHandoff });
-    } else if (result.nextAction.type === 'request_review' && claimed.task.reviewerAgentId) {
+    } else if (nextAction.type === 'request_review' && claimed.task.reviewerAgentId) {
       events.push({
         type: 'handoff.requested',
         handoff: buildReviewHandoff(claimed, workingDirectory, result.summary, commandEvidence),
       });
     }
-    if (result.nextAction.type === 'consult' && result.consultation) {
+    if (nextAction.type === 'consult' && result.consultation) {
       events.push({
         type: 'consultation.requested',
         consultation: {
-          targetAgentId: result.nextAction.targetAgentId,
+          targetAgentId: nextAction.targetAgentId,
           question: result.consultation.question,
           contextSummary: result.consultation.contextSummary,
         },
       });
+    }
+    if (nextAction.type === 'delegate' && result.delegationPlan) {
+      events.push({ type: 'delegation.requested', delegationPlan: result.delegationPlan });
     }
     events.push({
       type: 'run.completed',
@@ -115,7 +126,7 @@ export function agentCompletionEvents(input: {
         summary: result.summary,
         publicMessage: result.publicMessage ?? publicTextOutsideResultEnvelope(finalMessage) ?? result.summary,
         commandEvidence,
-        nextAction: result.nextAction,
+        nextAction,
       },
     });
     return events;

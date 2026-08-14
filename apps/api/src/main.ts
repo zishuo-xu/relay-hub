@@ -278,6 +278,20 @@ app.post('/api/tasks/:taskId/confirm', async (request) => {
   return result.value;
 });
 
+app.post('/api/delegation-plans/:planId/approve', async (request) => {
+  const { planId } = z.object({ planId: z.string().uuid() }).parse(request.params);
+  const result = await store.approveDelegationPlan(planId);
+  broadcast(result.emitted);
+  return result.value;
+});
+
+app.post('/api/delegation-plans/:planId/reject', async (request) => {
+  const { planId } = z.object({ planId: z.string().uuid() }).parse(request.params);
+  const result = await store.rejectDelegationPlan(planId);
+  broadcast(result.emitted);
+  return result.value;
+});
+
 app.get('/api/tasks/:taskId/events', async (request) => {
   const { taskId } = z.object({ taskId: z.string().uuid() }).parse(request.params);
   const { after } = z.object({ after: z.coerce.number().int().nonnegative().default(0) }).parse(request.query);

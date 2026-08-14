@@ -5,6 +5,7 @@ import {
   type AgentCapability,
   type AgentPermissionPreset,
   type AgentProfile,
+  type AgentSpecialty,
   type AgentRuntimeDescriptor,
   type ExecutionPolicy,
   type ProviderConnection,
@@ -14,6 +15,7 @@ export interface AgentEditorDraft {
   editingAgentId: string | null;
   name: string;
   capabilities: AgentCapability[];
+  specialties: AgentSpecialty[];
   adapterType: AgentAdapterType;
   providerConnectionId: string;
   model: string;
@@ -38,6 +40,7 @@ export function createAgentEditorDraft(
       capabilities: agent.capabilities.filter(
         (capability): capability is AgentCapability => capability === 'implement' || capability === 'review',
       ),
+      specialties: agent.specialties ?? [],
       adapterType: agent.adapterType,
       providerConnectionId: agent.providerConnectionId ?? '',
       model: typeof agent.config.model === 'string' ? agent.config.model : '',
@@ -61,6 +64,7 @@ export function createAgentEditorDraft(
     editingAgentId: null,
     name: '',
     capabilities,
+    specialties: [],
     adapterType,
     providerConnectionId: providerConnection?.id ?? '',
     model: providerConnection?.kind === 'custom_api'

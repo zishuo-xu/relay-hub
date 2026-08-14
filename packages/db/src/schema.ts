@@ -14,9 +14,12 @@ import {
 } from 'drizzle-orm/pg-core';
 import type {
   AgentProfile,
+  AgentSpecialty,
   BootstrapPolicy,
   CompletionPolicy,
   Consultation,
+  Delegation,
+  DelegationPlan,
   HandoffArtifactRef,
   NextAction,
   RunOutcome,
@@ -33,6 +36,7 @@ const TASK_STATUS_VALUES = [
   'running',
   'reviewing',
   'changes_requested',
+  'waiting_on_children',
   'waiting_for_user',
   'completed',
   'failed',
@@ -58,7 +62,7 @@ const COMPLETION_POLICY_VALUES = [
 export const taskStatusEnum = pgEnum('task_status', TASK_STATUS_VALUES);
 export const runStatusEnum = pgEnum('run_status', RUN_STATUS_VALUES);
 export const completionPolicyEnum = pgEnum('completion_policy', COMPLETION_POLICY_VALUES);
-export const runTriggerEnum = pgEnum('run_trigger', ['user', 'handoff', 'review', 'retry', 'consult', 'continuation']);
+export const runTriggerEnum = pgEnum('run_trigger', ['user', 'handoff', 'review', 'retry', 'consult', 'continuation', 'delegation']);
 export const eventSourceEnum = pgEnum('event_source', ['api', 'worker', 'agent', 'user']);
 export const handoffStatusEnum = pgEnum('handoff_status', [
   'pending',
@@ -72,6 +76,8 @@ export const reviewVerdictEnum = pgEnum('review_verdict', ['approved', 'changes_
 export const findingSeverityEnum = pgEnum('finding_severity', ['blocking', 'should_fix', 'suggestion']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published']);
 export const consultationStatusEnum = pgEnum('consultation_status', ['pending', 'dispatched', 'answered', 'resumed', 'failed']);
+export const delegationPlanStatusEnum = pgEnum('delegation_plan_status', ['pending', 'running', 'resumed', 'rejected', 'failed']);
+export const delegationStatusEnum = pgEnum('delegation_status', ['proposed', 'queued', 'running', 'completed', 'failed', 'cancelled']);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -125,6 +131,7 @@ export const agentProfiles = pgTable(
     modelLabel: text('model_label'),
     modelFamily: text('model_family'),
     capabilities: jsonb('capabilities').$type<string[]>().default([]).notNull(),
+    specialties: jsonb('specialties').$type<AgentSpecialty[]>().default([]).notNull(),
     config: jsonb('config').$type<Record<string, unknown>>().default({}).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     ...timestamps,
@@ -154,6 +161,7 @@ export const tasks = pgTable(
       .notNull()
       .references(() => workspaces.id),
     threadId: uuid('thread_id').references(() => threads.id),
+    parentTaskId: uuid('parent_task_id').references((): AnyPgColumn => tasks.id),
     conversationContextBeforeSequence: bigint('conversation_context_before_sequence', { mode: 'number' }),
     conversationContextPolicyVersion: integer('conversation_context_policy_version'),
     title: text('title').notNull(),
@@ -178,6 +186,7 @@ export const tasks = pgTable(
   (table) => [
     index('tasks_workspace_created_idx').on(table.workspaceId, table.createdAt),
     index('tasks_thread_created_idx').on(table.threadId, table.createdAt),
+    index('tasks_parent_created_idx').on(table.parentTaskId, table.createdAt),
   ],
 );
 
@@ -293,6 +302,51 @@ export const consultations = pgTable(
     uniqueIndex('consultations_target_run_uidx').on(table.targetRunId),
     uniqueIndex('consultations_continuation_run_uidx').on(table.continuationRunId),
     index('consultations_task_created_idx').on(table.taskId, table.createdAt),
+  ],
+);
+
+export const delegationPlans = pgTable(
+  'delegation_plans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    parentTaskId: uuid('parent_task_id').notNull().references(() => tasks.id),
+    sourceRunId: uuid('source_run_id').notNull().references(() => runs.id),
+    sourceAgentId: uuid('source_agent_id').notNull().references(() => agentProfiles.id),
+    continuationRunId: uuid('continuation_run_id').references(() => runs.id),
+    reportingMode: text('reporting_mode').$type<'final_only'>().default('final_only').notNull(),
+    status: delegationPlanStatusEnum('status').$type<DelegationPlan['status']>().default('pending').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('delegation_plans_source_run_uidx').on(table.sourceRunId),
+    uniqueIndex('delegation_plans_continuation_run_uidx').on(table.continuationRunId),
+    index('delegation_plans_parent_created_idx').on(table.parentTaskId, table.createdAt),
+  ],
+);
+
+export const delegations = pgTable(
+  'delegations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    planId: uuid('plan_id').notNull().references(() => delegationPlans.id),
+    targetAgentId: uuid('target_agent_id').notNull().references(() => agentProfiles.id),
+    reviewerAgentId: uuid('reviewer_agent_id').references(() => agentProfiles.id),
+    childThreadId: uuid('child_thread_id').references(() => threads.id),
+    childTaskId: uuid('child_task_id').references(() => tasks.id),
+    kind: text('kind').$type<Delegation['kind']>().notNull(),
+    title: text('title').notNull(),
+    objective: text('objective').notNull(),
+    scope: text('scope').notNull(),
+    deliverables: jsonb('deliverables').$type<string[]>().default([]).notNull(),
+    acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
+    requiredSpecialties: jsonb('required_specialties').$type<AgentSpecialty[]>().default([]).notNull(),
+    status: delegationStatusEnum('status').$type<Delegation['status']>().default('proposed').notNull(),
+    report: jsonb('report').$type<Delegation['report']>(),
+    ...timestamps,
+  },
+  (table) => [
+    index('delegations_plan_created_idx').on(table.planId, table.createdAt),
+    uniqueIndex('delegations_child_task_uidx').on(table.childTaskId),
   ],
 );
 

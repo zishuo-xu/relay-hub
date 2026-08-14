@@ -1,5 +1,28 @@
 # 07. 实现状态
 
+## 2026-08-14：Agent 主导的受控任务委派
+
+### 已实现
+
+- 用户默认只把自然语言目标交给一个负责人；负责人可直接完成、Consult、Handoff，或提出结构化 DelegationPlan，不要求用户预先组队。
+- 用户批准计划后，平台原子创建最多 4 个深度为 1 的独立 child Thread/Task/Run；父 Task 进入 `waiting_on_children`，子任务只按 `final_only` 回报。
+- AgentProfile 增加产品、架构、前端、后端、UX、测试、安全、调研、运维和数据等专业标签；Worker 注入受平台过滤的 Agent roster，目标仍由 Owner 基于任务选择。
+- 实现类子任务不能通过输出 `complete` 跳过 Review；平台强制选择非作者 Reviewer，复用既有 Handoff、Review verdict 与 repair loop。
+- 子任务终态写入结构化 TaskReport；全部工作包回报后，Orchestrator 只恢复一次原 Lead，并把报告注入 continuation 上下文。
+- Web Thread 展示待确认/执行中/已回报的分工计划卡；主线程是指挥面，子线程是独立执行面，技术事件继续留在审计抽屉。
+- Web REST 请求改为同源 `/api` 并由 Next.js 转发到内部 API，规避浏览器直接访问不同本地端口造成的 `Failed to fetch` 和跨源不一致。
+
+### 验证证据
+
+- API 集成测试覆盖计划提出、用户批准、独立 child Task、实现类强制 Review、TaskReport 聚合和 Lead 单次恢复。
+- Worker 回归覆盖结构化 Delegation 事件，以及配置 Reviewer 时作者声明完成仍被改路由到 Review。
+- 隔离 PostgreSQL 与 Redis 环境的真实浏览器路径通过：Mock Lead 提出两个工作包，用户批准后并行完成分析与实现；实现任务由独立 Mock Reviewer 批准，主线程显示两个最终报告并恢复 Lead。
+
+### 当前边界
+
+- 第一版只支持 `always_confirm`、`final_only`、深度 1 和独立工作包；不实现任意 DAG、固定角色流水线、无限递归或开放式 swarm。
+- Mock 端到端已通过；真实 OpenCode/Codex/Claude Code 的跨 CLI 组合仍需兼容性验收。
+
 ## 2026-08-14：Lead 主导协作与并行回答分层
 
 ### 已实现

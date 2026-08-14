@@ -1,6 +1,6 @@
 # ADR-024：Agent 主导的任务委派与主子任务编排
 
-- 状态：Proposed（等待用户确认后实施）
+- 状态：Accepted（第一实现切片已完成）
 - 日期：2026-08-14
 
 ## 背景
@@ -124,6 +124,20 @@ CompletionPolicy 继续独立控制 Review 通过后自动完成还是等待用�
 5. 子 Task 完成后写 `TaskReport`，全部回报或失败时自动创建 Lead continuation Run。
 6. 把代码任务的独立 ReviewPolicy 变成完成硬门禁；无 Reviewer 时转用户，不允许作者跳过。
 7. 用 Mock 验证 Lead -> 两个并行子任务 -> 独立 Review -> final report -> Lead 汇总，再用真实 OpenCode/Codex/Claude Code 中至少两个不同 Agent 验证一次完整路径。
+
+## 实施结果
+
+2026-08-14 已完成第一实现切片：
+
+- AgentProfile 已支持可配置 `specialties`，Worker 只向当前 Owner 注入同 Workspace 的可路由精简 roster。
+- `NextAction=delegate`、`DelegationPlan`、`Delegation`、`parentTaskId`、`TaskReport` 和 `waiting_on_children` 已成为持久合约与数据库事实。
+- 用户批准计划后，API 在一个事务中创建独立 child Thread/Task/Run 和 Outbox；拒绝计划不会创建子执行事实。
+- 第一版严格限制深度 1、最多 4 个独立工作包和 `final_only`；子 Agent 不能递归创建平台级委派。
+- 实现类子 Task 即使作者声明 `complete`，Worker 仍确定性改路由为独立 Review；Reviewer 不能等于作者。
+- 全部子 Task 到达终态并写入 TaskReport 后，平台只创建一次原 Lead continuation Run，并将最终报告注入 Lead 上下文。
+- Web 默认只选择一个负责人，Thread 内展示待批准或已回报的分工计划卡，子 Thread 作为可打开的独立执行面。
+
+Mock 端到端路径已经验证 `Lead -> 用户批准 -> 分析与实现子任务 -> 独立 Review -> final report -> Lead 恢复`。真实跨 CLI/跨模型委派作为下一轮兼容性验收，不扩大本 ADR 的领域边界。
 
 ## 明确不做
 

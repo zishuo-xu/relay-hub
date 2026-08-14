@@ -8,6 +8,7 @@ import { agentCompletionEvents } from './agent-result.js';
 
 const HANDOFF_CHAIN_PATTERN = /^relayhub:handoff-chain=([0-9a-fA-F-]+(?:,[0-9a-fA-F-]+)*)\s*$/m;
 const CONSULT_PATTERN = /^relayhub:consult=([0-9a-fA-F-]+)\s*$/m;
+const DELEGATE_PATTERN = /^relayhub:delegate=([0-9a-fA-F-]+(?:,[0-9a-fA-F-]+)*)\s*$/m;
 const REPORT_CONTEXT_PATTERN = /^relayhub:report-context\s*$/m;
 
 /**
@@ -131,7 +132,45 @@ export async function* runMockAgent(claimed: ClaimedRun): AsyncGenerator<AgentEv
   const consultTarget = claimed.run.triggerType === 'user'
     ? CONSULT_PATTERN.exec(claimed.task.description)?.[1]
     : undefined;
-  const finalMessage = consultTarget
+  const delegateTargets = claimed.run.triggerType === 'user'
+    ? DELEGATE_PATTERN.exec(claimed.task.description)?.[1]?.split(',')
+    : undefined;
+  const finalMessage = claimed.delegation
+    ? [
+        `Mock Agent 已完成委派子任务：${claimed.delegation.title}`,
+        AGENT_RESULT_ENVELOPE_START,
+        JSON.stringify({
+          summary: `Completed delegated ${claimed.delegation.kind} work: ${claimed.delegation.title}`,
+          publicMessage: `Mock Agent 已完成委派子任务：${claimed.delegation.title}`,
+          nextAction: { type: 'complete', reason: 'The bounded delegated child Task is complete.' },
+        }),
+        AGENT_RESULT_ENVELOPE_END,
+      ].join('\n')
+    : delegateTargets?.length
+      ? [
+          'Mock Lead 已准备好分工计划，等待用户确认后启动独立子任务。',
+          AGENT_RESULT_ENVELOPE_START,
+          JSON.stringify({
+            summary: 'Mock Lead proposed independent delegated work packages.',
+            publicMessage: 'Mock Lead 已准备好分工计划，等待用户确认后启动独立子任务。',
+            nextAction: { type: 'delegate', reason: 'The mock scenario exercises Agent-led task delegation.' },
+            delegationPlan: {
+              reportingMode: 'final_only',
+              assignments: delegateTargets.map((targetAgentId, index) => ({
+                targetAgentId,
+                kind: index === 0 ? 'analysis' : 'implementation',
+                title: index === 0 ? '独立需求分析' : `独立实现任务 ${index + 1}`,
+                objective: index === 0 ? '形成一份边界清晰的需求分析' : '完成一个可验收的实现切片',
+                scope: '只处理分配的子目标，不扩展父任务范围。',
+                deliverables: [index === 0 ? '需求分析结论' : '可验证的实现结果'],
+                acceptanceCriteria: ['产出与子目标一致，并明确验证结果。'],
+                requiredSpecialties: [],
+              })),
+            },
+          }),
+          AGENT_RESULT_ENVELOPE_END,
+        ].join('\n')
+      : consultTarget
     ? [
         'Mock Agent 需要一条独立建议，咨询后会继续负责本任务。',
         AGENT_RESULT_ENVELOPE_START,

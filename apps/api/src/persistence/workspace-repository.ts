@@ -146,6 +146,7 @@ function profileValues(input: AgentProfileInput, connection?: ProviderConnection
     modelLabel: input.model ?? defaultModelLabel,
     modelFamily: provider ?? defaultModelFamily,
     capabilities: input.capabilities,
+    specialties: input.specialties ?? [],
     config: {
       ...(input.model ? { model: input.model } : {}),
       ...(input.variant ? { variant: input.variant } : {}),

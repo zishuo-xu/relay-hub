@@ -9,6 +9,8 @@ import {
 import {
   agentProfiles,
   consultations,
+  delegationPlans,
+  delegations,
   handoffs,
   idempotencyKeys,
   outboxEvents,
@@ -23,7 +25,7 @@ import {
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm';
-import { mapAgentProfile, mapConsultation, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
+import { mapAgentProfile, mapConsultation, mapDelegation, mapDelegationPlan, mapEvent, mapHandoff, mapReview, mapReviewFinding, mapRun, mapTask } from './mappers.js';
 import type { MutationResult } from './types.js';
 import { allocateThreadMessageSequence } from './thread-message-repository.js';
 import { projectTaskCoordination } from '../task-coordination.js';
@@ -57,6 +59,10 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     .from(consultations)
     .where(eq(consultations.taskId, taskId))
     .orderBy(asc(consultations.createdAt));
+  const planRows = await db.select().from(delegationPlans).where(eq(delegationPlans.parentTaskId, taskId)).orderBy(asc(delegationPlans.createdAt));
+  const delegationRows = planRows.length > 0
+    ? await db.select().from(delegations).where(inArray(delegations.planId, planRows.map((plan) => plan.id))).orderBy(asc(delegations.createdAt))
+    : [];
   const reviewRows = await db.select().from(reviews).where(eq(reviews.taskId, taskId)).orderBy(asc(reviews.round));
   const findingRows = reviewRows.length > 0
     ? await db
@@ -73,6 +79,8 @@ export async function getTaskDetail(db: RelayDatabase, taskId: string): Promise<
     events: eventRows.map(mapEvent),
     handoffs: handoffRows.map(({ handoff }) => mapHandoff(handoff)),
     consultations: consultationRows.map(mapConsultation),
+    delegationPlans: planRows.map(mapDelegationPlan),
+    delegations: delegationRows.map(mapDelegation),
     reviews: reviewRows.map((review) => mapReview(
       review,
       mappedFindings.filter((finding) => finding.reviewId === review.id),

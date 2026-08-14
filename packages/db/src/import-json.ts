@@ -22,6 +22,7 @@ function snapshotAgent(row: typeof agentProfiles.$inferSelect): AgentProfile {
     name: row.name,
     adapterType,
     capabilities: row.capabilities,
+    specialties: row.specialties,
     config: row.config,
     instructions: typeof row.config.instructions === 'string' ? row.config.instructions : '',
     executionPolicy: policyResult.success ? policyResult.data : defaultExecutionPolicy(adapterType, row.capabilities),

@@ -97,7 +97,7 @@ export function parseReviewDraft(message: string): ReviewDraft {
 function routingInstructions(claimed: ClaimedRun): string[] {
   const targets = claimed.handoffTargets ?? [];
   const directory = targets.length
-    ? targets.map((target) => `- ${target.id} · ${target.name} · capabilities: ${target.capabilities.join(', ')}`).join('\n')
+    ? targets.map((target) => `- ${target.id} · ${target.name} · capabilities: ${target.capabilities.join(', ')} · specialties: ${target.specialties?.join(', ') || 'general'}`).join('\n')
     : '- No other platform Agents are available; finish this Run yourself.';
   const reviewerRule = claimed.task.reviewerAgentId
     ? `To request the configured independent Review, use nextAction request_review with targetAgentId ${claimed.task.reviewerAgentId}.`
@@ -109,18 +109,50 @@ function routingInstructions(claimed: ClaimedRun): string[] {
     AGENT_RESULT_ENVELOPE_START,
     '{"summary":"What this Run finished","publicMessage":"The concise answer that the user and later Thread Agents must read","nextAction":{"type":"wait_for_user","reason":"Why the user must decide next"}}',
     AGENT_RESULT_ENVELOPE_END,
-    'Allowed nextAction types: handoff, request_review, consult, wait_for_user, continue, complete.',
+    'Allowed nextAction types: handoff, delegate, request_review, consult, wait_for_user, continue, complete.',
     'For handoff, use this exact object shape; nextAction and handoff are sibling fields:',
     '{"summary":"Concise completed work","publicMessage":"The result that should appear in the public Thread","nextAction":{"type":"handoff","targetAgentId":"TARGET_UUID","reason":"Why this Agent owns the next step"},"handoff":{"objective":"What the target must do","summary":"Concise context without hidden reasoning","artifactRefs":[],"evidenceRefs":[],"decisions":[],"openQuestions":[],"risks":[]}}',
     'For a bounded advisory question that does not transfer Task ownership, use this exact consultation shape:',
     '{"summary":"Why outside advice is needed","publicMessage":"I am consulting a specialist before continuing.","nextAction":{"type":"consult","targetAgentId":"TARGET_UUID","reason":"Why this specialist is useful"},"consultation":{"question":"The precise question to answer","contextSummary":"Only the context needed to answer it"}}',
+    'When the goal contains independent deliverables that should be owned by other platform Agents, retain responsibility and propose a user-approved delegation plan with this exact shape:',
+    '{"summary":"Why the work should be divided","publicMessage":"I prepared a division-of-work plan for approval.","nextAction":{"type":"delegate","reason":"Why independent child Tasks are valuable"},"delegationPlan":{"reportingMode":"final_only","assignments":[{"targetAgentId":"TARGET_UUID","kind":"analysis","title":"Bounded child task","objective":"The result this child must produce","scope":"Explicit in-scope and out-of-scope boundaries","deliverables":["Concrete deliverable"],"acceptanceCriteria":["Observable completion rule"],"requiredSpecialties":["research"]}]}}',
+    'Delegation kinds are analysis, design, implementation, and verification. Propose at most four mutually independent assignments. Use delegate only for real deliverables, not duplicate broad answers. The platform pauses for user approval, creates isolated child Threads and Tasks, enforces independent Review for implementation work, and resumes you once with final-only reports.',
     'Always include publicMessage with the useful answer or conclusion that the user and later Thread Agents need; summary is only the execution/audit summary. Keep the envelope valid compact JSON and normally under 6,000 characters. Do not put handoff inside nextAction. The targetAgentId must come from the candidate directory below. RelayHub validates the target, writes the acceptance criteria itself, and creates the next Run.',
     'Keep artifactRefs and evidenceRefs empty unless a reference is essential. Every reference must be an object such as {"kind":"text","value":"README.md","label":"optional label"}; never put a plain string in either array.',
     reviewerRule,
     'If you omit the envelope, RelayHub applies the default route for this Task.',
-    'Candidate platform Agents (id · name · capabilities):',
+    'Candidate platform Agents (id · name · capabilities · specialties):',
     directory,
   ];
+}
+
+function delegationSection(claimed: ClaimedRun): string[] {
+  if (claimed.delegation) {
+    return [
+      '',
+      'This is an isolated delegated child Task. The parent Agent retains the overall goal.',
+      `Delegation kind: ${claimed.delegation.kind}`,
+      `Delegation objective: ${claimed.delegation.objective}`,
+      `Scope boundary: ${claimed.delegation.scope}`,
+      `Required deliverables: ${claimed.delegation.deliverables.join('; ')}`,
+      'Complete only this package. Do not create another Delegation or pretend CLI-internal helpers are platform Agents. RelayHub will report the final result to the parent automatically.',
+    ];
+  }
+  if (claimed.delegationPlan && claimed.delegations) {
+    return [
+      '',
+      `Delegation plan ${claimed.delegationPlan.status === 'rejected' ? 'was rejected by the user' : 'has finished'}. You remain accountable for the parent goal.`,
+      'Evaluate the child reports below, preserve material gaps or disagreement, then continue or complete the parent Task:',
+      JSON.stringify(claimed.delegations.map((delegation) => ({
+        title: delegation.title,
+        kind: delegation.kind,
+        status: delegation.status,
+        targetAgentId: delegation.targetAgentId,
+        report: delegation.report,
+      }))),
+    ];
+  }
+  return [];
 }
 
 function incomingHandoffSection(claimed: ClaimedRun): string[] {
@@ -311,6 +343,7 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
         ]
       : []),
     ...incomingHandoffSection(claimed),
+    ...delegationSection(claimed),
     ...leadCollaborationInstructions(claimed),
     '',
     'Acceptance criteria:',

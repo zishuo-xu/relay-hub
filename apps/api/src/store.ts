@@ -58,6 +58,7 @@ import { recordAgentEvent as recordAgentEventInDb } from './persistence/workflow
 import { DEFAULT_RUN_TOKEN_TTL_MS } from './run-token.js';
 import { DEFAULT_RUN_LEASE_DURATION_MS } from './run-lease.js';
 import { getRunConversationContext as getRunConversationContextFromDb } from './persistence/conversation-context-repository.js';
+import { approveDelegationPlan as approveDelegationPlanInDb, rejectDelegationPlan as rejectDelegationPlanInDb } from './persistence/delegation-repository.js';
 
 export class PostgresStore {
   constructor(
@@ -166,6 +167,14 @@ export class PostgresStore {
 
   confirmTaskCompletion(taskId: string): Promise<MutationResult<TaskDetail>> {
     return confirmTaskCompletionInDb(this.db, taskId);
+  }
+
+  approveDelegationPlan(planId: string): Promise<MutationResult<TaskDetail>> {
+    return approveDelegationPlanInDb(this.db, planId);
+  }
+
+  rejectDelegationPlan(planId: string): Promise<MutationResult<TaskDetail>> {
+    return rejectDelegationPlanInDb(this.db, planId);
   }
 
   claimRun(runId: string, workerId: string): Promise<MutationResult<ClaimedExecution | null>> {

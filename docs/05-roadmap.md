@@ -111,7 +111,7 @@
 6. [x] 增加用户显式多 Agent 选择、原子 MessageDispatch、并行回流与每目标失败入口。
 7. [x] 增加结构化 Agent 咨询协议；咨询不转移 Task 责任，结果返回后自动恢复原 Agent。自由文本 `@name` 解析继续不进入第一版。
 8. [x] 复用现有 AgentProfile snapshot、Run Token、Queue、Handoff、Review、Lease 和 Coordination projection，没有引入通用 Workflow Engine。
-9. [ ] 按 [ADR-024](decisions/ADR-024-agent-led-task-delegation.md) 增加 Agent 主导的受控 Delegation：用户只指定初始负责人，负责人提出独立子任务，平台审批/派发，子任务自治闭环后回报并恢复 Lead。
+9. [x] 按 [ADR-024](decisions/ADR-024-agent-led-task-delegation.md) 增加 Agent 主导的受控 Delegation：用户只指定初始负责人，负责人提出独立子任务，平台审批/派发，子任务自治闭环后回报并恢复 Lead。
 
 退出条件：用户可以在一个线程里连续与至少两个独立 Agent 协作；消息、Run、结构化交接和审计事实边界清楚，刷新后完整恢复，用户不需要在多个 Agent 页面之间搬运上下文。
 
@@ -165,7 +165,7 @@ Phase 3.4 已完成：封闭 `NextAction`、版本化 Handoff V2、内容摘要�
 
 Phase 4 第一切片已完成：Worker claim 写入 Lease，执行期间定时 Heartbeat；过期 Lease 使旧 Token 立即失去 control/event 权限，Reconciler 原子将 Run 收敛为 `lost` 并把 Task 转为 `waiting_for_user`。第一版刻意不自动启动第二个 Agent 写同一 Worktree。
 
-**产品优先级已于 2026-08-14 再次校准。** Thread/Message、版本化公开上下文、显式并行回答、受控 Consultation 和 Lead 咨询均已完成，但这些能力还没有形成参考项目式的真实分工。下一步按 ADR-024 实现 `delegate`：主 Agent 保留总目标，平台创建独立子 Thread/Task，子任务完成强制 Review 后以 `final_only` 回报并恢复 Lead。该切片完成后再补 WebSocket cursor/gap detection；指标、Tracing 和完整故障演示随后继续。
+**产品优先级已于 2026-08-14 再次校准并落地。** ADR-024 的受控 `delegate` 第一切片已经完成：主 Agent 保留总目标，用户批准后平台创建独立子 Thread/Task；实现子任务强制独立 Review，全部子任务以 `final_only` 回报并只恢复 Lead 一次。下一步进入真实跨 CLI/跨模型兼容性验收，并补 WebSocket cursor/gap detection；指标、Tracing 和完整故障演示随后继续。
 
 Phase 2 完成后的“可真实运行”边界是：用户可以从 RelayHub 创建一个真实开发任务，由 Codex CLI 在隔离 Worktree 中读取和修改代码、执行命令，并把流式输出与最终结果回传到持久 Timeline。此时不再依赖 Mock Agent，但仍然是单 Builder 流程。
 

@@ -13,6 +13,8 @@ import {
 import {
   agentProfiles,
   consultations,
+  delegationPlans,
+  delegations,
   handoffs,
   type RelayDatabase,
   reviewFindings,
@@ -29,6 +31,8 @@ import { handoffContentDigest } from '../handoff-integrity.js';
 import {
   mapEvent,
   mapConsultation,
+  mapDelegation,
+  mapDelegationPlan,
   mapHandoff,
   mapReview,
   mapReviewFinding,
@@ -80,7 +84,7 @@ export async function claimRun(
     if (!workspaceRow) throw new Error(`Workspace not found for run: ${runId}`);
     const conversationContext = await buildConversationContextForTask(tx, taskRow);
     const candidateRows = await tx
-      .select({ id: agentProfiles.id, name: agentProfiles.name, capabilities: agentProfiles.capabilities })
+      .select({ id: agentProfiles.id, name: agentProfiles.name, capabilities: agentProfiles.capabilities, specialties: agentProfiles.specialties })
       .from(agentProfiles)
       .where(and(eq(agentProfiles.workspaceId, taskRow.workspaceId), eq(agentProfiles.enabled, true)));
     const coordinatedTargets = taskRow.collaborationMode === 'lead'
@@ -91,7 +95,7 @@ export async function claimRun(
       : null;
     const handoffTargets: HandoffTargetView[] = candidateRows
       .filter((row) => row.id !== claimed.agentId && (!coordinatedTargets || coordinatedTargets.has(row.id)))
-      .map((row) => ({ id: row.id, name: row.name, capabilities: row.capabilities as AgentCapability[] }));
+      .map((row) => ({ id: row.id, name: row.name, capabilities: row.capabilities as AgentCapability[], specialties: row.specialties }));
     const [handoffRow] = await tx.select().from(handoffs).where(eq(handoffs.targetRunId, claimed.id)).limit(1);
     if (handoffRow?.bundleVersion && handoffRow.bundleVersion >= 2) {
       if (!handoffRow.contentDigest || !handoffRow.nextAction) {
@@ -126,6 +130,15 @@ export async function claimRun(
       : claimed.triggerType === 'continuation'
         ? await tx.select().from(consultations).where(eq(consultations.continuationRunId, claimed.id)).limit(1)
         : [];
+    const [childDelegationRow] = taskRow.parentTaskId
+      ? await tx.select().from(delegations).where(eq(delegations.childTaskId, taskRow.id)).limit(1)
+      : [];
+    const [delegationPlanRow] = claimed.triggerType === 'continuation'
+      ? await tx.select().from(delegationPlans).where(eq(delegationPlans.continuationRunId, claimed.id)).limit(1)
+      : [];
+    const delegationRows = delegationPlanRow
+      ? await tx.select().from(delegations).where(eq(delegations.planId, delegationPlanRow.id))
+      : [];
     const [eventRow] = await tx
       .insert(runEvents)
       .values({
@@ -164,6 +177,8 @@ export async function claimRun(
           ...(handoffRow ? { handoff: mapHandoff(handoffRow) } : {}),
           ...(consultationRow ? { consultation: mapConsultation(consultationRow) } : {}),
           ...(reviewRow ? { review: mapReview(reviewRow, findingRows.map(mapReviewFinding)) } : {}),
+          ...(childDelegationRow ? { delegation: mapDelegation(childDelegationRow) } : {}),
+          ...(delegationPlanRow ? { delegationPlan: mapDelegationPlan(delegationPlanRow), delegations: delegationRows.map(mapDelegation) } : {}),
         } satisfies ClaimedRun,
         executionToken: token.plaintext,
         lease: {

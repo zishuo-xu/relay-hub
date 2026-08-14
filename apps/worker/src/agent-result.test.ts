@@ -178,6 +178,53 @@ describe('agentCompletionEvents', () => {
     });
   });
 
+  it('cannot bypass a configured Reviewer by claiming complete', () => {
+    const withReviewer: ClaimedRun = { ...claimed, task: { ...claimed.task, reviewerAgentId: reviewerId } };
+    const events = agentCompletionEvents({
+      claimed: withReviewer,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'Implementation claims to be complete.',
+        nextAction: { type: 'complete', reason: 'The author would prefer to skip Review.' },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    });
+    expect(events.map((event) => event.type)).toEqual(['handoff.requested', 'run.completed']);
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.completed',
+      outcome: { nextAction: { type: 'request_review', targetAgentId: reviewerId } },
+    });
+  });
+
+  it('persists an Agent-proposed delegation plan before completing the source Run', () => {
+    const events = agentCompletionEvents({
+      claimed,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'Prepared an independent research assignment.',
+        nextAction: { type: 'delegate', reason: 'The Lead should retain the parent goal.' },
+        delegationPlan: {
+          reportingMode: 'final_only',
+          assignments: [{
+            targetAgentId: uxAgentId,
+            kind: 'design',
+            title: 'Design the bounded UX flow',
+            objective: 'Produce one reviewable UX flow.',
+            scope: 'Do not implement code.',
+            deliverables: ['UX flow'],
+            acceptanceCriteria: ['The states and transitions are explicit'],
+            requiredSpecialties: ['ux'],
+          }],
+        },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    });
+    expect(events.map((event) => event.type)).toEqual(['delegation.requested', 'run.completed']);
+    expect(events[0]).toMatchObject({ type: 'delegation.requested', delegationPlan: { reportingMode: 'final_only' } });
+  });
+
   it('rejects request_review when the Task has no configured Reviewer', () => {
     expect(() => agentCompletionEvents({
       claimed,

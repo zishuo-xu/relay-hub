@@ -23,6 +23,20 @@ export const EXECUTABLE_AGENT_ADAPTER_TYPES = ['codex_cli', 'opencode_cli', 'cla
 export const AGENT_CAPABILITIES = ['implement', 'review'] as const;
 export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
 
+export const AGENT_SPECIALTIES = [
+  'product',
+  'architecture',
+  'frontend',
+  'backend',
+  'ux',
+  'qa',
+  'security',
+  'research',
+  'devops',
+  'data',
+] as const;
+export type AgentSpecialty = (typeof AGENT_SPECIALTIES)[number];
+
 export const AGENT_PERMISSION_PRESETS = ['builder_standard', 'reviewer_standard', 'analysis_read_only'] as const;
 export type AgentPermissionPreset = (typeof AGENT_PERMISSION_PRESETS)[number];
 
@@ -98,7 +112,7 @@ export function identifyExecutionPolicyPreset(
 
 export function effectiveExecutionPolicy(
   policy: ExecutionPolicy,
-  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation',
+  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation' | 'delegation',
 ): ExecutionPolicy {
   if (triggerType === 'consult') {
     return {
@@ -123,7 +137,7 @@ export function effectiveExecutionPolicy(
 export function effectiveExecutionPolicyForAdapter(
   adapterType: AgentAdapterType,
   policy: ExecutionPolicy,
-  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation',
+  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation' | 'delegation',
 ): ExecutionPolicy {
   const effective = effectiveExecutionPolicy(policy, triggerType);
   if ((adapterType === 'opencode_cli' || adapterType === 'claude_code') && effective.fileAccess === 'read_only') {
@@ -225,6 +239,7 @@ export const AgentProfileInputSchema = z
     name: z.string().trim().min(2).max(80),
     adapterType: z.enum(AGENT_ADAPTER_TYPES),
     capabilities: z.array(z.enum(AGENT_CAPABILITIES)).min(1).max(2),
+    specialties: z.array(z.enum(AGENT_SPECIALTIES)).max(10).default([]),
     providerConnectionId: z.string().uuid().optional(),
     model: z.string().trim().min(3).max(240).optional(),
     variant: z.string().trim().min(1).max(80).optional(),
@@ -257,6 +272,9 @@ export const AgentProfileInputSchema = z
     }
     if (new Set(input.capabilities).size !== input.capabilities.length) {
       context.addIssue({ code: 'custom', path: ['capabilities'], message: 'Agent capabilities must be unique' });
+    }
+    if (new Set(input.specialties).size !== input.specialties.length) {
+      context.addIssue({ code: 'custom', path: ['specialties'], message: 'Agent specialties must be unique' });
     }
     if (input.executionPolicy && input.adapterType === 'codex_cli') {
       if (input.executionPolicy.commandAccess === 'deny') {
@@ -332,6 +350,7 @@ export const TASK_STATUSES = [
   'running',
   'reviewing',
   'changes_requested',
+  'waiting_on_children',
   'waiting_for_user',
   'completed',
   'failed',
@@ -384,10 +403,11 @@ export const EMPTY_BOOTSTRAP_POLICY: BootstrapPolicy = { steps: [] };
 const taskTransitions: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
   draft: ['queued', 'cancelled'],
   queued: ['running', 'waiting_for_user', 'cancelled', 'failed'],
-  running: ['reviewing', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
+  running: ['reviewing', 'waiting_on_children', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
   reviewing: ['changes_requested', 'waiting_for_user', 'completed', 'failed', 'cancelled'],
   changes_requested: ['queued', 'cancelled'],
-  waiting_for_user: ['queued', 'completed', 'cancelled'],
+  waiting_on_children: ['queued', 'waiting_for_user', 'failed', 'cancelled'],
+  waiting_for_user: ['queued', 'waiting_on_children', 'completed', 'cancelled'],
   completed: [],
   failed: [],
   cancelled: [],
@@ -522,6 +542,7 @@ export type CommandEvidence = z.infer<typeof CommandEvidenceSchema>;
 
 export const NextActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('continue'), reason: z.string().min(1).max(2_000) }).strict(),
+  z.object({ type: z.literal('delegate'), reason: z.string().min(1).max(2_000) }).strict(),
   z.object({
     type: z.literal('handoff'),
     targetAgentId: z.string().uuid(),
@@ -596,6 +617,7 @@ export const HandoffTargetViewSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(80),
   capabilities: z.array(z.enum(AGENT_CAPABILITIES)).min(1).max(2),
+  specialties: z.array(z.enum(AGENT_SPECIALTIES)).max(10).optional(),
 }).strict();
 
 export type HandoffTargetView = z.infer<typeof HandoffTargetViewSchema>;
@@ -619,6 +641,42 @@ export const AgentResultConsultationSchema = z.object({
 
 export type AgentResultConsultation = z.infer<typeof AgentResultConsultationSchema>;
 
+export const DELEGATION_KINDS = ['analysis', 'design', 'implementation', 'verification'] as const;
+export type DelegationKind = (typeof DELEGATION_KINDS)[number];
+
+export const DelegationAssignmentDraftSchema = z.object({
+  targetAgentId: z.string().uuid(),
+  kind: z.enum(DELEGATION_KINDS),
+  title: z.string().trim().min(3).max(120),
+  objective: z.string().trim().min(1).max(2_000),
+  scope: z.string().trim().min(1).max(4_000),
+  deliverables: z.array(z.string().trim().min(1).max(500)).min(1).max(20),
+  acceptanceCriteria: z.array(z.string().trim().min(1).max(500)).min(1).max(20),
+  requiredSpecialties: z.array(z.enum(AGENT_SPECIALTIES)).max(10).default([]),
+}).strict();
+export type DelegationAssignmentDraft = z.infer<typeof DelegationAssignmentDraftSchema>;
+
+export const DelegationPlanDraftSchema = z.object({
+  reportingMode: z.literal('final_only').default('final_only'),
+  assignments: z.array(DelegationAssignmentDraftSchema).min(1).max(4),
+}).strict().superRefine((plan, context) => {
+  const titles = plan.assignments.map((assignment) => assignment.title);
+  if (new Set(titles).size !== titles.length) {
+    context.addIssue({ code: 'custom', path: ['assignments'], message: 'Delegated assignment titles must be unique' });
+  }
+});
+export type DelegationPlanDraft = z.infer<typeof DelegationPlanDraftSchema>;
+
+export const TaskReportSchema = z.object({
+  status: z.enum(['completed', 'failed', 'cancelled']),
+  summary: z.string().min(1).max(10_000),
+  deliverables: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  evidence: z.array(HandoffArtifactRefSchema).max(100).default([]),
+  openIssues: z.array(z.string().min(1).max(2_000)).max(50).default([]),
+  recommendation: z.string().min(1).max(4_000).optional(),
+}).strict();
+export type TaskReport = z.infer<typeof TaskReportSchema>;
+
 export const AgentResultSchema = z
   .object({
     summary: z.string().min(1).max(10_000),
@@ -626,6 +684,7 @@ export const AgentResultSchema = z
     nextAction: NextActionSchema,
     handoff: AgentResultHandoffSchema.optional(),
     consultation: AgentResultConsultationSchema.optional(),
+    delegationPlan: DelegationPlanDraftSchema.optional(),
   })
   .strict()
   .superRefine((result, context) => {
@@ -659,6 +718,15 @@ export const AgentResultSchema = z
     }
     if (result.handoff && result.consultation) {
       context.addIssue({ code: 'custom', path: [], message: 'A result cannot request Handoff and Consultation together' });
+    }
+    if (result.nextAction.type === 'delegate' && !result.delegationPlan) {
+      context.addIssue({ code: 'custom', path: ['delegationPlan'], message: 'A delegate nextAction requires a delegation plan' });
+    }
+    if (result.delegationPlan && result.nextAction.type !== 'delegate') {
+      context.addIssue({ code: 'custom', path: ['delegationPlan'], message: 'A delegation plan requires a delegate nextAction' });
+    }
+    if (result.delegationPlan && (result.handoff || result.consultation)) {
+      context.addIssue({ code: 'custom', path: [], message: 'A result cannot combine delegation with Handoff or Consultation' });
     }
   });
 
@@ -761,6 +829,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('handoff.requested'), handoff: HandoffDraftSchema }),
   z.object({ type: z.literal('consultation.requested'), consultation: ConsultationDraftSchema }),
+  z.object({ type: z.literal('delegation.requested'), delegationPlan: DelegationPlanDraftSchema }),
   z.object({
     type: z.literal('handoff.consumed'),
     handoffId: z.string().uuid(),
@@ -783,6 +852,7 @@ export interface Task {
   id: string;
   workspaceId: string;
   threadId?: string;
+  parentTaskId?: string;
   conversationContextBeforeSequence?: number;
   conversationContextPolicyVersion?: number;
   title: string;
@@ -834,11 +904,48 @@ export interface MessageDispatch {
   createdAt: string;
 }
 
+export type DelegationPlanStatus = 'pending' | 'running' | 'resumed' | 'rejected' | 'failed';
+export type DelegationStatus = 'proposed' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface DelegationPlan {
+  id: string;
+  parentTaskId: string;
+  sourceRunId: string;
+  sourceAgentId: string;
+  continuationRunId?: string;
+  reportingMode: 'final_only';
+  status: DelegationPlanStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Delegation {
+  id: string;
+  planId: string;
+  targetAgentId: string;
+  reviewerAgentId?: string;
+  childThreadId?: string;
+  childTaskId?: string;
+  kind: DelegationKind;
+  title: string;
+  objective: string;
+  scope: string;
+  deliverables: string[];
+  acceptanceCriteria: string[];
+  requiredSpecialties: AgentSpecialty[];
+  status: DelegationStatus;
+  report?: TaskReport;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: ThreadMessage[];
   dispatches: MessageDispatch[];
   tasks: Task[];
+  delegationPlans: DelegationPlan[];
+  delegations: Delegation[];
 }
 
 export interface Handoff {
@@ -907,6 +1014,7 @@ export interface AgentProfile {
   modelLabel?: string;
   modelFamily?: string;
   capabilities: string[];
+  specialties?: AgentSpecialty[];
   config: Record<string, unknown>;
   instructions?: string;
   executionPolicy?: ExecutionPolicy;
@@ -921,6 +1029,7 @@ export interface AgentProfileSnapshotSummary {
   modelLabel?: string;
   modelFamily?: string;
   capabilities: string[];
+  specialties?: AgentSpecialty[];
   executionPolicy?: ExecutionPolicy;
 }
 
@@ -951,7 +1060,7 @@ export interface Run {
   agentId: string;
   status: RunStatus;
   attempt: number;
-  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation';
+  triggerType: 'user' | 'handoff' | 'review' | 'retry' | 'consult' | 'continuation' | 'delegation';
   parentRunId?: string;
   retryOfRunId?: string;
   workspaceRoot: string;
@@ -1015,6 +1124,7 @@ export type CoordinationReason =
   | 'consultation_waiting_for_dispatch'
   | 'consultation_in_progress'
   | 'continuation_in_progress'
+  | 'delegation_in_progress'
   | 'handoff_pending'
   | 'workflow_resolution_pending'
   | 'user_confirmation_required'
@@ -1066,6 +1176,8 @@ export interface TaskDetail {
   handoffs: Handoff[];
   consultations: Consultation[];
   reviews: Review[];
+  delegationPlans: DelegationPlan[];
+  delegations: Delegation[];
   coordination: TaskCoordinationView;
 }
 
@@ -1077,6 +1189,9 @@ export interface ClaimedRun {
   handoff?: Handoff;
   consultation?: Consultation;
   review?: Review;
+  delegationPlan?: DelegationPlan;
+  delegations?: Delegation[];
+  delegation?: Delegation;
   handoffTargets?: HandoffTargetView[];
   conversationContext?: ConversationContextView;
 }

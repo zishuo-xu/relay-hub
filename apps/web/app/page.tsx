@@ -11,6 +11,7 @@ import {
   type AgentHealth,
   type AgentPermissionPreset,
   type AgentProfile,
+  type AgentSpecialty,
   type AgentRuntimeDescriptor,
   type CompletionPolicy,
   type ConversationContextView,
@@ -38,7 +39,8 @@ import {
   ThreadSidebar,
 } from './dashboard';
 
-const apiUrl = process.env.NEXT_PUBLIC_RELAY_HUB_API_URL ?? 'http://127.0.0.1:4100';
+const apiUrl = process.env.NEXT_PUBLIC_RELAY_HUB_API_URL ?? '';
+const socketUrl = process.env.NEXT_PUBLIC_RELAY_HUB_API_URL ?? 'http://localhost:4100';
 
 export default function HomePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -61,6 +63,7 @@ export default function HomePage() {
   const [agentConfigOpen, setAgentConfigOpen] = useState(false);
   const [agentConfigName, setAgentConfigName] = useState('');
   const [agentConfigCapabilities, setAgentConfigCapabilities] = useState<AgentCapability[]>(['implement']);
+  const [agentConfigSpecialties, setAgentConfigSpecialties] = useState<AgentSpecialty[]>([]);
   const [agentConfigAdapter, setAgentConfigAdapter] = useState<AgentAdapterType>('opencode_cli');
   const [agentConfigModel, setAgentConfigModel] = useState('');
   const [agentConfigVariant, setAgentConfigVariant] = useState('');
@@ -201,7 +204,7 @@ export default function HomePage() {
   }, [loadDetail, selectedTaskId]);
 
   useEffect(() => {
-    const socket = io(apiUrl, { transports: ['websocket', 'polling'] });
+    const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
 
     const onConnect = () => {
       if (!selectedTaskId) return;
@@ -230,7 +233,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!selectedThreadId || !threadDetail) return;
     const taskIds = new Set(threadDetail.tasks.map((task) => task.id));
-    const socket = io(apiUrl, { transports: ['websocket', 'polling'] });
+    const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
     const subscribe = () => {
       for (const taskId of taskIds) socket.emit('task.subscribe', taskId);
     };
@@ -283,11 +286,8 @@ export default function HomePage() {
         },
         body: JSON.stringify({
           content: messageContent,
-          mode: threadMessageMode,
-          agentIds: selectedConversationAgentIds,
-          ...(threadMessageMode === 'coordinated'
-            ? { leadAgentId: selectedConversationAgentIds[0] }
-            : {}),
+          mode: 'parallel',
+          agentIds: selectedConversationAgentIds.slice(0, 1),
           completionPolicy: 'require_user_confirmation',
           maxReviewRounds: 3,
         }),
@@ -392,6 +392,7 @@ export default function HomePage() {
     setEditingAgentId(initialDraft.editingAgentId);
     setAgentConfigName(initialDraft.name);
     setAgentConfigCapabilities(initialDraft.capabilities);
+    setAgentConfigSpecialties(initialDraft.specialties);
     setAgentConfigAdapter(initialDraft.adapterType);
     setAgentConfigConnectionId(initialDraft.providerConnectionId);
     setAgentConfigModel(initialDraft.model);
@@ -560,6 +561,7 @@ export default function HomePage() {
             name: agentConfigName,
             adapterType: agentConfigAdapter,
             capabilities: agentConfigCapabilities,
+            specialties: agentConfigSpecialties,
             instructions: agentConfigInstructions,
             executionPolicy: agentConfigExecutionPolicy,
             ...(agentConfigAdapter !== 'mock' ? { providerConnectionId: agentConfigConnectionId } : {}),
@@ -607,6 +609,16 @@ export default function HomePage() {
     currentRun?.status === 'succeeded',
   );
 
+  async function decideDelegationPlan(planId: string, decision: 'approve' | 'reject') {
+    setError(null);
+    const response = await fetch(`${apiUrl}/api/delegation-plans/${planId}/${decision}`, { method: 'POST' });
+    if (!response.ok) throw new Error(`处理分工计划失败：${response.status} ${await response.text()}`);
+    const updated = (await response.json()) as TaskDetail;
+    setDetail(updated);
+    if (selectedThreadId) await loadThreadDetail(selectedThreadId);
+    await Promise.all([loadTasks(), loadThreads()]);
+  }
+
   return (
     <main className="app-shell">
       <AppRail
@@ -645,11 +657,9 @@ export default function HomePage() {
           confirming={confirming}
           error={error}
           message={messageContent}
-          onAgentToggle={(agentId) => setSelectedConversationAgentIds((current) =>
-            current.includes(agentId)
-              ? current.filter((candidate) => candidate !== agentId)
-              : current.length < 4 ? [...current, agentId] : current,
-          )}
+          onAgentToggle={(agentId) => setSelectedConversationAgentIds((current) => current.includes(agentId) ? [] : [agentId])}
+          onApproveDelegation={(planId) => void decideDelegationPlan(planId, 'approve').catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
+          onRejectDelegation={(planId) => void decideDelegationPlan(planId, 'reject').catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onCancel={() => void cancelCurrentRun().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onCloseAudit={() => {
             setSelectedTaskId(null);
@@ -683,6 +693,7 @@ export default function HomePage() {
         executionPolicy={agentConfigExecutionPolicy}
         permissionPreset={agentConfigPermissionPreset}
         capabilities={agentConfigCapabilities}
+        specialties={agentConfigSpecialties}
         editing={editingAgentId !== null}
         enabled={agentConfigEnabled}
         connections={connections}
@@ -723,6 +734,7 @@ export default function HomePage() {
             setAgentConfigExecutionPolicy(executionPolicyPreset(agentConfigAdapter, nextPreset));
           }
         }}
+        onSpecialtiesChange={setAgentConfigSpecialties}
         onEnabledChange={setAgentConfigEnabled}
         onProviderConnectionChange={(value) => {
           setAgentConfigConnectionId(value);

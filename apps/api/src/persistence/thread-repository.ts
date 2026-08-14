@@ -9,6 +9,8 @@ import {
 } from '@relay-hub/contracts';
 import {
   agentProfiles,
+  delegationPlans,
+  delegations,
   idempotencyKeys,
   messageDispatches,
   outboxEvents,
@@ -21,7 +23,7 @@ import {
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { mapAgentProfile, mapEvent, mapMessageDispatch, mapTask, mapThreadMessage, mapThreadSummary } from './mappers.js';
+import { mapAgentProfile, mapDelegation, mapDelegationPlan, mapEvent, mapMessageDispatch, mapTask, mapThreadMessage, mapThreadSummary } from './mappers.js';
 import type { MutationResult } from './types.js';
 import { allocateThreadMessageSequence } from './thread-message-repository.js';
 
@@ -80,11 +82,20 @@ export async function getThreadDetail(db: RelayDatabase, threadId: string): Prom
         .where(inArray(messageDispatches.messageId, messageRows.map((message) => message.id)))
         .orderBy(asc(messageDispatches.createdAt), asc(messageDispatches.id))
     : [];
+  const taskIds = taskRows.map(({ task }) => task.id);
+  const planRows = taskIds.length > 0
+    ? await db.select().from(delegationPlans).where(inArray(delegationPlans.parentTaskId, taskIds)).orderBy(asc(delegationPlans.createdAt))
+    : [];
+  const delegationRows = planRows.length > 0
+    ? await db.select().from(delegations).where(inArray(delegations.planId, planRows.map((plan) => plan.id))).orderBy(asc(delegations.createdAt))
+    : [];
   return {
     thread: summarizeThread(thread, messageRows, taskRows),
     messages: messageRows.map(mapThreadMessage),
     dispatches: dispatchRows.map(mapMessageDispatch),
     tasks: taskRows.map(({ task, agentId }) => mapTask(task, agentId ?? '')),
+    delegationPlans: planRows.map(mapDelegationPlan),
+    delegations: delegationRows.map(mapDelegation),
   };
 }
 
