@@ -174,11 +174,30 @@ textarea:focus-visible {
 .message-composer { display: grid; width: min(860px, calc(100% - 36px)); min-height: 92px; margin: 0 auto 18px; padding: 10px 10px 9px; flex: none; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface); box-shadow: 0 10px 30px rgba(24, 39, 32, 0.08); }
 .composer-target { display: flex; min-width: 0; grid-column: 1 / -1; align-items: center; gap: 5px; color: var(--accent); }
 .composer-target > span { font-size: 12px; font-weight: 850; }
-.composer-target select { max-width: 150px; padding: 2px 18px 2px 4px; color: var(--muted); border: 0; outline: 0; background: transparent; font-size: 9px; font-weight: 700; }
 .target-chips { display: flex; min-width: 0; align-items: center; gap: 5px; overflow-x: auto; scrollbar-width: none; }
 .target-chips::-webkit-scrollbar { display: none; }
 .target-chips button { display: inline-flex; min-width: 0; max-width: 190px; padding: 4px 7px; align-items: center; gap: 6px; color: var(--accent); border: 1px solid #cfe3d9; border-radius: 999px; background: var(--accent-soft); font-size: 8px; font-weight: 750; white-space: nowrap; cursor: pointer; }
 .target-chips button i { color: var(--muted); font-style: normal; }
+.agent-picker { position: relative; flex: none; }
+.agent-picker-trigger { display: inline-flex; height: 26px; padding: 0 7px; align-items: center; gap: 4px; color: var(--muted); border: 1px solid transparent; border-radius: 7px; background: transparent; font-size: 8px; font-weight: 750; cursor: pointer; }
+.agent-picker-trigger:hover, .agent-picker-trigger[aria-expanded="true"] { color: var(--accent); border-color: var(--border); background: var(--surface-soft); }
+.agent-picker-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
+.agent-picker-trigger span { color: var(--accent); font-size: 11px; }
+.agent-picker-trigger i { margin-left: 2px; color: var(--muted); font-size: 8px; font-style: normal; }
+.agent-picker-menu { position: absolute; z-index: 20; bottom: calc(100% + 9px); left: 0; width: min(330px, calc(100vw - 48px)); padding: 7px; overflow: hidden; color: var(--text); border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface); box-shadow: 0 16px 40px rgba(24, 39, 32, 0.16); }
+.agent-picker-menu > header { display: flex; min-height: 32px; padding: 3px 6px 7px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.agent-picker-menu > header strong { font-size: 10px; }
+.agent-picker-menu > header span { color: var(--muted); font-size: 8px; }
+.agent-picker-list { max-height: 228px; padding: 5px 0; overflow-y: auto; }
+.agent-picker-list > button { display: grid; width: 100%; min-height: 48px; padding: 6px; align-items: center; grid-template-columns: 32px minmax(0, 1fr) 20px; gap: 8px; color: inherit; text-align: left; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.agent-picker-list > button:hover, .agent-picker-list > button:focus-visible { outline: 0; background: var(--accent-soft); }
+.agent-picker-mark { display: grid; width: 30px; height: 30px; place-items: center; color: white; border-radius: 8px; background: var(--accent); font-size: 9px; font-weight: 850; }
+.agent-picker-list > button > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.agent-picker-list strong, .agent-picker-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-picker-list strong { font-size: 9px; }
+.agent-picker-list small { color: var(--muted); font-size: 8px; font-weight: 550; }
+.agent-picker-list > button > i { color: var(--accent); font-size: 13px; font-style: normal; text-align: center; }
+.agent-picker-menu > footer { padding: 7px 6px 3px; color: var(--muted); border-top: 1px solid var(--border); font-size: 7px; line-height: 1.4; }
 .message-composer textarea { min-width: 0; min-height: 44px; padding: 8px 6px 2px 0; color: var(--text); border: 0; outline: 0; resize: none; background: transparent; font-size: 12px; line-height: 1.5; }
 .message-composer > button { align-self: end; min-width: 58px; height: 32px; color: white; border: 0; border-radius: 8px; background: var(--accent); font-size: 10px; font-weight: 760; cursor: pointer; }
 .message-composer > button:disabled { opacity: 0.45; cursor: not-allowed; }

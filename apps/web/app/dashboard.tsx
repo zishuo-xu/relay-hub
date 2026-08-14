@@ -20,7 +20,7 @@ import type {
   ThreadDetail,
   ThreadSummary,
 } from '@relay-hub/contracts';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   isFocusTask,
   resolveTaskFilter,
@@ -444,10 +444,28 @@ export function ConversationWorkspace({
   onCancel,
   onConfirm,
 }: ConversationWorkspaceProps) {
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const agentPickerRef = useRef<HTMLDivElement>(null);
   const taskForMessage = (taskId?: string) => threadDetail?.tasks.find((task) => task.id === taskId);
   const dispatchesForMessage = (messageId: string) => threadDetail?.dispatches.filter((dispatch) => dispatch.messageId === messageId) ?? [];
   const agentName = (agentId?: string) => agents.find((agent) => agent.id === agentId)?.name ?? 'Agent';
   const currentRun = auditDetail?.runs.find((run) => run.id === auditDetail.task.currentRunId);
+  const availableAgents = agents.filter((agent) => !selectedAgentIds.includes(agent.id));
+  useEffect(() => {
+    if (!agentPickerOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!agentPickerRef.current?.contains(event.target as Node)) setAgentPickerOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAgentPickerOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [agentPickerOpen]);
   return (
     <section className="conversation-workspace">
       <div className="conversation-main">
@@ -488,7 +506,42 @@ export function ConversationWorkspace({
         )}
         {threadDetail ? (
           <form className="message-composer" onSubmit={onSubmit}>
-            <div className="composer-target"><span>@</span><div className="target-chips">{selectedAgentIds.map((agentId) => <button aria-label={`移除 ${agentName(agentId)}`} key={agentId} onClick={() => onAgentToggle(agentId)} type="button">{agentName(agentId)}<i>×</i></button>)}</div><select aria-label="添加 Agent" disabled={selectedAgentIds.length >= 4} onChange={(event) => { if (event.target.value) onAgentToggle(event.target.value); event.target.value = ''; }} value=""><option value="">＋ 添加 Agent</option>{agents.filter((agent) => !selectedAgentIds.includes(agent.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.modelLabel ?? agent.adapterType}</option>)}</select></div>
+            <div className="composer-target">
+              <span>@</span>
+              <div className="target-chips">{selectedAgentIds.map((agentId) => <button aria-label={`移除 ${agentName(agentId)}`} key={agentId} onClick={() => onAgentToggle(agentId)} type="button">{agentName(agentId)}<i>×</i></button>)}</div>
+              <div className="agent-picker" ref={agentPickerRef}>
+                <button
+                  aria-expanded={agentPickerOpen}
+                  aria-haspopup="listbox"
+                  className="agent-picker-trigger"
+                  disabled={selectedAgentIds.length >= 4 || availableAgents.length === 0}
+                  onClick={() => setAgentPickerOpen((current) => !current)}
+                  type="button"
+                >
+                  <span>＋</span>{selectedAgentIds.length >= 4 ? '已达上限' : '添加 Agent'}<i>⌄</i>
+                </button>
+                {agentPickerOpen ? <div aria-label="可添加的 Agent" className="agent-picker-menu" role="listbox">
+                  <header><strong>选择协作者</strong><span>{selectedAgentIds.length}/4 已选择</span></header>
+                  <div className="agent-picker-list">
+                    {availableAgents.map((agent) => <button
+                      aria-selected="false"
+                      key={agent.id}
+                      onClick={() => {
+                        onAgentToggle(agent.id);
+                        setAgentPickerOpen(false);
+                      }}
+                      role="option"
+                      type="button"
+                    >
+                      <span className="agent-picker-mark">{adapterMark(agent.adapterType)}</span>
+                      <span><strong>{agent.name}</strong><small>{adapterLabel(agent.adapterType)} · {agent.modelLabel ?? '默认模型'}</small></span>
+                      <i>＋</i>
+                    </button>)}
+                  </div>
+                  <footer>每个 Agent 会获得独立 Run，最多并行选择 4 个。</footer>
+                </div> : null}
+              </div>
+            </div>
             <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="描述目标，让选中的 Agent 分别处理并回到同一线程…" rows={2} value={message} />
             <button disabled={sending || !message.trim() || selectedAgentIds.length === 0} type="submit">{sending ? '派发中…' : selectedAgentIds.length > 1 ? `并行发送 ${selectedAgentIds.length}` : '发送'}</button>
           </form>
