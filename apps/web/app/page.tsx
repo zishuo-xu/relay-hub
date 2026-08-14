@@ -20,6 +20,7 @@ import {
   type ExecutionPolicy,
   type Task,
   type TaskDetail,
+  type ThreadMessageMode,
   type ThreadDetail,
   type ThreadSummary,
   type Workspace,
@@ -98,6 +99,7 @@ export default function HomePage() {
   const [auditContext, setAuditContext] = useState<ConversationContextView | null>(null);
   const [messageContent, setMessageContent] = useState('');
   const [messageSending, setMessageSending] = useState(false);
+  const [threadMessageMode, setThreadMessageMode] = useState<ThreadMessageMode>('parallel');
   const [selectedConversationAgentIds, setSelectedConversationAgentIds] = useState<string[]>([DEFAULT_MOCK_AGENT_ID]);
   const agentEditorRequestId = useRef(0);
 
@@ -269,6 +271,7 @@ export default function HomePage() {
   async function sendThreadMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedThreadId || !messageContent.trim() || selectedConversationAgentIds.length === 0) return;
+    if (threadMessageMode === 'coordinated' && selectedConversationAgentIds.length < 2) return;
     setMessageSending(true);
     setError(null);
     try {
@@ -280,7 +283,11 @@ export default function HomePage() {
         },
         body: JSON.stringify({
           content: messageContent,
+          mode: threadMessageMode,
           agentIds: selectedConversationAgentIds,
+          ...(threadMessageMode === 'coordinated'
+            ? { leadAgentId: selectedConversationAgentIds[0] }
+            : {}),
           completionPolicy: 'require_user_confirmation',
           maxReviewRounds: 3,
         }),
@@ -652,14 +659,20 @@ export default function HomePage() {
           onConfigureAgents={() => openSettings('agents')}
           onConfirm={() => void confirmCurrentTask().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onMessageChange={setMessageContent}
+          onModeChange={setThreadMessageMode}
           onNewThread={() => void createConversationThread().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}
           onOpenAudit={(taskId) => {
             setSelectedTaskId(taskId);
             void loadDetail(taskId).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
           }}
           onSubmit={sendThreadMessage}
+          onLeadSelect={(agentId) => setSelectedConversationAgentIds((current) => [
+            agentId,
+            ...current.filter((candidate) => candidate !== agentId),
+          ])}
           selectedAgentIds={selectedConversationAgentIds}
           sending={messageSending}
+          mode={threadMessageMode}
           threadDetail={threadDetail}
         />
       </>}

@@ -21,6 +21,7 @@ import type {
   NextAction,
   RunOutcome,
   RunStatus,
+  TaskCollaborationMode,
   TaskStatus,
   ProviderConnectionKind,
   ProviderProtocol,
@@ -157,6 +158,8 @@ export const tasks = pgTable(
     conversationContextPolicyVersion: integer('conversation_context_policy_version'),
     title: text('title').notNull(),
     description: text('description').notNull(),
+    collaborationMode: text('collaboration_mode').$type<TaskCollaborationMode>().default('direct').notNull(),
+    collaboratorAgentIds: jsonb('collaborator_agent_ids').$type<string[]>().default([]).notNull(),
     acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().default([]).notNull(),
     status: taskStatusEnum('status').$type<TaskStatus>().default('draft').notNull(),
     completionPolicy: completionPolicyEnum('completion_policy')

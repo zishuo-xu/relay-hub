@@ -11,10 +11,36 @@ describe('conversation thread contracts', () => {
     expect(CreateThreadInputSchema.parse({})).toEqual({ title: '新协作线程' });
     expect(CreateThreadMessageInputSchema.parse({ content: '请分析当前架构', agentIds: [DEFAULT_MOCK_AGENT_ID] })).toEqual({
       content: '请分析当前架构',
+      mode: 'parallel',
       agentIds: [DEFAULT_MOCK_AGENT_ID],
       completionPolicy: 'require_user_confirmation',
       maxReviewRounds: 3,
     });
+  });
+
+  it('requires an explicit selected Lead for coordinated collaboration', () => {
+    const collaboratorId = '00000000-0000-4000-8000-000000000031';
+    expect(CreateThreadMessageInputSchema.parse({
+      content: '请协作完成方案。',
+      mode: 'coordinated',
+      agentIds: [DEFAULT_MOCK_AGENT_ID, collaboratorId],
+      leadAgentId: DEFAULT_MOCK_AGENT_ID,
+    })).toMatchObject({
+      mode: 'coordinated',
+      leadAgentId: DEFAULT_MOCK_AGENT_ID,
+    });
+    expect(() => CreateThreadMessageInputSchema.parse({
+      content: '缺少协作者。',
+      mode: 'coordinated',
+      agentIds: [DEFAULT_MOCK_AGENT_ID],
+      leadAgentId: DEFAULT_MOCK_AGENT_ID,
+    })).toThrow('at least one collaborator');
+    expect(() => CreateThreadMessageInputSchema.parse({
+      content: '主导不在团队中。',
+      mode: 'coordinated',
+      agentIds: [DEFAULT_MOCK_AGENT_ID, collaboratorId],
+      leadAgentId: '00000000-0000-4000-8000-000000000032',
+    })).toThrow('selected Lead Agent');
   });
 
   it('rejects empty messages before a Run can be created', () => {

@@ -155,6 +155,25 @@ function incomingHandoffSection(claimed: ClaimedRun): string[] {
   ];
 }
 
+function leadCollaborationInstructions(claimed: ClaimedRun): string[] {
+  if (claimed.task.collaborationMode !== 'lead') return [];
+  const collaboratorIds = new Set(claimed.task.collaboratorAgentIds ?? []);
+  const collaborators = (claimed.handoffTargets ?? [])
+    .filter((target) => collaboratorIds.has(target.id))
+    .map((target) => `- ${target.id} · ${target.name} · capabilities: ${target.capabilities.join(', ')}`);
+  return [
+    '',
+    'Lead collaboration protocol:',
+    'You are the single Lead Agent responsible for this Task. Do not produce a duplicate independent answer as if the other selected Agents did not exist.',
+    'First decompose the user goal into distinct perspectives or bounded questions. Use consult to assign one useful question at a time to the selected collaborators below. RelayHub persists each assignment, runs that Agent independently, and resumes you with its answer.',
+    'Before the first consultation, publicMessage must briefly tell the user your division plan and which collaborator you are consulting. After each answer, evaluate it yourself; consult another collaborator only when its distinct perspective adds value. Do not ask two Agents the same broad question.',
+    'You retain Task ownership. Use Consultation for advice and analysis; use Handoff only when responsibility for the remaining Task truly changes. Your final publicMessage must synthesize the useful contributions, preserve material disagreements, and present one coherent answer.',
+    'You must consult at least one selected collaborator before finalizing unless execution is blocked or the request is unsafe. Consultation is sequential and bounded by the platform budget.',
+    'Selected collaborators (id · name · capabilities):',
+    ...(collaborators.length > 0 ? collaborators : ['- No valid collaborator is currently available; report the blocker instead of pretending collaboration occurred.']),
+  ];
+}
+
 export function buildAgentPrompt(claimed: ClaimedRun): string {
   const isReviewer = claimed.run.triggerType === 'review';
   const criteria = claimed.task.acceptanceCriteria.length
@@ -268,10 +287,16 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
 
   return [
     claimed.run.triggerType === 'continuation'
-      ? 'You are the responsible Builder Agent resuming a RelayHub task after a bounded consultation.'
-      : 'You are the Builder Agent for a RelayHub task.',
+      ? claimed.task.collaborationMode === 'lead'
+        ? 'You are the Lead Agent resuming a RelayHub collaboration after a selected collaborator answered.'
+        : 'You are the responsible Builder Agent resuming a RelayHub task after a bounded consultation.'
+      : claimed.task.collaborationMode === 'lead'
+        ? 'You are the Lead Agent coordinating a RelayHub multi-Agent task.'
+        : 'You are the Builder Agent for a RelayHub task.',
     ...executionRules(claimed),
-    'Implement the requested change, run proportionate verification, and leave the worktree ready for Reviewer inspection.',
+    claimed.task.collaborationMode === 'lead'
+      ? 'Understand the goal, organize selected collaborators, and remain accountable for the integrated result.'
+      : 'Implement the requested change, run proportionate verification, and leave the worktree ready for Reviewer inspection.',
     ...profileInstructions(claimed),
     ...conversationContextSection(claimed),
     '',
@@ -286,6 +311,7 @@ export function buildAgentPrompt(claimed: ClaimedRun): string {
         ]
       : []),
     ...incomingHandoffSection(claimed),
+    ...leadCollaborationInstructions(claimed),
     '',
     'Acceptance criteria:',
     criteria,

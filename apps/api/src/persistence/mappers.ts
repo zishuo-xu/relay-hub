@@ -63,6 +63,8 @@ export function mapTask(row: TaskRow, fallbackAgentId: string): Task {
     title: row.title,
     description: row.description,
     agentId: row.builderAgentId ?? fallbackAgentId,
+    collaborationMode: row.collaborationMode,
+    collaboratorAgentIds: row.collaboratorAgentIds,
     ...(row.reviewerAgentId ? { reviewerAgentId: row.reviewerAgentId } : {}),
     acceptanceCriteria: row.acceptanceCriteria,
     completionPolicy: row.completionPolicy,

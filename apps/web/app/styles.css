@@ -171,13 +171,24 @@ textarea:focus-visible {
 .conversation-empty h2 { margin: 13px 0 5px; color: var(--text); font-size: 15px; }
 .conversation-empty p { max-width: 440px; margin: 0; font-size: 10px; line-height: 1.6; }
 .conversation-empty button { margin-top: 14px; }
-.message-composer { display: grid; width: min(860px, calc(100% - 36px)); min-height: 92px; margin: 0 auto 18px; padding: 10px 10px 9px; flex: none; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface); box-shadow: 0 10px 30px rgba(24, 39, 32, 0.08); }
+.message-composer { display: grid; width: min(860px, calc(100% - 36px)); min-height: 118px; margin: 0 auto 18px; padding: 9px 10px; flex: none; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface); box-shadow: 0 10px 30px rgba(24, 39, 32, 0.08); }
+.composer-mode { display: flex; min-width: 0; grid-column: 1 / -1; align-items: center; gap: 9px; }
+.composer-mode > div { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--surface-soft); }
+.composer-mode button { height: 24px; padding: 0 8px; color: var(--muted); border: 0; border-radius: 6px; background: transparent; font-size: 8px; font-weight: 760; cursor: pointer; }
+.composer-mode button.active { color: var(--accent-strong); background: var(--surface); box-shadow: 0 1px 4px rgba(24, 39, 32, 0.09); }
+.composer-mode p { overflow: hidden; margin: 0; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .composer-target { display: flex; min-width: 0; grid-column: 1 / -1; align-items: center; gap: 5px; color: var(--accent); }
 .composer-target > span { font-size: 12px; font-weight: 850; }
 .target-chips { display: flex; min-width: 0; align-items: center; gap: 5px; overflow-x: auto; scrollbar-width: none; }
 .target-chips::-webkit-scrollbar { display: none; }
-.target-chips button { display: inline-flex; min-width: 0; max-width: 190px; padding: 4px 7px; align-items: center; gap: 6px; color: var(--accent); border: 1px solid #cfe3d9; border-radius: 999px; background: var(--accent-soft); font-size: 8px; font-weight: 750; white-space: nowrap; cursor: pointer; }
-.target-chips button i { color: var(--muted); font-style: normal; }
+.target-chip { display: inline-flex; min-width: 0; max-width: 220px; height: 25px; padding: 0 4px 0 7px; align-items: center; gap: 5px; color: var(--accent); border: 1px solid #cfe3d9; border-radius: 999px; background: var(--accent-soft); font-size: 8px; font-weight: 750; white-space: nowrap; }
+.target-chip.lead { color: white; border-color: var(--accent); background: var(--accent); }
+.target-chip b { padding-right: 5px; border-right: 1px solid rgba(255, 255, 255, 0.38); font-size: 7px; }
+.target-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.target-chip button { display: grid; width: 17px; height: 17px; flex: none; padding: 0; place-items: center; color: currentColor; border: 0; border-radius: 50%; background: transparent; font-size: 9px; cursor: pointer; }
+.target-chip button:hover { background: rgba(255, 255, 255, 0.45); }
+.target-chip:not(.lead) .remove-agent { color: var(--muted); }
+.target-chip .make-lead { color: var(--accent); background: rgba(255, 255, 255, 0.7); }
 .agent-picker { position: relative; flex: none; }
 .agent-picker-trigger { display: inline-flex; height: 26px; padding: 0 7px; align-items: center; gap: 4px; color: var(--muted); border: 1px solid transparent; border-radius: 7px; background: transparent; font-size: 8px; font-weight: 750; cursor: pointer; }
 .agent-picker-trigger:hover, .agent-picker-trigger[aria-expanded="true"] { color: var(--accent); border-color: var(--border); background: var(--surface-soft); }

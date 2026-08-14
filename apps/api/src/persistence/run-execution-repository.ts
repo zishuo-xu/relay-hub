@@ -83,8 +83,14 @@ export async function claimRun(
       .select({ id: agentProfiles.id, name: agentProfiles.name, capabilities: agentProfiles.capabilities })
       .from(agentProfiles)
       .where(and(eq(agentProfiles.workspaceId, taskRow.workspaceId), eq(agentProfiles.enabled, true)));
+    const coordinatedTargets = taskRow.collaborationMode === 'lead'
+      ? new Set([
+          ...taskRow.collaboratorAgentIds,
+          ...(taskRow.reviewerAgentId ? [taskRow.reviewerAgentId] : []),
+        ])
+      : null;
     const handoffTargets: HandoffTargetView[] = candidateRows
-      .filter((row) => row.id !== claimed.agentId)
+      .filter((row) => row.id !== claimed.agentId && (!coordinatedTargets || coordinatedTargets.has(row.id)))
       .map((row) => ({ id: row.id, name: row.name, capabilities: row.capabilities as AgentCapability[] }));
     const [handoffRow] = await tx.select().from(handoffs).where(eq(handoffs.targetRunId, claimed.id)).limit(1);
     if (handoffRow?.bundleVersion && handoffRow.bundleVersion >= 2) {

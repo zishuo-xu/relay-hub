@@ -380,6 +380,26 @@ describe('runCodexAgent', () => {
     expect(prompt).toContain('never put a plain string in either array');
   });
 
+  it('instructs a coordinated Lead to delegate distinct questions and synthesize the result', () => {
+    const collaboratorId = '00000000-0000-4000-8000-000000000031';
+    const prompt = buildAgentPrompt({
+      ...claimed,
+      task: {
+        ...claimed.task,
+        collaborationMode: 'lead',
+        collaboratorAgentIds: [collaboratorId],
+      },
+      handoffTargets: [
+        { id: collaboratorId, name: 'Risk Agent', capabilities: ['implement'] },
+      ],
+    });
+    expect(prompt).toContain('Lead Agent coordinating a RelayHub multi-Agent task');
+    expect(prompt).toContain('First decompose the user goal into distinct perspectives');
+    expect(prompt).toContain('must consult at least one selected collaborator');
+    expect(prompt).toContain(`${collaboratorId} · Risk Agent`);
+    expect(prompt).toContain('final publicMessage must synthesize');
+  });
+
   it('points request_review at the configured Reviewer in the Builder prompt', () => {
     const prompt = buildAgentPrompt({
       ...claimed,

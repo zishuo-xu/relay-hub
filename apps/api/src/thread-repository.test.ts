@@ -160,6 +160,33 @@ suite('conversation thread integration', () => {
     expect(result.emitted).toHaveLength(2);
   });
 
+  it('creates one Lead Task and preserves selected collaborators for coordinated mode', async () => {
+    const thread = await store.createThread({ title: '主导协作测试' });
+    const result = await store.createThreadMessage(thread.thread.id, {
+      content: '请先分工，再综合架构与风险观点。',
+      mode: 'coordinated',
+      agentIds: [DEFAULT_MOCK_AGENT_ID, DEFAULT_CODEX_AGENT_ID],
+      leadAgentId: DEFAULT_MOCK_AGENT_ID,
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    }, crypto.randomUUID());
+
+    expect(result.value.messages).toHaveLength(1);
+    expect(result.value.tasks).toHaveLength(1);
+    expect(result.value.dispatches).toHaveLength(1);
+    expect(result.emitted).toHaveLength(1);
+    const task = result.value.tasks[0];
+    expect(task).toMatchObject({
+      agentId: DEFAULT_MOCK_AGENT_ID,
+      collaborationMode: 'lead',
+      collaboratorAgentIds: [DEFAULT_CODEX_AGENT_ID],
+    });
+    expect(result.value.dispatches[0]).toMatchObject({ agentId: DEFAULT_MOCK_AGENT_ID, taskId: task?.id });
+    if (!task) throw new Error('Coordinated message did not create its Lead Task');
+    const claim = await store.claimRun(task.currentRunId, 'lead-thread-worker');
+    expect(claim.value?.claimed.handoffTargets?.map((agent) => agent.id)).toEqual([DEFAULT_CODEX_AGENT_ID]);
+  });
+
   it('rejects the whole fan-out before writing when any target is unavailable', async () => {
     const thread = await store.createThread({ title: '原子派发测试' });
     await expect(store.createThreadMessage(thread.thread.id, {

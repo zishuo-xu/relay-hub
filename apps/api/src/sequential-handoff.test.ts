@@ -441,7 +441,9 @@ suite('sequential handoff integration', () => {
     const taskId = created.value.detail.task.id;
     const runA = await startCurrentRun(taskId, 'flight-a');
     await store.recordAgentEvent(runA, 'flight-a-handoff', genericHandoff(agentB.id));
-    const outboxBefore = (await database!.db.select({ id: outboxEvents.id }).from(outboxEvents)).length;
+    const outboxBefore = (
+      await database!.db.select({ id: outboxEvents.id }).from(outboxEvents).where(eq(outboxEvents.aggregateId, runA))
+    ).length;
     await store.updateAgentProfile(agentB.id, {
       name: agentB.name,
       adapterType: 'mock',
@@ -462,7 +464,9 @@ suite('sequential handoff integration', () => {
       payload: { reason: 'handoff_target_unavailable', targetAgentId: agentB.id },
     });
     expect(detail?.coordination).toMatchObject({ owner: { kind: 'user' } });
-    const outboxAfter = (await database!.db.select({ id: outboxEvents.id }).from(outboxEvents)).length;
+    const outboxAfter = (
+      await database!.db.select({ id: outboxEvents.id }).from(outboxEvents).where(eq(outboxEvents.aggregateId, runA))
+    ).length;
     expect(outboxAfter).toBe(outboxBefore);
   });
 

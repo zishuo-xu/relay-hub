@@ -167,6 +167,14 @@ export async function createThreadMessage(
         throw new Error('A dispatch target cannot also be its own Reviewer');
       }
     }
+    const leadAgentId = input.mode === 'coordinated' ? input.leadAgentId : undefined;
+    if (input.mode === 'coordinated' && !leadAgentId) {
+      throw new Error('Coordinated dispatch requires a Lead Agent');
+    }
+    const initialAgentIds = leadAgentId ? [leadAgentId] : input.agentIds;
+    const collaboratorAgentIds = leadAgentId
+      ? input.agentIds.filter((agentId) => agentId !== leadAgentId)
+      : [];
 
     const now = new Date();
     const boundary = await allocateThreadMessageSequence(tx, threadId, DEFAULT_WORKSPACE_ID, now);
@@ -180,7 +188,7 @@ export async function createThreadMessage(
       createdAt: now,
     });
     const events: RunEvent[] = [];
-    for (const agentId of input.agentIds) {
+    for (const agentId of initialAgentIds) {
       const taskId = randomUUID();
       const runId = randomUUID();
       const agent = agentById.get(agentId)!;
@@ -192,6 +200,8 @@ export async function createThreadMessage(
         conversationContextPolicyVersion: 1,
         title,
         description: input.content,
+        collaborationMode: leadAgentId ? 'lead' : 'direct',
+        collaboratorAgentIds,
         acceptanceCriteria: [],
         completionPolicy: input.completionPolicy,
         maxReviewRounds: input.maxReviewRounds,
@@ -222,7 +232,10 @@ export async function createThreadMessage(
           title,
           agentId,
           messageId,
-          dispatchTargetCount: input.agentIds.length,
+          collaborationMode: leadAgentId ? 'lead' : 'direct',
+          dispatchTargetCount: initialAgentIds.length,
+          teamAgentCount: input.agentIds.length,
+          ...(leadAgentId ? { leadAgentId, collaboratorAgentIds } : {}),
           maxReviewRounds: input.maxReviewRounds,
           ...(input.reviewerAgentId ? { reviewerAgentId: input.reviewerAgentId } : {}),
         },

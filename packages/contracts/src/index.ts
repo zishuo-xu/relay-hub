@@ -431,16 +431,51 @@ export const CreateThreadInputSchema = z.object({
 
 export type CreateThreadInput = z.infer<typeof CreateThreadInputSchema>;
 
-export const CreateThreadMessageInputSchema = z.object({
-  content: z.string().trim().min(1).max(10_000),
-  agentIds: z.array(z.string().uuid()).min(1).max(4).refine(
-    (agentIds) => new Set(agentIds).size === agentIds.length,
-    'Agent targets must be unique',
-  ),
-  reviewerAgentId: z.string().uuid().optional(),
-  completionPolicy: z.enum(COMPLETION_POLICIES).default('require_user_confirmation'),
-  maxReviewRounds: z.number().int().min(1).max(10).default(3),
-});
+export const THREAD_MESSAGE_MODES = ['parallel', 'coordinated'] as const;
+export type ThreadMessageMode = (typeof THREAD_MESSAGE_MODES)[number];
+
+export const TASK_COLLABORATION_MODES = ['direct', 'lead'] as const;
+export type TaskCollaborationMode = (typeof TASK_COLLABORATION_MODES)[number];
+
+export const CreateThreadMessageInputSchema = z
+  .object({
+    content: z.string().trim().min(1).max(10_000),
+    mode: z.enum(THREAD_MESSAGE_MODES).default('parallel'),
+    agentIds: z.array(z.string().uuid()).min(1).max(4).refine(
+      (agentIds) => new Set(agentIds).size === agentIds.length,
+      'Agent targets must be unique',
+    ),
+    leadAgentId: z.string().uuid().optional(),
+    reviewerAgentId: z.string().uuid().optional(),
+    completionPolicy: z.enum(COMPLETION_POLICIES).default('require_user_confirmation'),
+    maxReviewRounds: z.number().int().min(1).max(10).default(3),
+  })
+  .superRefine((input, context) => {
+    if (input.mode === 'parallel') {
+      if (input.leadAgentId) {
+        context.addIssue({
+          code: 'custom',
+          path: ['leadAgentId'],
+          message: 'Parallel dispatch cannot declare a Lead Agent',
+        });
+      }
+      return;
+    }
+    if (input.agentIds.length < 2) {
+      context.addIssue({
+        code: 'custom',
+        path: ['agentIds'],
+        message: 'Coordinated dispatch requires a Lead and at least one collaborator',
+      });
+    }
+    if (!input.leadAgentId || !input.agentIds.includes(input.leadAgentId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['leadAgentId'],
+        message: 'Coordinated dispatch requires a selected Lead Agent',
+      });
+    }
+  });
 
 export type CreateThreadMessageInput = z.infer<typeof CreateThreadMessageInputSchema>;
 
@@ -753,6 +788,8 @@ export interface Task {
   title: string;
   description: string;
   agentId: string;
+  collaborationMode?: TaskCollaborationMode;
+  collaboratorAgentIds?: string[];
   reviewerAgentId?: string;
   acceptanceCriteria: string[];
   completionPolicy: CompletionPolicy;

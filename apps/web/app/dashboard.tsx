@@ -18,6 +18,7 @@ import type {
   Task,
   TaskDetail,
   ThreadDetail,
+  ThreadMessageMode,
   ThreadSummary,
 } from '@relay-hub/contracts';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
@@ -403,6 +404,7 @@ interface ConversationWorkspaceProps {
   threadDetail: ThreadDetail | null;
   agents: AgentProfile[];
   selectedAgentIds: string[];
+  mode: ThreadMessageMode;
   message: string;
   sending: boolean;
   error: string | null;
@@ -413,6 +415,8 @@ interface ConversationWorkspaceProps {
   confirming: boolean;
   onAgentToggle: (agentId: string) => void;
   onMessageChange: (message: string) => void;
+  onModeChange: (mode: ThreadMessageMode) => void;
+  onLeadSelect: (agentId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onNewThread: () => void;
   onConfigureAgents: () => void;
@@ -426,6 +430,7 @@ export function ConversationWorkspace({
   threadDetail,
   agents,
   selectedAgentIds,
+  mode,
   message,
   sending,
   error,
@@ -436,6 +441,8 @@ export function ConversationWorkspace({
   confirming,
   onAgentToggle,
   onMessageChange,
+  onModeChange,
+  onLeadSelect,
   onSubmit,
   onNewThread,
   onConfigureAgents,
@@ -482,19 +489,25 @@ export function ConversationWorkspace({
             {threadDetail.messages.map((entry) => {
               const task = taskForMessage(entry.taskId);
               const dispatches = entry.senderType === 'user' ? dispatchesForMessage(entry.id) : [];
-              const recipientIds = dispatches.length > 0
-                ? dispatches.map((dispatch) => dispatch.agentId)
+              const dispatchTasks = dispatches
+                .map((dispatch) => taskForMessage(dispatch.taskId))
+                .filter((candidate): candidate is Task => Boolean(candidate));
+              const coordinatedTask = dispatchTasks.find((candidate) => candidate.collaborationMode === 'lead');
+              const recipientIds = coordinatedTask
+                ? [coordinatedTask.agentId, ...(coordinatedTask.collaboratorAgentIds ?? [])]
+                : dispatches.length > 0
+                  ? dispatches.map((dispatch) => dispatch.agentId)
                 : entry.recipientAgentId ? [entry.recipientAgentId] : [];
               return (
                 <article className={`message-row ${entry.senderType}`} key={entry.id}>
                   <span className="message-avatar">{entry.senderType === 'user' ? '你' : entry.senderName.slice(0, 1).toUpperCase()}</span>
                   <div className="message-content">
-                    <header><strong>{entry.senderName}</strong>{entry.senderType === 'user' && recipientIds.length > 0 ? <span>发给 {recipientIds.map((agentId) => `@${agentName(agentId)}`).join('、')}</span> : null}<time>{new Date(entry.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time></header>
+                    <header><strong>{entry.senderName}</strong>{entry.senderType === 'user' && recipientIds.length > 0 ? <span>{coordinatedTask ? `${agentName(coordinatedTask.agentId)} 主导 · ${recipientIds.length} 位 Agent 协作` : `分别发给 ${recipientIds.map((agentId) => `@${agentName(agentId)}`).join('、')}`}</span> : null}<time>{new Date(entry.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time></header>
                     <p>{entry.content}</p>
                     {entry.senderType === 'user' && dispatches.length > 0 ? <div className="message-dispatches">{dispatches.map((dispatch) => {
                       const dispatchTask = taskForMessage(dispatch.taskId);
                       if (!dispatchTask) return null;
-                      return <button className={`message-task ${dispatchTask.status}`} key={dispatch.id} onClick={() => onOpenAudit(dispatchTask.id)} type="button"><span>{statusLabels[dispatchTask.status]}</span><strong>{agentName(dispatch.agentId)}</strong><small>{dispatchTask.status === 'failed' ? '查看失败原因 →' : '查看运行与审计 →'}</small></button>;
+                      return <button className={`message-task ${dispatchTask.status}`} key={dispatch.id} onClick={() => onOpenAudit(dispatchTask.id)} type="button"><span>{dispatchTask.collaborationMode === 'lead' ? '协作' : statusLabels[dispatchTask.status]}</span><strong>{dispatchTask.collaborationMode === 'lead' ? `${agentName(dispatch.agentId)} 主导 · ${(dispatchTask.collaboratorAgentIds?.length ?? 0)} 位协作者` : agentName(dispatch.agentId)}</strong><small>{dispatchTask.status === 'failed' ? '查看失败原因 →' : '查看运行与审计 →'}</small></button>;
                     })}</div> : task && entry.senderType === 'user' ? <button className={`message-task ${task.status}`} onClick={() => onOpenAudit(task.id)} type="button"><span>{statusLabels[task.status]}</span><strong>{agentName(task.agentId)}</strong><small>查看运行与审计 →</small></button> : null}
                   </div>
                 </article>
@@ -506,9 +519,16 @@ export function ConversationWorkspace({
         )}
         {threadDetail ? (
           <form className="message-composer" onSubmit={onSubmit}>
+            <div className="composer-mode">
+              <div role="tablist" aria-label="协作方式">
+                <button aria-selected={mode === 'parallel'} className={mode === 'parallel' ? 'active' : ''} onClick={() => onModeChange('parallel')} role="tab" type="button">分别回答</button>
+                <button aria-selected={mode === 'coordinated'} className={mode === 'coordinated' ? 'active' : ''} onClick={() => onModeChange('coordinated')} role="tab" type="button">协作完成</button>
+              </div>
+              <p>{mode === 'coordinated' ? '第一位是主导 Agent：负责分工、咨询协作者并汇总结果。' : '每个 Agent 独立回答同一个问题，彼此不分工。'}</p>
+            </div>
             <div className="composer-target">
-              <span>@</span>
-              <div className="target-chips">{selectedAgentIds.map((agentId) => <button aria-label={`移除 ${agentName(agentId)}`} key={agentId} onClick={() => onAgentToggle(agentId)} type="button">{agentName(agentId)}<i>×</i></button>)}</div>
+              <span>{mode === 'coordinated' ? '◎' : '@'}</span>
+              <div className="target-chips">{selectedAgentIds.map((agentId, index) => <div className={mode === 'coordinated' && index === 0 ? 'target-chip lead' : 'target-chip'} key={agentId}>{mode === 'coordinated' && index === 0 ? <b>主导</b> : null}<span>{agentName(agentId)}</span>{mode === 'coordinated' && index > 0 ? <button aria-label={`设 ${agentName(agentId)} 为主导 Agent`} className="make-lead" onClick={() => onLeadSelect(agentId)} title="设为主导" type="button">↑</button> : null}<button aria-label={`移除 ${agentName(agentId)}`} className="remove-agent" onClick={() => onAgentToggle(agentId)} type="button">×</button></div>)}</div>
               <div className="agent-picker" ref={agentPickerRef}>
                 <button
                   aria-expanded={agentPickerOpen}
@@ -538,12 +558,12 @@ export function ConversationWorkspace({
                       <i>＋</i>
                     </button>)}
                   </div>
-                  <footer>每个 Agent 会获得独立 Run，最多并行选择 4 个。</footer>
+                  <footer>{mode === 'coordinated' ? '主导 Agent 保持责任；协作者通过受控 Consultation 独立回答。' : '每个 Agent 会获得独立 Run，最多并行选择 4 个。'}</footer>
                 </div> : null}
               </div>
             </div>
-            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder="描述目标，让选中的 Agent 分别处理并回到同一线程…" rows={2} value={message} />
-            <button disabled={sending || !message.trim() || selectedAgentIds.length === 0} type="submit">{sending ? '派发中…' : selectedAgentIds.length > 1 ? `并行发送 ${selectedAgentIds.length}` : '发送'}</button>
+            <textarea aria-label="发送消息" onChange={(event) => onMessageChange(event.target.value)} placeholder={mode === 'coordinated' ? '描述最终目标，主导 Agent 会拆分视角、咨询协作者并给出统一结果…' : '描述问题，让选中的 Agent 分别回答并回到同一线程…'} rows={2} value={message} />
+            <button disabled={sending || !message.trim() || selectedAgentIds.length === 0 || (mode === 'coordinated' && selectedAgentIds.length < 2)} type="submit">{sending ? '派发中…' : mode === 'coordinated' ? selectedAgentIds.length < 2 ? '至少选择 2 个' : `开始协作 ${selectedAgentIds.length}` : selectedAgentIds.length > 1 ? `分别发送 ${selectedAgentIds.length}` : '发送'}</button>
           </form>
         ) : null}
       </div>
