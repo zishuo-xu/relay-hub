@@ -110,6 +110,7 @@ function routingInstructions(claimed: ClaimedRun): string[] {
     '{"summary":"What this Run finished","publicMessage":"The concise answer that the user and later Thread Agents must read","nextAction":{"type":"wait_for_user","reason":"Why the user must decide next"}}',
     AGENT_RESULT_ENVELOPE_END,
     'Allowed nextAction types: handoff, delegate, request_review, consult, wait_for_user, continue, complete.',
+    'Default team collaboration is explicit handoff: when another platform Agent should advance the work, hand it the bounded next responsibility instead of treating the user as an Agent-to-Agent relay. Use wait_for_user only when a real product decision, authorization, or missing external input is required from the user.',
     'For handoff, use this exact object shape; nextAction and handoff are sibling fields:',
     '{"summary":"Concise completed work","publicMessage":"The result that should appear in the public Thread","nextAction":{"type":"handoff","targetAgentId":"TARGET_UUID","reason":"Why this Agent owns the next step"},"handoff":{"objective":"What the target must do","summary":"Concise context without hidden reasoning","artifactRefs":[],"evidenceRefs":[],"decisions":[],"openQuestions":[],"risks":[]}}',
     'For a bounded advisory question that does not transfer Task ownership, use this exact consultation shape:',
@@ -135,7 +136,8 @@ function delegationSection(claimed: ClaimedRun): string[] {
       `Delegation objective: ${claimed.delegation.objective}`,
       `Scope boundary: ${claimed.delegation.scope}`,
       `Required deliverables: ${claimed.delegation.deliverables.join('; ')}`,
-      'Complete only this package. Do not create another Delegation or pretend CLI-internal helpers are platform Agents. RelayHub will report the final result to the parent automatically.',
+      'Complete only this package. Do not create another Delegation or pretend CLI-internal helpers are platform Agents.',
+      'You do not own direct user decisions. When the package is finished, return nextAction complete even if you have an open question; RelayHub will return your result to the parent Lead, which decides whether another Agent or the user must act. Do not use wait_for_user for a delegated child.',
     ];
   }
   if (claimed.delegationPlan && claimed.delegations) {

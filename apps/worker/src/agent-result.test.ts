@@ -154,6 +154,32 @@ describe('agentCompletionEvents', () => {
     });
   });
 
+  it('returns a delegated child result to its Lead instead of stranding it at the user', () => {
+    const delegatedClaim: ClaimedRun = {
+      ...claimed,
+      task: { ...claimed.task, parentTaskId: '00000000-0000-4000-8000-000000000099' },
+      run: { ...claimed.run, triggerType: 'delegation' },
+    };
+    const events = agentCompletionEvents({
+      claimed: delegatedClaim,
+      workingDirectory: '/tmp/relayhub-worktree',
+      finalMessage: envelope({
+        summary: 'The bounded analysis is complete.',
+        nextAction: { type: 'wait_for_user', reason: 'The Lead should decide how to use this result.' },
+      }),
+      commandEvidence: [],
+      fallbackSummary: 'unused',
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'run.completed',
+      outcome: {
+        nextAction: { type: 'complete', reason: 'Delegated work is returning its result to the responsible Lead.' },
+      },
+    });
+  });
+
   it('keeps the fixed Reviewer path when request_review arrives without Handoff content', () => {
     const withReviewer: ClaimedRun = { ...claimed, task: { ...claimed.task, reviewerAgentId: reviewerId } };
     const events = agentCompletionEvents({

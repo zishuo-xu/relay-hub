@@ -80,13 +80,22 @@ export function agentCompletionEvents(input: {
     if (claimed.run.triggerType === 'consult' && result.nextAction.type !== 'complete') {
       throw new Error('Consultation Runs may only return a complete nextAction');
     }
-    const nextAction = claimed.run.triggerType !== 'consult' && claimed.task.reviewerAgentId && result.nextAction.type === 'complete'
+    // A delegated child has no direct user-facing decision authority. Its final
+    // result must return to the parent Lead, which may then ask the user. This
+    // mirrors the normal A2A ownership rule: do not strand work at the user
+    // while another platform Agent is still responsible for the overall goal.
+    const nextAction = claimed.run.triggerType === 'delegation' && result.nextAction.type === 'wait_for_user'
       ? {
-          type: 'request_review' as const,
-          targetAgentId: claimed.task.reviewerAgentId,
-          reason: 'RelayHub requires the configured independent Review before completion.',
+          type: 'complete' as const,
+          reason: 'Delegated work is returning its result to the responsible Lead.',
         }
-      : result.nextAction;
+      : claimed.run.triggerType !== 'consult' && claimed.task.reviewerAgentId && result.nextAction.type === 'complete'
+        ? {
+            type: 'request_review' as const,
+            targetAgentId: claimed.task.reviewerAgentId,
+            reason: 'RelayHub requires the configured independent Review before completion.',
+          }
+        : result.nextAction;
     if (nextAction.type === 'request_review') {
       const reviewerAgentId = claimed.task.reviewerAgentId;
       if (!reviewerAgentId) {
