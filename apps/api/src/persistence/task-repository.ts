@@ -17,6 +17,7 @@ import {
   type RelayDatabase,
   reviewFindings,
   reviews,
+  responsibilityRoutes,
   runEvents,
   runs,
   tasks,
@@ -284,6 +285,18 @@ export async function confirmTaskCompletion(
       .update(tasks)
       .set({ status: 'completed', version: task.version + 1, updatedAt: now })
       .where(and(eq(tasks.id, task.id), eq(tasks.version, task.version)));
+    if (task.threadId) {
+      await tx.insert(responsibilityRoutes).values({
+        threadId: task.threadId,
+        taskId: task.id,
+        action: 'complete',
+        sourceType: 'user',
+        targetType: 'completed',
+        sourceRunId: task.currentRunId,
+        summary: '用户确认 Review 结果，任务完成。',
+        createdAt: now,
+      });
+    }
     const [eventRow] = await tx
       .insert(runEvents)
       .values({

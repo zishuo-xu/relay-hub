@@ -181,7 +181,7 @@ suite('sequential handoff integration', () => {
     expect(finished?.events.at(-1)?.type).toBe('task.waiting_for_review');
   });
 
-  it('publishes a compact same-Thread responsibility route when handing work to the next Agent', async () => {
+  it('publishes a compact same-Thread responsibility route without consuming the target Run message slot', async () => {
     const agentA = await createMockAgent(uniqueName('Visible Route A'));
     const agentB = await createMockAgent(uniqueName('Visible Route B'));
     const thread = await store.createThread({ title: uniqueName('Visible route Thread') });
@@ -208,12 +208,112 @@ suite('sequential handoff integration', () => {
     });
 
     const detail = await store.getThreadDetail(thread.thread.id);
-    expect(detail?.messages).toContainEqual(expect.objectContaining({
-      senderType: 'system',
-      senderAgentId: agentA.id,
-      recipientAgentId: agentB.id,
-      content: 'B owns the bounded next step',
-    }));
+    expect(detail?.responsibilityRoutes).toMatchObject([
+      { action: 'assign', sourceType: 'user', targetType: 'agent', targetAgentId: agentA.id },
+      {
+        action: 'handoff',
+        sourceAgentId: agentA.id,
+        targetAgentId: agentB.id,
+        summary: 'B owns the bounded next step',
+      },
+    ]);
+    const runB = detail?.tasks[0]?.currentRunId;
+    if (!runB) throw new Error('Expected the Handoff target Run');
+    await store.claimRun(runB, 'visible-route-b');
+    await store.recordAgentEvent(runB, 'visible-route-b-started', { type: 'run.started' });
+    await store.recordAgentEvent(runB, 'visible-route-b-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'B finished the bounded step.', commandEvidence: [], nextAction: { type: 'wait_for_user', reason: 'Done.' } },
+    });
+    const completed = await store.getThreadDetail(thread.thread.id);
+    expect(completed?.messages.at(-1)).toMatchObject({ runId: runB, senderAgentId: agentB.id });
+    expect(completed?.responsibilityRoutes.at(-1)).toMatchObject({
+      action: 'await_user',
+      sourceAgentId: agentB.id,
+      targetType: 'user',
+    });
+  });
+
+  it('projects Builder -> Reviewer -> repair -> Reviewer -> user -> complete as one responsibility path', async () => {
+    const builder = await createMockAgent(uniqueName('Closed Route Builder'));
+    const reviewer = await createMockAgent(uniqueName('Closed Route Reviewer'), ['review']);
+    const thread = await store.createThread({ title: uniqueName('Closed route Thread') });
+    const dispatched = await store.createThreadMessage(thread.thread.id, {
+      content: 'Implement, review, repair, and finish this bounded change.',
+      mode: 'parallel',
+      agentIds: [builder.id],
+      reviewerAgentId: reviewer.id,
+      completionPolicy: 'require_user_confirmation',
+      maxReviewRounds: 3,
+    });
+    const task = dispatched.value.tasks[0];
+    if (!task) throw new Error('Expected the routed Task');
+    const firstBuilderRun = await startCurrentRun(task.id, 'closed-builder');
+    const requestReview = (objective: string): AgentEvent => ({
+      type: 'handoff.requested',
+      handoff: {
+        targetAgentId: reviewer.id,
+        objective,
+        summary: objective,
+        nextAction: { type: 'request_review', targetAgentId: reviewer.id, reason: 'Independent review is required.' },
+      },
+    });
+    await store.recordAgentEvent(firstBuilderRun, 'closed-builder-handoff', requestReview('Review the first implementation'));
+    await store.recordAgentEvent(firstBuilderRun, 'closed-builder-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'First implementation complete.', commandEvidence: [] },
+    });
+
+    const firstReviewRun = await startCurrentRun(task.id, 'closed-review-one');
+    await store.recordAgentEvent(firstReviewRun, 'closed-review-one-verdict', {
+      type: 'review.submitted',
+      review: {
+        verdict: 'changes_requested',
+        summary: 'One bounded repair is required.',
+        findings: [{ severity: 'should_fix', title: 'Repair the branch', detail: 'The branch is incomplete.' }],
+      },
+    });
+    await store.recordAgentEvent(firstReviewRun, 'closed-review-one-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Review requested changes.', commandEvidence: [] },
+    });
+
+    const repairRun = await startCurrentRun(task.id, 'closed-repair');
+    await store.recordAgentEvent(repairRun, 'closed-repair-handoff', requestReview('Review the repaired implementation'));
+    await store.recordAgentEvent(repairRun, 'closed-repair-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Repair complete.', commandEvidence: [] },
+    });
+
+    const secondReviewRun = await startCurrentRun(task.id, 'closed-review-two');
+    await store.recordAgentEvent(secondReviewRun, 'closed-review-two-verdict', {
+      type: 'review.submitted',
+      review: { verdict: 'approved', summary: 'The repaired implementation is approved.', findings: [] },
+    });
+    await store.recordAgentEvent(secondReviewRun, 'closed-review-two-completed', {
+      type: 'run.completed',
+      outcome: { summary: 'Review approved.', commandEvidence: [] },
+    });
+    await store.confirmTaskCompletion(task.id);
+
+    const completed = await store.getThreadDetail(thread.thread.id);
+    expect(completed?.tasks[0]?.status).toBe('completed');
+    expect(completed?.responsibilityRoutes.map((route) => route.action)).toEqual([
+      'assign',
+      'request_review',
+      'request_repair',
+      'request_review',
+      'await_user',
+      'complete',
+    ]);
+    expect(completed?.responsibilityRoutes.map((route) => route.targetType)).toEqual([
+      'agent',
+      'agent',
+      'agent',
+      'agent',
+      'user',
+      'completed',
+    ]);
   });
 
   it('chains A -> B -> C while each Handoff carries its own digest', async () => {

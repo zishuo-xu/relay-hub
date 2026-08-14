@@ -8,6 +8,7 @@ import type {
   MessageDispatch,
   Review,
   ReviewFinding,
+  ResponsibilityRoute,
   Run,
   RunEvent,
   Task,
@@ -27,6 +28,7 @@ import {
   providerConnections,
   reviewFindings,
   reviews,
+  responsibilityRoutes,
   runEvents,
   runs,
   tasks,
@@ -50,6 +52,7 @@ type ProviderConnectionRow = typeof providerConnections.$inferSelect;
 type HandoffRow = typeof handoffs.$inferSelect;
 type ReviewRow = typeof reviews.$inferSelect;
 type ReviewFindingRow = typeof reviewFindings.$inferSelect;
+type ResponsibilityRouteRow = typeof responsibilityRoutes.$inferSelect;
 
 function toIso(value: Date): string {
   return value.toISOString();
@@ -149,6 +152,23 @@ export function mapThreadMessage(row: ThreadMessageRow): ThreadMessage {
     ...(row.runId ? { runId: row.runId } : {}),
     ...(row.senderAgentId ? { senderAgentId: row.senderAgentId } : {}),
     ...(row.recipientAgentId ? { recipientAgentId: row.recipientAgentId } : {}),
+  };
+}
+
+export function mapResponsibilityRoute(row: ResponsibilityRouteRow): ResponsibilityRoute {
+  return {
+    id: row.id,
+    threadId: row.threadId,
+    taskId: row.taskId,
+    action: row.action,
+    sourceType: row.sourceType,
+    targetType: row.targetType,
+    summary: row.summary,
+    createdAt: toIso(row.createdAt),
+    ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : {}),
+    ...(row.targetRunId ? { targetRunId: row.targetRunId } : {}),
+    ...(row.sourceAgentId ? { sourceAgentId: row.sourceAgentId } : {}),
+    ...(row.targetAgentId ? { targetAgentId: row.targetAgentId } : {}),
   };
 }
 

@@ -39,3 +39,10 @@ RelayHub 采用以下主结构，作为日常多 Agent 协作的默认路径：
 - 不复制参考项目源码、品牌或其完整治理实现；RelayHub 只采用经验证的协作结构，并用自己的 TypeScript、PostgreSQL、BullMQ 和 Agent Adapter 实现。
 - 不把产品、架构、开发、测试固化成不可变流程。
 - 不删除已有隔离 Delegation 数据；旧记录继续可审计，新规则只作用于后续执行。
+
+## 实施结果
+
+- `Implemented`：`responsibility_routes` 作为追加式公开投影持久化责任变化；它不替代 Task、Run、Handoff、Review 或 RunEvent。
+- `Implemented`：初始负责人、普通 Handoff、Review、repair、等待用户和完成已使用同一个路由契约，Thread API 与 Web 从该契约展示责任路径。
+- `Implemented`：历史记录不做推断式回填，避免把旧状态猜测成新的事实；迁移后的工作流从初始派发开始产生路径。
+- `Implemented`：独立 Delegation 仍是例外的 fork-and-return 能力，日常协作默认在同一 Thread 交接。

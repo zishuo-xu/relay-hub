@@ -45,6 +45,14 @@ suite('conversation thread integration', () => {
       taskId: task?.id,
       agentId: DEFAULT_MOCK_AGENT_ID,
     });
+    expect(duplicate.value.responsibilityRoutes).toMatchObject([
+      {
+        action: 'assign',
+        sourceType: 'user',
+        targetType: 'agent',
+        targetAgentId: DEFAULT_MOCK_AGENT_ID,
+      },
+    ]);
     if (!task) throw new Error('Thread message did not create a Task');
 
     const claimed = await store.claimRun(task.currentRunId, 'thread-test-worker');
@@ -76,6 +84,11 @@ suite('conversation thread integration', () => {
       content: '线程把多 Agent 协作内容保存在一个连续上下文中。',
     });
     expect(completed?.tasks[0]?.status).toBe('waiting_for_user');
+    expect(completed?.responsibilityRoutes.at(-1)).toMatchObject({
+      action: 'await_user',
+      sourceAgentId: DEFAULT_MOCK_AGENT_ID,
+      targetType: 'user',
+    });
     expect((await store.listThreads())[0]).toMatchObject({
       id: thread.thread.id,
       messageCount: 2,

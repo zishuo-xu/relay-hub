@@ -896,6 +896,36 @@ export interface ThreadMessage {
   createdAt: string;
 }
 
+export type ResponsibilityRouteAction =
+  | 'assign'
+  | 'handoff'
+  | 'request_review'
+  | 'request_repair'
+  | 'await_user'
+  | 'complete';
+
+export type ResponsibilityRouteActor = 'user' | 'agent' | 'platform' | 'completed';
+
+/**
+ * An immutable, public projection of who owns the next move in a Thread.
+ * Task/Run/Handoff/Review remain the workflow truth; this fact makes their
+ * responsibility transfer legible without exposing technical audit events.
+ */
+export interface ResponsibilityRoute {
+  id: string;
+  threadId: string;
+  taskId: string;
+  action: ResponsibilityRouteAction;
+  sourceType: ResponsibilityRouteActor;
+  targetType: ResponsibilityRouteActor;
+  sourceRunId?: string;
+  targetRunId?: string;
+  sourceAgentId?: string;
+  targetAgentId?: string;
+  summary: string;
+  createdAt: string;
+}
+
 export interface MessageDispatch {
   id: string;
   messageId: string;
@@ -942,6 +972,7 @@ export interface Delegation {
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: ThreadMessage[];
+  responsibilityRoutes: ResponsibilityRoute[];
   dispatches: MessageDispatch[];
   tasks: Task[];
   delegationPlans: DelegationPlan[];

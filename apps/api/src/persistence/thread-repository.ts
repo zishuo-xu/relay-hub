@@ -14,6 +14,7 @@ import {
   idempotencyKeys,
   messageDispatches,
   outboxEvents,
+  responsibilityRoutes,
   type RelayDatabase,
   runEvents,
   runs,
@@ -23,7 +24,7 @@ import {
   workspaces,
 } from '@relay-hub/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { mapAgentProfile, mapDelegation, mapDelegationPlan, mapEvent, mapMessageDispatch, mapTask, mapThreadMessage, mapThreadSummary } from './mappers.js';
+import { mapAgentProfile, mapDelegation, mapDelegationPlan, mapEvent, mapMessageDispatch, mapResponsibilityRoute, mapTask, mapThreadMessage, mapThreadSummary } from './mappers.js';
 import type { MutationResult } from './types.js';
 import { allocateThreadMessageSequence } from './thread-message-repository.js';
 
@@ -83,6 +84,9 @@ export async function getThreadDetail(db: RelayDatabase, threadId: string): Prom
         .orderBy(asc(messageDispatches.createdAt), asc(messageDispatches.id))
     : [];
   const taskIds = taskRows.map(({ task }) => task.id);
+  const routeRows = taskIds.length > 0
+    ? await db.select().from(responsibilityRoutes).where(inArray(responsibilityRoutes.taskId, taskIds)).orderBy(asc(responsibilityRoutes.createdAt), asc(responsibilityRoutes.id))
+    : [];
   const planRows = taskIds.length > 0
     ? await db.select().from(delegationPlans).where(inArray(delegationPlans.parentTaskId, taskIds)).orderBy(asc(delegationPlans.createdAt))
     : [];
@@ -92,6 +96,7 @@ export async function getThreadDetail(db: RelayDatabase, threadId: string): Prom
   return {
     thread: summarizeThread(thread, messageRows, taskRows),
     messages: messageRows.map(mapThreadMessage),
+    responsibilityRoutes: routeRows.map(mapResponsibilityRoute),
     dispatches: dispatchRows.map(mapMessageDispatch),
     tasks: taskRows.map(({ task, agentId }) => mapTask(task, agentId ?? '')),
     delegationPlans: planRows.map(mapDelegationPlan),
@@ -235,6 +240,17 @@ export async function createThreadMessage(
       });
       await tx.update(tasks).set({ currentRunId: runId }).where(eq(tasks.id, taskId));
       await tx.insert(messageDispatches).values({ messageId, taskId, agentId, createdAt: now });
+      await tx.insert(responsibilityRoutes).values({
+        threadId,
+        taskId,
+        action: 'assign',
+        sourceType: 'user',
+        targetType: 'agent',
+        targetRunId: runId,
+        targetAgentId: agentId,
+        summary: input.content,
+        createdAt: now,
+      });
       const [eventRow] = await tx.insert(runEvents).values({
         taskId,
         runId,

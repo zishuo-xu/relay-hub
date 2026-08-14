@@ -468,6 +468,16 @@ export function ConversationWorkspace({
   const taskForMessage = (taskId?: string) => threadDetail?.tasks.find((task) => task.id === taskId);
   const dispatchesForMessage = (messageId: string) => threadDetail?.dispatches.filter((dispatch) => dispatch.messageId === messageId) ?? [];
   const agentName = (agentId?: string) => agents.find((agent) => agent.id === agentId)?.name ?? 'Agent';
+  const routeActorName = (type: 'user' | 'agent' | 'platform' | 'completed', agentId?: string) =>
+    type === 'agent' ? agentName(agentId) : type === 'user' ? '你' : type === 'completed' ? '已完成' : 'RelayHub';
+  const routeActionName = (action: ThreadDetail['responsibilityRoutes'][number]['action']) => ({
+    assign: '开始负责',
+    handoff: '交接',
+    request_review: '送审',
+    request_repair: '返工',
+    await_user: '等待确认',
+    complete: '完成',
+  })[action];
   const currentRun = auditDetail?.runs.find((run) => run.id === auditDetail.task.currentRunId);
   const availableAgents = agents.filter((agent) => !selectedAgentIds.includes(agent.id));
   useEffect(() => {
@@ -498,13 +508,13 @@ export function ConversationWorkspace({
             {threadDetail.messages.length === 0 ? (
               <div className="conversation-empty"><span>R</span><h2>开始一次团队对话</h2><p>选择一位负责人并描述目标；它会在这个线程中把下一步明确交给需要的 Agent，最后再汇总给你。</p></div>
             ) : null}
+            {threadDetail.responsibilityRoutes.length > 0 ? <section className="responsibility-path" aria-label="任务责任路径">
+              <header><span>责任路径</span><strong>当前：{routeActorName(threadDetail.responsibilityRoutes.at(-1)!.targetType, threadDetail.responsibilityRoutes.at(-1)!.targetAgentId)}</strong></header>
+              <div>{threadDetail.responsibilityRoutes.map((route) => <article className={`responsibility-route ${route.action}`} key={route.id}>
+                <span>{routeActorName(route.sourceType, route.sourceAgentId)}</span><i>→</i><strong>{routeActorName(route.targetType, route.targetAgentId)}</strong><b>{routeActionName(route.action)}</b><small title={route.summary}>{route.summary}</small>
+              </article>)}</div>
+            </section> : null}
             {threadDetail.messages.map((entry) => {
-              const isResponsibilityRoute = entry.senderType === 'system' && entry.senderAgentId && entry.recipientAgentId;
-              if (isResponsibilityRoute) {
-                return <div className="responsibility-route" key={entry.id}>
-                  <span>{agentName(entry.senderAgentId)}</span><i>→</i><strong>{agentName(entry.recipientAgentId)}</strong><small>{entry.content}</small>
-                </div>;
-              }
               const task = taskForMessage(entry.taskId);
               const dispatches = entry.senderType === 'user' ? dispatchesForMessage(entry.id) : [];
               const dispatchTasks = dispatches

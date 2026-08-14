@@ -19,6 +19,7 @@ import {
   type RelayDatabase,
   reviewFindings,
   reviews,
+  responsibilityRoutes,
   runEvents,
   runs,
   tasks,
@@ -485,6 +486,21 @@ export async function recordAgentEvent(
                 eventType: 'run.queued',
                 payload: { runId: repairRunId },
               });
+              if (task.threadId) {
+                await tx.insert(responsibilityRoutes).values({
+                  threadId: task.threadId,
+                  taskId: task.id,
+                  action: 'request_repair',
+                  sourceType: 'agent',
+                  targetType: 'agent',
+                  sourceRunId: run.id,
+                  targetRunId: repairRunId,
+                  sourceAgentId: run.agentId,
+                  targetAgentId: builderAgentId,
+                  summary: review.summary,
+                  createdAt: now,
+                });
+              }
               secondaryWorkflowEvent = {
                 eventType: 'task.repair_requested',
                 payload: {
@@ -496,6 +512,18 @@ export async function recordAgentEvent(
                 },
                 dedupeKey: `workflow-repair-requested:${run.id}`,
               };
+            } else if (task.threadId) {
+              await tx.insert(responsibilityRoutes).values({
+                threadId: task.threadId,
+                taskId: task.id,
+                action: plan.nextTaskStatus === 'completed' ? 'complete' : 'await_user',
+                sourceType: 'agent',
+                targetType: plan.nextTaskStatus === 'completed' ? 'completed' : 'user',
+                sourceRunId: run.id,
+                sourceAgentId: run.agentId,
+                summary: review.summary,
+                createdAt: now,
+              });
             }
           } else {
             const [pendingDelegationPlan] = await tx
@@ -622,22 +650,18 @@ export async function recordAgentEvent(
                   eventType: 'run.queued',
                   payload: { runId: handoffTargetRunId },
                 });
-                // A handoff is a public responsibility transfer, not merely an
-                // audit event. Keep its compact route visible in the same
-                // Thread so the next Agent and the user can see who owns the
-                // next move without opening an execution drawer.
                 if (task.threadId) {
-                  const sequence = await allocateThreadMessageSequence(tx, task.threadId, task.workspaceId, now);
-                  await tx.insert(threadMessages).values({
+                  await tx.insert(responsibilityRoutes).values({
                     threadId: task.threadId,
-                    sequence,
                     taskId: task.id,
-                    runId: handoffTargetRunId,
-                    senderType: 'system',
-                    senderName: 'RelayHub',
-                    senderAgentId: run.agentId,
-                    recipientAgentId: targetAgent.id,
-                    content: pendingHandoff.objective,
+                    action: 'handoff',
+                    sourceType: 'agent',
+                    targetType: 'agent',
+                    sourceRunId: run.id,
+                    targetRunId: handoffTargetRunId,
+                    sourceAgentId: run.agentId,
+                    targetAgentId: targetAgent.id,
+                    summary: pendingHandoff.objective,
                     createdAt: now,
                   });
                 }
@@ -647,6 +671,19 @@ export async function recordAgentEvent(
                   .update(handoffs)
                   .set({ status: 'rejected', updatedAt: now })
                   .where(and(eq(handoffs.id, pendingHandoff.id), eq(handoffs.status, 'pending')));
+                if (task.threadId) {
+                  await tx.insert(responsibilityRoutes).values({
+                    threadId: task.threadId,
+                    taskId: task.id,
+                    action: 'await_user',
+                    sourceType: 'agent',
+                    targetType: 'user',
+                    sourceRunId: run.id,
+                    sourceAgentId: run.agentId,
+                    summary: plan.reason,
+                    createdAt: now,
+                  });
+                }
               }
               if (plan.nextTaskStatus !== 'running') nextTaskStatus = plan.nextTaskStatus;
               workflowEvent = {
@@ -703,6 +740,21 @@ export async function recordAgentEvent(
                   eventType: 'run.queued',
                   payload: { runId: targetRunId },
                 });
+                if (task.threadId) {
+                  await tx.insert(responsibilityRoutes).values({
+                    threadId: task.threadId,
+                    taskId: task.id,
+                    action: 'request_review',
+                    sourceType: 'agent',
+                    targetType: 'agent',
+                    sourceRunId: run.id,
+                    targetRunId,
+                    sourceAgentId: run.agentId,
+                    targetAgentId: pendingHandoff.targetAgentId,
+                    summary: pendingHandoff.objective,
+                    createdAt: now,
+                  });
+                }
                 taskPatch.currentRunId = targetRunId;
                 }
                 workflowEvent = {
@@ -714,6 +766,18 @@ export async function recordAgentEvent(
                   workflowEvent.payload.handoffId = pendingHandoff.id;
                   workflowEvent.payload.targetAgentId = pendingHandoff.targetAgentId;
                   workflowEvent.payload.targetRunId = targetRunId;
+                } else if (task.threadId) {
+                  await tx.insert(responsibilityRoutes).values({
+                    threadId: task.threadId,
+                    taskId: task.id,
+                    action: delegatedDirectCompletion ? 'complete' : 'await_user',
+                    sourceType: 'agent',
+                    targetType: delegatedDirectCompletion ? 'completed' : 'user',
+                    sourceRunId: run.id,
+                    sourceAgentId: run.agentId,
+                    summary: agentEvent.outcome.publicMessage ?? agentEvent.outcome.summary,
+                    createdAt: now,
+                  });
                 }
               }
             }

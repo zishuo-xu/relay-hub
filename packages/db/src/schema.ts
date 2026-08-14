@@ -28,6 +28,8 @@ import type {
   TaskStatus,
   ProviderConnectionKind,
   ProviderProtocol,
+  ResponsibilityRouteAction,
+  ResponsibilityRouteActor,
 } from '@relay-hub/contracts';
 
 const TASK_STATUS_VALUES = [
@@ -278,6 +280,28 @@ export const threadMessages = pgTable(
   (table) => [
     uniqueIndex('thread_messages_thread_sequence_uidx').on(table.threadId, table.sequence),
     uniqueIndex('thread_messages_run_uidx').on(table.runId),
+  ],
+);
+
+export const responsibilityRoutes = pgTable(
+  'responsibility_routes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    threadId: uuid('thread_id').notNull().references(() => threads.id),
+    taskId: uuid('task_id').notNull().references(() => tasks.id),
+    action: text('action').$type<ResponsibilityRouteAction>().notNull(),
+    sourceType: text('source_type').$type<ResponsibilityRouteActor>().notNull(),
+    targetType: text('target_type').$type<ResponsibilityRouteActor>().notNull(),
+    sourceRunId: uuid('source_run_id').references(() => runs.id),
+    targetRunId: uuid('target_run_id').references(() => runs.id),
+    sourceAgentId: uuid('source_agent_id').references(() => agentProfiles.id),
+    targetAgentId: uuid('target_agent_id').references(() => agentProfiles.id),
+    summary: text('summary').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('responsibility_routes_thread_created_idx').on(table.threadId, table.createdAt, table.id),
+    index('responsibility_routes_task_created_idx').on(table.taskId, table.createdAt, table.id),
   ],
 );
 

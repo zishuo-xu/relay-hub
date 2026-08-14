@@ -1,24 +1,27 @@
 # 07. 实现状态
 
-## 2026-08-15：消息路由优先的责任接力（第一切片）
+## 2026-08-15：统一责任路由闭环
 
 ### 已实现
 
-- 普通 `Handoff` 不再只存在于运行审计：平台在同一 Thread 持久化一条紧凑的系统路由消息，明确展示“哪个 Agent 将什么目标交给哪个 Agent”，同时目标 Run 继续通过既有 Outbox 领取执行。
-- 对话主界面将该事实投影为一条责任接力线；用户可以沿着来源 Agent、目标 Agent 与交接目标理解当前协作，而不必从多个执行卡里猜测分工。
+- 新增追加式 `responsibility_routes`：Thread、Task、动作、来源/目标类型、来源/目标 Run、来源/目标 Agent、摘要和时间组成不可变的公开责任事实；Task/Run/Handoff/Review 继续作为执行真相。
+- 初始派发、普通 Handoff、请求 Review、Reviewer 要求返工、Review 后等待用户、自动完成和用户确认完成，都在原工作流事务内写入统一责任路由。
+- Thread API 返回完整责任路径；对话主界面显示当前责任人及有界滚动的接力记录，用户不需要打开运行审计即可理解“谁交给谁、为什么、现在谁负责”。
+- 普通 Handoff 不再借用目标 Run 的 ThreadMessage；目标 Agent 仍能用自己的 Run 写入正式公开结果，避免 `thread_messages.run_id` 唯一约束冲突。
 - UI 将 `Delegation` 改称“独立工作”，并明确它是长期、独立或并行工作才使用的例外执行面；常规协作的文案收敛为负责人在同一 Thread 内继续交接。
 - 对被委派的子 Run，Worker 将错误的 `wait_for_user` 终态归一为返回负责人，避免子 Agent 把等待用户误当成完成委派的出口。
 
 ### 验证证据
 
-- API 构建通过；新增隔离 PostgreSQL 集成用例，覆盖 Handoff 后同一 Thread 中的来源、目标和目标文本。当前环境未配置 `TEST_DATABASE_URL`，该集成用例按保护逻辑跳过，未触碰任何用户数据库。
-- Web 构建通过；浏览器验证主线程已显示“责任在同一线程接力”及新的默认输入文案。
-- Worker 对委派结果归一化的回归测试通过（19 项）。
+- 独立 PostgreSQL `relayhub_route_test_20260815_0045` 应用全部迁移；Thread 与 Handoff 集成测试 18/18 通过，包含 Builder → Reviewer → repair Builder → Reviewer → user confirmation → completed 的完整责任动作序列。
+- 全仓 `pnpm check` 通过：类型检查、Contracts 44 项、Web 7 项、Queue 1 项、Worker 67 项、无数据库 API 28 项和全仓生产构建全部成功；数据库集成套件另在上述隔离库运行。
+- 正式本地 PostgreSQL 无损应用 additive migration `0019_brown_ogun.sql`；只新增责任路由表和索引，没有删除、回填或改写已有 Thread、Message、Task、Run、Handoff 与 Review。
+- 浏览器重新加载后仍能读取原有 10 个 Thread；历史任务没有伪造责任路由，新任务从初始派发开始形成完整路径。
 
 ### 当前边界
 
-- 这是“可见的直接路由”切片，尚未移除既有独立 Delegation 子线程能力；后者保留给确有长期或并行价值的工作包。
-- 后续仍需在隔离测试数据库跑完 API 集成路径，并将更多路由状态（如 Review 回流）统一投影为同一类责任接力事实。
+- 既有历史工作流不回填推断出来的责任事实；只有迁移后的新状态变化会产生可信路径。
+- 独立 Delegation 子线程能力继续保留给确有长期、隔离或并行价值的工作包；本次没有删除旧记录或改变其审计语义。
 
 ## 2026-08-14：Agent 主导的受控任务委派
 
