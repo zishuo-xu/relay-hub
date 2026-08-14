@@ -113,7 +113,7 @@ codex --version
 codex login status
 ```
 
-使用 OpenCode Builder 或 Reviewer 时，需要先安装 OpenCode，并通过 OpenCode 自己的登录流程或环境变量准备 provider 凭证：
+使用 OpenCode Builder 或 Reviewer 时，需要先安装 OpenCode；第三方模型 API Key 可直接在 RelayHub 网页的“模型与连接”中配置：
 
 ```bash
 opencode --version
@@ -128,7 +128,7 @@ claude --version
 claude auth status
 ```
 
-RelayHub 的“模型与连接”统一管理 URI、协议、模型目录和凭证环境变量名称，不保存 API Key。“Agent 配置”只引用连接和模型，并保存长期提示词与执行权限。运行时配置参考 OpenCode 官方的 [Config](https://opencode.ai/docs/config/)、[Providers](https://opencode.ai/docs/providers/) 和 [Permissions](https://opencode.ai/docs/permissions/) 约定。
+RelayHub 的“模型与连接”统一管理 URI、协议、模型目录和凭证。网页输入的 API Key 保存在本地 PostgreSQL 的连接凭证字段中，页面响应不回显，AgentProfile、Run 快照、Prompt 和 Timeline 也不包含它；环境变量名称保留在“高级”区域，供 CI、远程 Worker 或旧启动脚本使用。“Agent 配置”只引用连接和模型，并保存长期提示词与执行权限。运行时配置参考 OpenCode 官方的 [Config](https://opencode.ai/docs/config/)、[Providers](https://opencode.ai/docs/providers/) 和 [Permissions](https://opencode.ai/docs/permissions/) 约定。
 
 ```bash
 cd relay-hub

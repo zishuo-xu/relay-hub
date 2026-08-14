@@ -987,6 +987,8 @@ interface ProviderConnectionDrawerProps {
   name: string;
   protocol: ProviderProtocol;
   baseUrl: string;
+  credentialSecret: string;
+  credentialConfigured: boolean;
   credentialEnv: string;
   models: string;
   saving: boolean;
@@ -1002,6 +1004,7 @@ interface ProviderConnectionDrawerProps {
   onNameChange: (value: string) => void;
   onProtocolChange: (value: ProviderProtocol) => void;
   onBaseUrlChange: (value: string) => void;
+  onCredentialSecretChange: (value: string) => void;
   onCredentialEnvChange: (value: string) => void;
   onModelsChange: (value: string) => void;
   onEnabledChange: (value: boolean) => void;
@@ -1017,6 +1020,8 @@ export function ProviderConnectionDrawer({
   name,
   protocol,
   baseUrl,
+  credentialSecret,
+  credentialConfigured,
   credentialEnv,
   models,
   saving,
@@ -1032,6 +1037,7 @@ export function ProviderConnectionDrawer({
   onNameChange,
   onProtocolChange,
   onBaseUrlChange,
+  onCredentialSecretChange,
   onCredentialEnvChange,
   onModelsChange,
   onEnabledChange,
@@ -1062,12 +1068,28 @@ export function ProviderConnectionDrawer({
           </select>
         </label>
         <label>Base URI<input onChange={(event) => onBaseUrlChange(event.target.value)} placeholder="https://api.example.com/v1" required type="url" value={baseUrl} /></label>
-        <label>凭证环境变量名称（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="DEEPSEEK_API_KEY" value={credentialEnv} /></label>
+        <label>
+          API Key
+          <input
+            autoComplete="new-password"
+            onChange={(event) => onCredentialSecretChange(event.target.value)}
+            placeholder={credentialConfigured ? '已安全配置 · 留空保持不变' : '粘贴 API Key'}
+            type="password"
+            value={credentialSecret}
+          />
+          <small className="field-help">{credentialConfigured ? '已保存；输入新 Key 可替换，原值不会回显。' : '保存到本地数据库，页面不会再次显示。'}</small>
+        </label>
+        <details className="agent-policy-details">
+          <summary><span><strong>高级：环境变量凭证</strong><small>适合 CI、远程 Worker 或已有启动脚本</small></span><span>展开</span></summary>
+          <div className="advanced-connection-fields">
+            <label>环境变量名称（可选）<input onChange={(event) => onCredentialEnvChange(event.target.value.toUpperCase())} placeholder="DEEPSEEK_API_KEY" value={credentialEnv} /></label>
+          </div>
+        </details>
         <label>模型 ID（每行一个）<textarea onChange={(event) => onModelsChange(event.target.value)} placeholder={'deepseek-chat\ndeepseek-reasoner'} required rows={5} value={models} /></label>
         </> : null}
         <div className="config-note">
           {isCustom
-            ? '连接统一管理 URI、协议、模型目录和凭证引用。这里只保存环境变量名称，不保存 API Key；执行时由 Worker 从自己的环境读取密钥。'
+            ? '连接统一管理 URI、协议、模型目录和凭证。API Key 只保存在连接凭证字段，不进入 Agent、Run 快照或页面响应；执行时平台临时注入 Worker。'
             : '官方连接只管理 CLI 认证入口和启停状态；模型及登录状态由对应 CLI 提供。'}
           {activeAgentCount > 0 ? ` 当前有 ${activeAgentCount} 个启用 Agent 使用此连接，停用前需要先迁移或停用它们。` : ''}
         </div>

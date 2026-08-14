@@ -1,5 +1,19 @@
 # 07. 实现状态
 
+## 2026-08-14：Web 优先的数据库 Provider 凭证
+
+### 已实现
+
+- 自定义模型连接默认直接在 Web 输入 API Key；密钥以写入型字段提交并保存到本地 PostgreSQL 专用列，编辑时只显示“已配置”，不回显原值。
+- ProviderConnection 公有响应、AgentProfile、不可变 Run 快照、Prompt 与 Timeline 均不包含密钥；公有响应只增加 `credentialConfigured` 状态。
+- API 在 Worker claim 时按连接 ID 从凭证列读取，Worker 仅在内存和目标 OpenCode 子进程环境中短暂持有凭证。健康检测复用同一注入链路。
+- 环境变量名称移入 Web 高级区域，继续支持 CI、远程 Worker 和旧配置，不再作为本地用户默认入口。
+
+### 验证证据
+
+- Contracts 回归覆盖自定义连接写入型凭证与官方 CLI 拒绝凭证；数据库映射只暴露是否已配置，不返回凭证值。
+- Worker 回归验证数据库凭证只注入子进程环境，OpenCode provider 配置只引用临时环境变量，统一 Agent 事件不含密钥值。
+
 ## 2026-08-14：Claude Code Adapter 与正式验收数据清理
 
 ### 已实现

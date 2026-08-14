@@ -146,6 +146,7 @@ export const ProviderConnectionInputSchema = z
     protocol: z.enum(PROVIDER_PROTOCOLS),
     baseUrl: z.string().trim().url().max(2_048).refine((value) => /^https?:\/\//i.test(value), 'Base URI must use HTTP or HTTPS').optional(),
     credentialEnv: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,79}$/).optional(),
+    credentialSecret: z.string().min(1).max(16_384).refine((value) => /\S/.test(value), 'Credential cannot be blank').optional(),
     models: z.array(z.string().trim().min(1).max(240)).max(100).default([]),
     enabled: z.boolean().default(true),
   })
@@ -157,7 +158,7 @@ export const ProviderConnectionInputSchema = z
       if (input.protocol !== 'cli_managed') {
         context.addIssue({ code: 'custom', path: ['protocol'], message: 'Official CLI connections use cli_managed' });
       }
-      if (input.baseUrl || input.credentialEnv) {
+      if (input.baseUrl || input.credentialEnv || input.credentialSecret) {
         context.addIssue({ code: 'custom', path: ['kind'], message: 'Official CLI authentication is managed by the CLI' });
       }
     } else {
@@ -854,6 +855,7 @@ export interface Workspace {
 export interface ProviderConnection extends ProviderConnectionSnapshot {
   workspaceId: string;
   enabled: boolean;
+  credentialConfigured?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1045,6 +1047,7 @@ export interface ClaimedRun {
 export interface ClaimedExecution {
   claimed: ClaimedRun;
   executionToken: string;
+  providerCredential?: string;
   lease: {
     expiresAt: string;
     heartbeatIntervalMs: number;

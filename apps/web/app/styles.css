@@ -560,6 +560,8 @@ textarea:focus-visible {
 .runtime-card small { color: var(--muted); font-size: 9px; }
 .config-note { padding: 9px 10px; color: var(--muted); border-radius: 8px; background: var(--surface-soft); font-size: 10px; line-height: 1.55; }
 .config-note code { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.field-help { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.advanced-connection-fields { padding: 0 10px 10px; }
 .agent-policy-details { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 .agent-policy-details summary { display: flex; min-height: 32px; padding: 5px 10px; align-items: center; justify-content: space-between; gap: 10px; list-style: none; cursor: pointer; }
 .agent-policy-details summary::-webkit-details-marker { display: none; }

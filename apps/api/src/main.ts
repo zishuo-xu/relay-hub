@@ -71,6 +71,12 @@ if (runTokenTtlMs <= runLeaseDurationMs) {
 }
 const store = new PostgresStore(database.db, runTokenTtlMs, runLeaseDurationMs);
 const publisher = new OutboxPublisher(database.db, process.env.REDIS_URL);
+async function providerCredentialForAgent(agent: { config: Record<string, unknown> }): Promise<string | undefined> {
+  const providerConnection = agent.config.providerConnection;
+  if (!providerConnection || typeof providerConnection !== 'object') return undefined;
+  const id = (providerConnection as { id?: unknown }).id;
+  return typeof id === 'string' ? store.getProviderCredential(id) : undefined;
+}
 
 function readBearerToken(request: FastifyRequest): string | null {
   const authorization = request.headers.authorization;
@@ -192,7 +198,7 @@ app.post('/api/provider-connections/:connectionId/health-check', async (request,
   if (input.model && !connection.models.includes(input.model)) {
     return reply.code(400).send({ error: 'model_not_configured', message: 'The selected model is not configured on this connection.' });
   }
-  return checkProviderConnectionHealth(connection, input);
+  return checkProviderConnectionHealth(connection, input, await store.getProviderCredential(connection.id));
 });
 
 app.post('/api/workspaces/:workspaceId/agents', async (request, reply) => {
@@ -231,7 +237,7 @@ app.post('/api/agents/:agentId/health-check', async (request, reply) => {
   const { agentId } = z.object({ agentId: z.string().uuid() }).parse(request.params);
   const agent = await store.getAgentProfile(agentId);
   if (!agent) return reply.code(404).send({ error: 'agent_not_found' });
-  return checkAgentHealth(agent);
+  return checkAgentHealth(agent, await providerCredentialForAgent(agent));
 });
 
 app.get('/api/agent-runtimes', async () => ({ runtimes: await listAgentRuntimes() }));
@@ -298,7 +304,8 @@ app.post('/internal/runs/:runId/claim', async (request, reply) => {
   const result = await store.claimRun(runId, workerId);
   if (!result.value) return reply.code(409).send({ error: 'run_not_claimable' });
   broadcast(result.emitted);
-  return result.value;
+  const providerCredential = await providerCredentialForAgent(result.value.claimed.agent);
+  return { ...result.value, ...(providerCredential ? { providerCredential } : {}) };
 });
 
 app.post('/internal/runs/:runId/heartbeat', async (request, reply) => {

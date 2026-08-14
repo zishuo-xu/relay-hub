@@ -19,6 +19,7 @@ const OpenCodeEnvelopeSchema = z.object({
   error: z.unknown().optional(),
 }).passthrough();
 const MAX_EVENT_TEXT = 4_000;
+const RUNTIME_CREDENTIAL_ENV = 'RELAY_HUB_PROVIDER_API_KEY';
 
 function truncate(value: unknown, limit = MAX_EVENT_TEXT): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -56,12 +57,17 @@ export function openCodeRuntimePermissions(claimed: ClaimedRun): Record<string, 
 export async function* runOpenCodeAgent(
   claimed: ClaimedRun,
   workingDirectory: string,
-  options: { processOverride?: { command: string; args: string[] }; signal?: AbortSignal } = {},
+  options: { processOverride?: { command: string; args: string[] }; signal?: AbortSignal; credentialValue?: string } = {},
 ): AsyncGenerator<AgentEvent> {
   const config = OpenCodeRuntimeConfigSchema.parse(claimed.agent.config);
   const customConnection = config.providerConnection?.kind === 'custom_api' ? config.providerConnection : undefined;
   const runtimeModel = customConnection ? `${openCodeProviderKey(customConnection.id)}/${config.model}` : config.model;
-  const credentialEnv = customConnection?.credentialEnv ?? config.credentialEnv;
+  const credentialEnv = options.credentialValue
+    ? RUNTIME_CREDENTIAL_ENV
+    : customConnection?.credentialEnv ?? config.credentialEnv;
+  const runtimeConnection = customConnection && options.credentialValue
+    ? { ...customConnection, credentialEnv: RUNTIME_CREDENTIAL_ENV }
+    : customConnection;
   const binary = options.processOverride?.command ?? process.env.RELAY_HUB_OPENCODE_BIN ?? 'opencode';
   const timeoutMs = Number(process.env.RELAY_HUB_AGENT_TIMEOUT_MS ?? 15 * 60 * 1_000);
   const isReviewer = claimed.run.triggerType === 'review';
@@ -79,12 +85,12 @@ export async function* runOpenCodeAgent(
   ];
   const environment = {
     ...safeChildEnvironment(),
-    ...(credentialEnv && process.env[credentialEnv]
-      ? { [credentialEnv]: process.env[credentialEnv] }
+    ...(credentialEnv && (options.credentialValue ?? process.env[credentialEnv])
+      ? { [credentialEnv]: options.credentialValue ?? process.env[credentialEnv] }
       : {}),
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
       ...openCodeRuntimePermissions(claimed),
-      ...(customConnection ? openCodeProviderConfig(customConnection) : {}),
+      ...(runtimeConnection ? openCodeProviderConfig(runtimeConnection) : {}),
     }),
   };
 

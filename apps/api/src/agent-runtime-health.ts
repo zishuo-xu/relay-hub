@@ -15,6 +15,7 @@ import {
 } from '@relay-hub/contracts';
 
 const execFileAsync = promisify(execFile);
+const RUNTIME_CREDENTIAL_ENV = 'RELAY_HUB_PROVIDER_API_KEY';
 
 function diagnosticEnvironment(): NodeJS.ProcessEnv {
   return {
@@ -46,6 +47,7 @@ async function run(
 export async function checkProviderConnectionHealth(
   connection: ProviderConnectionSnapshot,
   input: ProviderConnectionHealthCheckInput = { mode: 'configuration' },
+  credentialValue?: string,
 ): Promise<AgentHealth> {
   try {
     if (connection.adapterType === 'codex_cli') {
@@ -81,8 +83,8 @@ export async function checkProviderConnectionHealth(
         message: `${runtime.models.length} OpenCode models are visible; credentials are managed by OpenCode. No model request was sent.`,
       };
     }
-    const credentialEnv = connection.credentialEnv;
-    const credentialAvailable = !credentialEnv || Boolean(process.env[credentialEnv]);
+    const credentialEnv = credentialValue ? RUNTIME_CREDENTIAL_ENV : connection.credentialEnv;
+    const credentialAvailable = Boolean(credentialValue) || !credentialEnv || Boolean(process.env[credentialEnv]);
     if (!credentialAvailable) {
       return {
         status: 'unhealthy',
@@ -93,10 +95,15 @@ export async function checkProviderConnectionHealth(
         message: `Worker environment is missing ${credentialEnv}.`,
       };
     }
+    const runtimeConnection = credentialValue
+      ? { ...connection, credentialEnv: RUNTIME_CREDENTIAL_ENV }
+      : connection;
     const environment = {
       ...diagnosticEnvironment(),
-      ...(credentialEnv && process.env[credentialEnv] ? { [credentialEnv]: process.env[credentialEnv] } : {}),
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(openCodeProviderConfig(connection)),
+      ...(credentialEnv && (credentialValue ?? process.env[credentialEnv])
+        ? { [credentialEnv]: credentialValue ?? process.env[credentialEnv] }
+        : {}),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(openCodeProviderConfig(runtimeConnection)),
     };
     const binary = process.env.RELAY_HUB_OPENCODE_BIN ?? 'opencode';
     const [version, catalog] = await Promise.all([
@@ -146,7 +153,7 @@ export async function checkProviderConnectionHealth(
         ], {
           ...environment,
           OPENCODE_CONFIG_CONTENT: JSON.stringify({
-            ...openCodeProviderConfig(connection),
+            ...openCodeProviderConfig(runtimeConnection),
             share: 'disabled',
             permission: { '*': 'deny' },
           }),
@@ -265,7 +272,7 @@ export async function listAgentRuntimes(): Promise<AgentRuntimeDescriptor[]> {
   ];
 }
 
-export async function checkAgentHealth(agent: AgentProfile): Promise<AgentHealth> {
+export async function checkAgentHealth(agent: AgentProfile, credentialValue?: string): Promise<AgentHealth> {
   try {
     if (agent.adapterType === 'mock') {
       return { status: 'healthy', adapterType: 'mock', message: 'Deterministic Mock runtime is available.' };
@@ -299,7 +306,7 @@ export async function checkAgentHealth(agent: AgentProfile): Promise<AgentHealth
 
     const config = OpenCodeRuntimeConfigSchema.parse(agent.config);
     if (config.providerConnection?.kind === 'custom_api') {
-      const health = await checkProviderConnectionHealth(config.providerConnection);
+      const health = await checkProviderConnectionHealth(config.providerConnection, undefined, credentialValue);
       return { ...health, model: config.model, modelAvailable: health.status === 'healthy' };
     }
     const runtime = await listOpenCodeModels();

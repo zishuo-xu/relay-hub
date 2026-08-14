@@ -120,6 +120,43 @@ describe('runOpenCodeAgent', () => {
     });
   });
 
+  it('injects a stored credential only into the child process environment', async () => {
+    const secret = 'vault-test-secret';
+    const customClaimed: ClaimedRun = {
+      ...claimed,
+      agent: {
+        ...claimed.agent,
+        config: {
+          model: 'model-a',
+          providerConnection: {
+            id: '00000000-0000-4000-8000-000000000099',
+            name: 'Web provider',
+            kind: 'custom_api',
+            adapterType: 'opencode_cli',
+            protocol: 'openai_chat_completions',
+            baseUrl: 'https://api.example.com/v1',
+            models: ['model-a'],
+          },
+        },
+      },
+    };
+    const script = [
+      `if (process.env.RELAY_HUB_PROVIDER_API_KEY !== ${JSON.stringify(secret)}) process.exit(2);`,
+      "const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}');",
+      "const provider = config.provider['relayhub-00000000000040008000000000000099'];",
+      "if (provider.options.apiKey !== '{env:RELAY_HUB_PROVIDER_API_KEY}') process.exit(3);",
+      "console.log(JSON.stringify({type:'text',sessionID:'ses_vault',part:{text:'Credential injected.'}}));",
+    ].join('');
+    const events = [];
+    for await (const event of runOpenCodeAgent(customClaimed, tmpdir(), {
+      credentialValue: secret,
+      processOverride: { command: process.execPath, args: ['-e', script] },
+    })) events.push(event);
+
+    expect(events.at(-1)?.type).toBe('run.completed');
+    expect(JSON.stringify(events)).not.toContain(secret);
+  });
+
   it('submits a structured Review before Reviewer completion', async () => {
     const reviewer: ClaimedRun = {
       ...claimed,

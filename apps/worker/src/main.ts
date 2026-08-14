@@ -54,6 +54,7 @@ async function execute(
   claimed: ClaimedRun,
   executionToken: string,
   executionCancellation: AbortController,
+  providerCredential?: string,
 ): Promise<void> {
   let sequence = 0;
   let cancellationPoll: ReturnType<typeof setInterval> | undefined;
@@ -119,7 +120,10 @@ async function execute(
     } else if (claimed.agent.adapterType === 'claude_code') {
       events = runClaudeCodeAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
     } else if (claimed.agent.adapterType === 'opencode_cli') {
-      events = runOpenCodeAgent(claimed, workingDirectory, { signal: executionCancellation.signal });
+      events = runOpenCodeAgent(claimed, workingDirectory, {
+        signal: executionCancellation.signal,
+        ...(providerCredential ? { credentialValue: providerCredential } : {}),
+      });
     } else if (claimed.agent.adapterType === 'mock') {
       events = runMockAgent(claimed);
     } else {
@@ -169,7 +173,7 @@ const worker = createRunWorker(async (job) => {
     onError: (error) => console.error(`Heartbeat failed for ${runId}`, error),
   });
   try {
-    await execute(claimed.claimed, claimed.executionToken, executionCancellation);
+    await execute(claimed.claimed, claimed.executionToken, executionCancellation, claimed.providerCredential);
   } finally {
     stopHeartbeat();
   }

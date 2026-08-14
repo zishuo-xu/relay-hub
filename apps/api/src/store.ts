@@ -45,6 +45,7 @@ import {
   createAgentProfile as createAgentProfileInDb,
   getAgentProfile as getAgentProfileFromDb,
   getProviderConnection as getProviderConnectionFromDb,
+  getProviderCredential as getProviderCredentialFromDb,
   listAgentProfiles as listAgentProfilesFromDb,
   listProviderConnections as listProviderConnectionsFromDb,
   listWorkspaces as listWorkspacesFromDb,
@@ -136,6 +137,10 @@ export class PostgresStore {
     input: ProviderConnectionInput,
   ): Promise<ProviderConnection | null> {
     return updateProviderConnectionInDb(this.db, connectionId, input);
+  }
+
+  getProviderCredential(connectionId: string): Promise<string | undefined> {
+    return getProviderCredentialFromDb(this.db, connectionId);
   }
 
   getTaskDetail(taskId: string): Promise<TaskDetail | null> {

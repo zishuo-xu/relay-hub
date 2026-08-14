@@ -77,6 +77,15 @@ export async function updateProviderConnection(
   return row ? mapProviderConnection(row) : null;
 }
 
+export async function getProviderCredential(db: RelayDatabase, connectionId: string): Promise<string | undefined> {
+  const [row] = await db
+    .select({ credentialSecret: providerConnections.credentialSecret })
+    .from(providerConnections)
+    .where(eq(providerConnections.id, connectionId))
+    .limit(1);
+  return row?.credentialSecret ?? undefined;
+}
+
 function connectionSnapshot(connection: ProviderConnection): ProviderConnectionSnapshot {
   return {
     id: connection.id,

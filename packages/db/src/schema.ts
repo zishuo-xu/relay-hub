@@ -102,6 +102,7 @@ export const providerConnections = pgTable(
     protocol: text('protocol').$type<ProviderProtocol>().notNull(),
     baseUrl: text('base_url'),
     credentialEnv: text('credential_env'),
+    credentialSecret: text('credential_secret'),
     models: jsonb('models').$type<string[]>().default([]).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     ...timestamps,

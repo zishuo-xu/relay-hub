@@ -83,6 +83,7 @@ export default function HomePage() {
   const [connectionName, setConnectionName] = useState('');
   const [connectionProtocol, setConnectionProtocol] = useState<ProviderProtocol>('openai_chat_completions');
   const [connectionBaseUrl, setConnectionBaseUrl] = useState('');
+  const [connectionCredentialSecret, setConnectionCredentialSecret] = useState('');
   const [connectionCredentialEnv, setConnectionCredentialEnv] = useState('');
   const [connectionModels, setConnectionModels] = useState('');
   const [connectionSaving, setConnectionSaving] = useState(false);
@@ -435,6 +436,7 @@ export default function HomePage() {
       setConnectionName(connection.name);
       setConnectionProtocol(connection.protocol === 'cli_managed' ? 'openai_chat_completions' : connection.protocol);
       setConnectionBaseUrl(connection.baseUrl ?? '');
+      setConnectionCredentialSecret('');
       setConnectionCredentialEnv(connection.credentialEnv ?? '');
       setConnectionModels(connection.models.join('\n'));
       setConnectionEnabled(connection.enabled);
@@ -443,6 +445,7 @@ export default function HomePage() {
       setConnectionName('');
       setConnectionProtocol('openai_chat_completions');
       setConnectionBaseUrl('');
+      setConnectionCredentialSecret('');
       setConnectionCredentialEnv('');
       setConnectionModels('');
       setConnectionEnabled(true);
@@ -503,6 +506,7 @@ export default function HomePage() {
             ...(existing?.kind !== 'official_cli'
               ? {
                   baseUrl: connectionBaseUrl,
+                  ...(connectionCredentialSecret ? { credentialSecret: connectionCredentialSecret } : {}),
                   ...(connectionCredentialEnv.trim() ? { credentialEnv: connectionCredentialEnv.trim() } : {}),
                   models,
                 }
@@ -513,6 +517,7 @@ export default function HomePage() {
       );
       if (!response.ok) throw new Error(`保存连接失败：${response.status} ${await response.text()}`);
       const saved = (await response.json()) as ProviderConnection;
+      setConnectionCredentialSecret('');
       setEditingConnectionId(saved.id);
       await loadRuntimeConfiguration();
       setAgentConfigConnectionId(saved.id);
@@ -727,6 +732,8 @@ export default function HomePage() {
         activeAgentCount={agents.filter((agent) => agent.enabled && agent.providerConnectionId === editingConnectionId).length}
         baseUrl={connectionBaseUrl}
         checking={connectionChecking}
+        credentialConfigured={connections.find((connection) => connection.id === editingConnectionId)?.credentialConfigured ?? false}
+        credentialSecret={connectionCredentialSecret}
         credentialEnv={connectionCredentialEnv}
         editing={editingConnectionId !== null}
         enabled={connectionEnabled}
@@ -740,6 +747,7 @@ export default function HomePage() {
         onCheck={() => void checkProviderConnection('configuration')}
         onCheckLive={() => void checkProviderConnection('live')}
         onClose={() => setConnectionOpen(false)}
+        onCredentialSecretChange={setConnectionCredentialSecret}
         onCredentialEnvChange={setConnectionCredentialEnv}
         onEnabledChange={setConnectionEnabled}
         onLiveConsentChange={setConnectionLiveConsent}

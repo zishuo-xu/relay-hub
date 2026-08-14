@@ -45,6 +45,26 @@ describe('ProviderConnection contract', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts a write-only custom credential and rejects one for an official CLI', () => {
+    expect(ProviderConnectionInputSchema.parse({
+      name: 'Web configured provider',
+      kind: 'custom_api',
+      adapterType: 'opencode_cli',
+      protocol: 'openai_chat_completions',
+      baseUrl: 'https://api.example.com/v1',
+      credentialSecret: 'test-secret-value',
+      models: ['model-a'],
+    })).toMatchObject({ credentialSecret: 'test-secret-value' });
+
+    expect(ProviderConnectionInputSchema.safeParse({
+      name: 'Codex official',
+      kind: 'official_cli',
+      adapterType: 'codex_cli',
+      protocol: 'cli_managed',
+      credentialSecret: 'not-allowed',
+    }).success).toBe(false);
+  });
+
   it('allows a Codex Agent to pin an optional official model', () => {
     expect(AgentProfileInputSchema.parse({
       name: 'Codex Reviewer',

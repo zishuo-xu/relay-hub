@@ -325,7 +325,7 @@ GET    /api/agent-runtimes/opencode
 
 创建和更新 AgentProfile 使用同一份完整配置 schema。`GET /api/agent-runtimes` 统一返回 Mock、Codex CLI、OpenCode CLI 和 Claude Code 的可用性、版本与可选模型目录；OpenCode 专属 endpoint 保留兼容。`POST /api/agents/:agentId/health-check` 只做无计费的 CLI/目录检测，不启动 Run。
 
-ProviderConnection 更新使用完整配置 schema，且 `kind` / `adapterType` 不可变。服务端拒绝停用仍被启用 Agent 引用的连接，也拒绝从自定义目录移除启用 Agent 正在使用的模型。连接健康检测默认 `mode=configuration`，检查 CLI、Worker 凭证环境变量和模型目录；只有 `mode=live` 才发送固定测试文本并可能产生 provider 用量，当前只对自定义 OpenCode 连接开放。
+ProviderConnection 更新使用完整配置 schema，且 `kind` / `adapterType` 不可变。自定义连接的写入请求可携带 `credentialSecret`；该字段写入本地 PostgreSQL 的 `credential_secret` 列，省略表示保留现有 Key，公有映射只返回 `credentialConfigured`。AgentProfile 与 Run snapshot 继续只保存非敏感连接快照。服务端拒绝停用仍被启用 Agent 引用的连接，也拒绝从自定义目录移除启用 Agent 正在使用的模型。连接健康检测默认 `mode=configuration`，检查 CLI、数据库/环境变量凭证和模型目录；只有 `mode=live` 才发送固定测试文本并可能产生 provider 用量，当前只对自定义 OpenCode 连接开放。
 
 ### Task 与 Run
 

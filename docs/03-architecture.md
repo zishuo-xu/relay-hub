@@ -216,6 +216,8 @@ OpenCode AgentProfile 使用精确的 `provider/model` 作为运行时模型标�
 
 **Implemented（2026-08-09）：** ProviderConnection 具备独立管理生命周期。连接身份（类型与 CLI）创建后不可变；名称、状态和自定义 API 配置可更新。服务端在停用连接或移除模型前检查启用 Agent 引用，避免集中配置产生级联失效。默认诊断不产生模型费用；显式 live 检测经用户费用确认后，通过 OpenCode 向第一个配置模型发送固定测试文本。
 
+**Implemented（2026-08-14）：** 自定义连接改为 Web 凭证优先。API Key 由写入型字段进入 API 后保存到本地 PostgreSQL 的专用连接凭证列，公有连接响应只暴露 `credentialConfigured`；AgentProfile、Run 快照、Prompt 与 Timeline 均不含密钥。Worker claim 根据不可变连接 ID 读取一次，密钥仅在 API→Worker 回环响应、Worker 内存及目标 Agent CLI 子进程环境中短暂存在。环境变量引用继续作为 CI、远程 Worker 与旧配置兼容入口。凭证存储通过独立读取边界访问，未来可迁移到系统凭证库而不改变 Agent/Run 合约。
+
 OpenCode Adapter 仍服从统一 Worktree 和角色边界：Builder 可以在当前 Worktree 内编辑和执行命令；Reviewer 通过每次 Run 注入的高优先级配置禁用 `edit`、`bash`、`external_directory`、`question` 和子 Agent `task` 权限。两者都使用 `--pure`、JSON 事件流和显式工作目录，不共享 Session 或隐藏推理。
 
 Codex Reviewer 使用 RelayHub 注入的命名 permission profile，将文件权限与网络权限拆开：Builder Worktree 继承 `:read-only`，仅允许 `localhost` / `127.0.0.1` 的 sandboxed network 和本地监听，用于独立复跑需要临时服务的测试。外部网络和非回环监听不开放；Builder 与 repair Run 仍使用 `workspace-write`。该边界由 Adapter 启动参数强制，不依赖 Prompt 或用户级 Codex 配置。

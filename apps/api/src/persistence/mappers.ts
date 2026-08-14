@@ -284,6 +284,7 @@ export function mapProviderConnection(row: ProviderConnectionRow): ProviderConne
     protocol: row.protocol,
     models: row.models,
     enabled: row.enabled,
+    credentialConfigured: Boolean(row.credentialSecret),
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
     ...(row.baseUrl ? { baseUrl: row.baseUrl } : {}),
